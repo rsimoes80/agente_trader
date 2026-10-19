@@ -55,6 +55,22 @@ class ExperienceRecord:
     trigger_state: str = "not_evaluated"
     partial_reversal_state: str = "none"
     observed_follow_through: str = "insufficient_data"
+    regime_id: str = ""
+    regime: str = "UNKNOWN"
+    regime_subtype: str = "UNRESOLVED"
+    regime_maturity: str = "not_established"
+    regime_stability: str = "uncertain"
+    previous_regime: str = "UNKNOWN"
+    market_location: dict = field(default_factory=dict)
+    range_id: str = ""
+    range_position: float | None = None
+    transition_status: str = "none"
+    breakout_status: str = "not_observed"
+    regime_match: bool | None = None
+    strategy_regime_compatibility: dict = field(default_factory=dict)
+    regime_model_version: str = ""
+    regime_config_hash: str = ""
+    timeframe: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -377,6 +393,8 @@ class ExperienceMemory:
         before: datetime | None = None,
         trade_direction_class: str | None = None,
         evidence_state: str | None = None,
+        regime_model_version: str | None = None,
+        regime_config_hash: str | None = None,
     ) -> SimilarityResult:
         if minimum_sample_count < 1:
             raise ValueError("minimum_sample_count precisa ser positivo.")
@@ -402,6 +420,8 @@ class ExperienceMemory:
             for key, value in (
                 ("trade_direction_class", trade_direction_class),
                 ("evidence_state", evidence_state),
+                ("regime_model_version", regime_model_version),
+                ("regime_config_hash", regime_config_hash),
             ):
                 if value is not None:
                     query += f" AND json_extract(e.payload_json,'$.{key}')=?"

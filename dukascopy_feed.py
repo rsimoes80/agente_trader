@@ -16,6 +16,7 @@ from src.aurelia_fx.market_intelligence import (
     MarketIntelligenceSession,
     observation_only_result,
 )
+from src.aurelia_fx.regime.strategy_metadata import StrategyMetadata
 from src.aurelia_fx.sessions import SessionWindow
 from src.aurelia_fx.trend import HierarchyConfig
 
@@ -494,7 +495,6 @@ class DukascopyFeed:
         with self._lock:
             candles = [dict(item) for item in self._bars]
             spread_pips = float(self._state.get("spread_pips", 0.0))
-        result = analyze(candles, config)
         signature = (
             config.get("instrument"),
             config.get("timeframe"),
@@ -526,12 +526,35 @@ class DukascopyFeed:
                 )
                 self._intelligence_signature = signature
             snapshot = self._intelligence.update(candles, spread_pips=spread_pips)
+            eligibility = StrategyMetadata("legacy_indicator_research", "1").evaluate(
+                snapshot
+            )
+            result = (
+                analyze(candles, config)
+                if eligibility["regime_match"]
+                else {
+                    "signal": "WAIT",
+                    "reason_code": eligibility["reason"],
+                    "message": "Regime incompatível com a pesquisa de tendência.",
+                }
+            )
             # Persist closed-bar observations before publishing them to the UI.
             from src.aurelia_fx.storage import open_memory
 
             if getattr(self, "_memory", None) is None:
                 self._memory = open_memory()
             with self._memory.transaction():
+                self._memory.record_project_data(
+                    "strategy_evaluation",
+                    snapshot.snapshot_id,
+                    {
+                        **eligibility,
+                        "snapshot_id": snapshot.snapshot_id,
+                        "regime_model_version": snapshot.regime_model_version,
+                        "regime_config_hash": snapshot.regime_config_hash,
+                        "market_location": snapshot.market_location,
+                    },
+                )
                 self._memory.record_project_data(
                     "closed_candle",
                     f"dukascopy:{snapshot.symbol}:{snapshot.timeframe}:{candle['timestamp']}",
@@ -550,11 +573,12 @@ class DukascopyFeed:
                 )
                 self._memory.record_intelligence(snapshot.as_dict())
             result = observation_only_result(result, snapshot)
+            result["strategy_regime_compatibility"] = eligibility
         except Exception:
             result = {
                 "signal": "WAIT",
-                "reason_code": "V3_DATA_OR_STORAGE_ERROR",
-                "message": "Leitura V3 ou persistência indisponível. Verifique dados e conexão ao banco.",
+                "reason_code": "V4_DATA_OR_STORAGE_ERROR",
+                "message": "Leitura V4 ou persistência indisponível. Verifique dados e conexão ao banco.",
                 "orders_enabled_by_application": False,
             }
         with self._lock:

@@ -16,7 +16,7 @@ class KnowledgeRepositoryTests(unittest.TestCase):
             ROOT / "data" / "knowledge" / "rules.json"
         )
 
-        self.assertEqual(len(repository.rules), 17)
+        self.assertEqual(len(repository.rules), 21)
         self.assertTrue(
             {
                 "analise-tecnica-explicadapdf-pdf-free.pdf",

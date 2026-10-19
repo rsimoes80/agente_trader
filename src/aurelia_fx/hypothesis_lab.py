@@ -70,6 +70,105 @@ V3_RESEARCH_QUESTIONS = (
     "session_and_volatility_effects",
 )
 
+V4_RESEARCH_QUESTIONS = (
+    "trend_range_feature_ablation",
+    "feature_redundancy",
+    "threshold_stability",
+    "symbol_timeframe_session_dependence",
+    "regime_duration",
+    "transition_ambiguity",
+    "breakout_follow_through_incremental_information",
+    "return_inside_frozen_range",
+    "developing_versus_established_range",
+    "strategy_degradation_on_regime_change",
+    "regime_mismatch_ablation",
+    "unknown_data_or_conservatism",
+)
+
+
+def regime_performance_matrix(records, *, minimum_samples=30):
+    """Descriptive cohorts; never merge classifier versions or infer causal advantage."""
+    if minimum_samples < 1:
+        raise ValueError("Minimum sample size must be positive")
+    unique = {
+        r["decision_id"]: r
+        for r in records
+        if r.get("financial_result", {}).get("result_in_r") is not None
+    }
+    groups = defaultdict(list)
+    dimensions = (
+        "strategy_id",
+        "strategy_version",
+        "regime",
+        "symbol",
+        "timeframe",
+        "session",
+        "regime_model_version",
+        "regime_config_hash",
+    )
+    for r in unique.values():
+        groups[tuple(r.get(k, "unknown") for k in dimensions)].append(r)
+    rows = []
+    for key, items in sorted(groups.items()):
+        values = [r["financial_result"]["result_in_r"] for r in items]
+        enough = len(values) >= minimum_samples
+        wins = [v for v in values if v > 0]
+        losses = [v for v in values if v < 0]
+
+        def metric_mean(name):
+            values = [r["financial_result"].get(name) for r in items]
+            return (
+                sum(values) / len(values)
+                if enough and all(isinstance(v, (int, float)) for v in values)
+                else None
+            )
+
+        cost_names = ("commission", "spread_cost", "slippage_cost")
+        costs = (
+            {
+                name: sum(r["financial_result"][name] for r in items)
+                for name in cost_names
+            }
+            if enough
+            and all(
+                all(name in r["financial_result"] for name in cost_names) for r in items
+            )
+            else None
+        )
+        row = dict(zip(dimensions, key))
+        row.update(
+            sample_size=len(values),
+            expectancy_r=sum(values) / len(values) if enough else None,
+            win_rate=len(wins) / len(values) if enough else None,
+            payoff=(sum(wins) / len(wins)) / (-sum(losses) / len(losses))
+            if enough and wins and losses
+            else None,
+            profit_factor=sum(wins) / -sum(losses) if enough and losses else None,
+            max_drawdown=None,
+            mae=metric_mean("mae_r"),
+            mfe=metric_mean("mfe_r"),
+            costs=costs,
+            stability="not_established",
+            validation_status="descriptive_only" if enough else "insufficient_sample",
+            metric_units={
+                "expectancy": "R",
+                "payoff": "R",
+                "profit_factor": "R",
+                "mae": "R",
+                "mfe": "R",
+                "costs": "account_currency",
+            },
+            missing_metrics=["account_mark_to_market_drawdown_by_cohort"],
+        )
+        rows.append(row)
+    return {
+        "status": "needs_review",
+        "questions": list(V4_RESEARCH_QUESTIONS),
+        "matrix": rows,
+        "minimum_samples": minimum_samples,
+        "automatic_promotion": False,
+    }
+
 
 def v3_cohort_report(records, *, minimum_samples: int = 30) -> dict:
     """Descriptive outcome cohorts using frozen entry context, not promotion or optimization."""

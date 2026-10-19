@@ -7,11 +7,13 @@ import unittest
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, time, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from unittest.mock import patch
 
 from aurelia_fx.domain import Candle
 from aurelia_fx.experience_memory import ExperienceMemory
+from aurelia_fx.regime import MarketRegimeEngine
 from aurelia_fx.replay import ReplayConfig, run_replay
 from aurelia_fx.replay_data import ReplayDataset, load_csv
 from aurelia_fx.sessions import SessionWindow
@@ -60,6 +62,34 @@ def scenario(*, spread=0.2, invalidate=False):
     return tuple(bars)
 
 
+def known_trend_fixture(test):
+    """Isolate legacy execution lifecycle tests from the new regime classifier.
+
+    Actual UNKNOWN/mismatch vetoes are covered by test_market_regime_v4.
+    The classifier version explicitly identifies this injected synthetic context.
+    """
+
+    @wraps(test)
+    def run(*args, **kwargs):
+        original = MarketRegimeEngine.evaluate
+
+        def classify(engine, *items, **options):
+            state = original(engine, *items, **options)
+            return replace(
+                state,
+                regime="TREND",
+                subtype="BULL",
+                direction="BULLISH",
+                classification_status="STABLE",
+                regime_model_version="unit_execution_context_stub",
+            )
+
+        with patch.object(MarketRegimeEngine, "evaluate", classify):
+            return test(*args, **kwargs)
+
+    return run
+
+
 class ReplayTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -96,6 +126,7 @@ class ReplayTests(unittest.TestCase):
             .splitlines()
         ]
 
+    @known_trend_fixture
     def test_full_cycle_persists_across_restart_and_reruns_are_equivalent(self):
         first = self.run_scenario()
         self.assertEqual(first["actions"].get("HYPOTHETICAL_SIGNAL"), 1)
@@ -149,6 +180,7 @@ class ReplayTests(unittest.TestCase):
 
         self.assertEqual(semantics(first[:-1]), semantics(second[:-1]))
 
+    @known_trend_fixture
     def test_confirmed_hypothesis_can_be_vetoed_by_risk(self):
         report = self.run_scenario(
             config=replace(
@@ -169,6 +201,7 @@ class ReplayTests(unittest.TestCase):
         self.assertNotIn("HYPOTHETICAL_SIGNAL", report["actions"])
         self.assertIn("EVIDENCE_INVALIDATED", report["reasons"])
 
+    @known_trend_fixture
     def test_invalidation_prevents_later_confirmation(self):
         report = self.run_scenario(scenario(invalidate=True))
         rows = self.decisions(report)
@@ -194,6 +227,7 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(rows[-1]["reason_code"], "SESSION_NOT_AUTHORIZED")
         self.assertNotIn("HYPOTHETICAL_SIGNAL", report["actions"])
 
+    @known_trend_fixture
     def test_expiry_and_no_session_are_valid_no_trade_results(self):
         report = self.run_scenario(config=replace(self.config, lifetime_bars=1))
         self.assertIn("EXPECTATION_EXPIRED", report["reasons"])
@@ -233,6 +267,7 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(statuses, ["started", "failed"])
         self.assertFalse(list((self.root / "reports").glob("*/report.html")))
 
+    @known_trend_fixture
     def test_financial_outcome_appended_without_overwriting_signal(self):
         bars = list(scenario())
         start = bars[0].timestamp

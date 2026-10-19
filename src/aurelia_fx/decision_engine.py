@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from .regime.strategy_metadata import StrategyMetadata
+
 
 @dataclass(frozen=True)
 class IntelligencePolicy:
@@ -30,10 +32,21 @@ class IntelligencePolicy:
 
 
 class DecisionEngine:
-    def __init__(self, policy: IntelligencePolicy):
+    def __init__(
+        self, policy: IntelligencePolicy, strategy: StrategyMetadata | None = None
+    ):
         self.policy = policy
+        self.strategy = strategy
+
+    def regime_gate(self, snapshot):
+        if self.strategy is None:
+            return "STRATEGY_REGIME_METADATA_REQUIRED"
+        return self.strategy.evaluate(snapshot)["reason"]
 
     def context_gate(self, snapshot, *, side=None, target=None):
+        regime_block = self.regime_gate(snapshot)
+        if regime_block:
+            return regime_block
         if snapshot.invalidating_evidence:
             return "EVIDENCE_INVALIDATED"
         states = snapshot.trend_hierarchy["states"]

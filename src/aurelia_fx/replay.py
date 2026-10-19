@@ -20,10 +20,18 @@ from .domain import DataQuality, Decision, DecisionAction, RiskLimits
 from .execution_simulator import EntryRequest, ExecutionConfig, ExecutionSimulator
 from .expectations import ExpectationStatus
 from .experience_memory import ExperienceMemory, ExperienceRecord
-from .hypothesis_lab import v3_cohort_report
+from .hypothesis_lab import regime_performance_matrix, v3_cohort_report
 from .observer import MarketObserver
+from .regime import RegimeConfig
 from .replay_data import ReplayDataset, unexpected_gap
-from .replay_strategy import STRATEGY_ID, STRATEGY_VERSION, candidate, compare, propose
+from .replay_strategy import (
+    STRATEGY_ID,
+    STRATEGY_METADATA,
+    STRATEGY_VERSION,
+    candidate,
+    compare,
+    propose,
+)
 from .risk import assess_candidate
 from .sessions import SessionEngine, SessionWindow
 from .state_machine import AgentStateMachine
@@ -42,6 +50,7 @@ def encode(payload) -> str:
 
 @dataclass(frozen=True)
 class ReplayConfig:
+    regime_config: RegimeConfig = field(default_factory=RegimeConfig)
     symbol: str = "EURUSD"
     timeframe: str = "M5"
     warmup_bars: int = 30
@@ -156,7 +165,9 @@ def run_replay(
     directory.mkdir(parents=True, exist_ok=False)
     config_hash = hashlib.sha256(encode(config.as_dict()).encode()).hexdigest()
     manifest = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "regime_model_version": config.regime_config.regime_model_version,
+        "strategy_metadata": asdict(STRATEGY_METADATA),
         "run_id": run_id,
         "dataset_sha256": dataset.sha256,
         "ALLOW_ORDER_EXECUTION": False,
@@ -204,6 +215,7 @@ def run_replay(
     artifact("started", {})
     observer = MarketObserver(
         SessionEngine(config.sessions),
+        regime_config=config.regime_config,
         swing_window=config.swing_window,
         max_spread_pips=config.limits.max_spread_pips,
         hierarchy_config=config.hierarchy,
@@ -212,7 +224,7 @@ def run_replay(
         required_trend_roles=config.intelligence_policy.required_trend_roles,
     )
     aggregator = ClosedBarAggregator(config.hierarchy, lookback=config.lookback_bars)
-    decision_engine = DecisionEngine(config.intelligence_policy)
+    decision_engine = DecisionEngine(config.intelligence_policy, STRATEGY_METADATA)
     machine = AgentStateMachine()
     pending = None
     history = []
@@ -350,6 +362,7 @@ def run_replay(
                     session_names = snapshot.session
                     session = session_names[0] if session_names else "outside_session"
                     regime = snapshot.market_regime
+                    eligibility = STRATEGY_METADATA.evaluate(snapshot)
                     side = {"bullish": "long", "bearish": "short"}.get(
                         snapshot.dominant_direction
                     )
@@ -367,6 +380,8 @@ def run_replay(
                             "trade_direction_class"
                         ],
                         evidence_state=snapshot.evidence_status,
+                        regime_model_version=snapshot.regime_model_version,
+                        regime_config_hash=snapshot.regime_config_hash,
                     )
                     reason = "WAITING_FOR_CONTEXT"
                     action = DecisionAction.NO_TRADE
@@ -395,6 +410,13 @@ def run_replay(
                     elif snapshot.invalidating_evidence:
                         reason, cancellation = "EVIDENCE_INVALIDATED", "invalidated"
                         move(S.DATA_ERROR, reason)
+                    elif eligibility["reason"]:
+                        reason, cancellation = eligibility["reason"], "invalidated"
+                        move(
+                            S.BUILDING_CONTEXT,
+                            "regime classified before strategy search",
+                        )
+                        move(S.OBSERVING, reason)
                     else:
                         move(S.BUILDING_CONTEXT, "closed-bar structure")
                         move(S.RETRIEVING_EXPERIENCE, "causal same-run retrieval")
@@ -650,6 +672,10 @@ def run_replay(
                     )
                     payload = decision.as_dict()
                     intelligence_context = snapshot.learning_context(evaluation)
+                    intelligence_context.update(
+                        regime_match=eligibility["regime_match"],
+                        strategy_regime_compatibility=eligibility,
+                    )
                     payload.update(
                         snapshot_id=snapshot.snapshot_id,
                         hypothesis_id=hypothesis_id,
@@ -789,6 +815,15 @@ def run_replay(
             "reasons": dict(Counter(d["reason_code"] for d in decisions)),
             "expectation_events": dict(events_count),
             "intelligence": {
+                "regimes": dict(
+                    Counter(d["intelligence_context"]["regime"] for d in decisions)
+                ),
+                "regime_compatibility": dict(
+                    Counter(
+                        str(d["intelligence_context"]["regime_match"])
+                        for d in decisions
+                    )
+                ),
                 "evidence_states": dict(
                     Counter(
                         d["intelligence_context"]["evidence_state"] for d in decisions
@@ -856,6 +891,15 @@ def run_replay(
         (directory / "equity.json").write_text(
             encode(simulator.equity_curve), encoding="utf-8"
         )
+        (directory / "regime_performance.json").write_text(
+            encode(
+                regime_performance_matrix(
+                    memory.research_experiences(run_id),
+                    minimum_samples=config.minimum_samples,
+                )
+            ),
+            encoding="utf-8",
+        )
         (directory / "research_cohorts.json").write_text(
             encode(
                 v3_cohort_report(
@@ -903,6 +947,11 @@ def write_html(
                 d["data_timestamp_utc"],
                 d["action"],
                 d["reason_code"],
+                d["intelligence_context"]["regime"],
+                d["intelligence_context"]["regime_subtype"],
+                d["intelligence_context"]["market_location"].get(
+                    "relative_location", "UNDEFINED"
+                ),
                 d["intelligence_context"]["trend_state_at_decision"],
                 d["intelligence_context"]["evidence_state"],
                 d["intelligence_context"]["confirmation_state"],
@@ -970,7 +1019,7 @@ pre{white-space:pre-wrap;background:#17252e;padding:16px}h1{color:#43d69a}</styl
         + "</table>"
         + "<details><summary>Configuração, contagens e auditoria da execução</summary><pre>"
         + html.escape(json.dumps(report, ensure_ascii=False, indent=2))
-        + '</pre></details><p><a href="intelligence.jsonl.gz">Dados de auditoria da leitura V3</a></p><table><thead><tr><th>Candle UTC</th><th>Ação</th><th>Motivo</th><th>Tendência</th><th>Evidências</th><th>Confirmação</th><th>Gatilho</th><th>Veto de risco</th><th>Observações semelhantes anteriores</th></tr></thead><tbody>'
+        + '</pre></details><p><a href="intelligence.jsonl.gz">Dados de auditoria da leitura V4</a></p><table><thead><tr><th>Candle UTC</th><th>Ação</th><th>Motivo</th><th>Regime</th><th>Subtipo</th><th>Localização</th><th>Tendência</th><th>Evidências</th><th>Confirmação</th><th>Gatilho</th><th>Veto de risco</th><th>Observações semelhantes anteriores</th></tr></thead><tbody>'
         + rows
         + "</tbody></table></html>",
         encoding="utf-8",

@@ -1,5 +1,9 @@
 # Política de aprendizado e conhecimento
 
+## Referência e memória V4
+
+O catálogo passa a 21 conceitos com quatro registros de *Lateralidades* em needs_review. Regime e versão/hash do classificador delimitam comparações na memória. Nenhuma experiência recente altera o classificador em sessão. Veja [V4](market_regime_v4.md).
+
 ## Fontes locais
 
 `Aprendizado/` contém oito PDFs: Pullback, SMC, Wyckoff, duas versões de Trading in the Zone, Livermore e as novas referências de Pring e Brooks. As duas versões de Douglas precisam de deduplicação bibliográfica. `RESEARCH_NOTES.md` conserva sínteses iniciais; [referencias_v3.md](referencias_v3.md) registra os capítulos selecionados conferidos de Pring/Brooks, a diferença entre páginas impressas e do PDF e o que foi operacionalizado. A revisão não equivale a leitura integral dos novos livros nem à validação de uma estratégia.

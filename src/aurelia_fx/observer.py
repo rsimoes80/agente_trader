@@ -12,6 +12,7 @@ from .evidence import EvidenceEngine
 from .levels import SupportResistanceEngine
 from .observation import MarketNarrative
 from .price_action import PriceActionReader
+from .regime import MarketRegimeEngine, RegimeConfig
 from .sessions import SessionContext, SessionEngine
 from .structure import StructureSnapshot, analyze_structure
 from .trend import HierarchyConfig, TrendHierarchyEngine
@@ -45,7 +46,25 @@ class MarketSnapshot:
     clarity_status: str
     observation_status: str
     expires_at: str
-    schema_version: int = 3
+    schema_version: int = 4
+    market_regime_id: str = ""
+    regime: str = "UNKNOWN"
+    regime_subtype: str = "UNRESOLVED"
+    regime_maturity: str = "not_established"
+    regime_stability: str = "uncertain"
+    previous_regime: str = "UNKNOWN"
+    transition_status: str = "none"
+    market_location: dict = field(default_factory=dict)
+    range_id: str = ""
+    upper_boundary: float | None = None
+    lower_boundary: float | None = None
+    nearest_structural_level: float | None = None
+    overlap_state: str = "unknown"
+    breakout_status: str = "not_observed"
+    regime_model_version: str = ""
+    regime_config_hash: str = ""
+    regime_state: dict = field(default_factory=dict)
+    regimes_by_timeframe: dict = field(default_factory=dict)
     trend_hierarchy: dict[str, Any] = field(default_factory=dict)
     macro_trend: dict[str, Any] = field(default_factory=dict)
     context_trend: dict[str, Any] = field(default_factory=dict)
@@ -123,6 +142,20 @@ class MarketSnapshot:
             else "not_evaluated",
             "partial_reversal_state": self.reversal_status,
             "observed_follow_through": self.follow_through_status,
+            "regime_id": self.market_regime_id,
+            "regime": self.regime,
+            "regime_subtype": self.regime_subtype,
+            "regime_maturity": self.regime_maturity,
+            "regime_stability": self.regime_stability,
+            "previous_regime": self.previous_regime,
+            "market_location": self.market_location,
+            "range_id": self.range_id,
+            "range_position": self.range_position,
+            "transition_status": self.transition_status,
+            "breakout_status": self.breakout_status,
+            "regime_model_version": self.regime_model_version,
+            "regime_config_hash": self.regime_config_hash,
+            "timeframe": self.timeframe,
         }
 
 
@@ -139,10 +172,12 @@ class MarketObserver:
         level_tolerance: float = 0.0002,
         level_ttl_bars: int = 300,
         required_trend_roles: tuple[str, ...] = ("context", "structure"),
+        regime_config: RegimeConfig | None = None,
     ):
         self.sessions = sessions
         self.swing_window = swing_window
         self.max_spread_pips = max_spread_pips
+        self.regimes = MarketRegimeEngine(regime_config)
         self.trends = (
             TrendHierarchyEngine(hierarchy_config, swing_window=swing_window)
             if hierarchy_config
@@ -158,6 +193,7 @@ class MarketObserver:
         self.required_trend_roles = required_trend_roles
 
     def reset(self):
+        self.regimes.reset()
         if self.trends:
             self.trends.reset()
 
@@ -179,6 +215,26 @@ class MarketObserver:
         latest = quality.latest_timestamp
         freshness = (now - latest).total_seconds() if latest else None
         session: SessionContext = self.sessions.identify(now)
+        identity = snapshot_id or str(uuid4())
+        if self.trends is None:
+            self.trends = TrendHierarchyEngine(
+                HierarchyConfig.for_execution(timeframe), swing_window=self.swing_window
+            )
+        histories = histories_by_timeframe or {timeframe: tuple(candles)}
+        regime_tf = self.trends.config.context_timeframe
+        regime_states = {
+            tf: self.regimes.evaluate(
+                histories.get(tf, ()),
+                symbol=symbol,
+                timeframe=tf,
+                now=now,
+                snapshot_id=identity,
+                session=session.active_sessions,
+                quality_valid=quality.valid,
+            )
+            for tf in set((*histories, regime_tf))
+        }
+        regime_state = regime_states[regime_tf]
         structure: StructureSnapshot = (
             analyze_structure(candles, self.swing_window)
             if candles
@@ -237,15 +293,9 @@ class MarketObserver:
         )
         levels = tuple(swing.price for swing in structure.swings[-8:])
         last = candles[-1] if candles else None
-        range_position = None
         volatility = "unknown"
         if len(candles) >= 20:
             recent = candles[-20:]
-            low = min(item.low for item in recent)
-            high = max(item.high for item in recent)
-            range_position = (
-                (last.close - low) / (high - low) if last and high > low else None
-            )
             ranges = sorted(item.high - item.low for item in recent)
             median_range = ranges[len(ranges) // 2]
             current_range = last.high - last.low if last else 0.0
@@ -270,12 +320,6 @@ class MarketObserver:
             "conflicts": conflicting,
             "state": status,
         }
-        identity = snapshot_id or str(uuid4())
-        if self.trends is None:
-            self.trends = TrendHierarchyEngine(
-                HierarchyConfig.for_execution(timeframe), swing_window=self.swing_window
-            )
-        histories = histories_by_timeframe or {timeframe: tuple(candles)}
         hierarchy = self.trends.evaluate(histories, as_of=now)
         pa = self.price_reader.read(
             candles,
@@ -295,6 +339,19 @@ class MarketObserver:
         )
         zones = self.level_reader.evaluate(histories, symbol=symbol, now=now)
         nearby = self.level_reader.context(zones, last.close, limit=12) if last else ()
+        location = (
+            asdict(self.regimes.location(regime_state, last.close, nearby))
+            if last
+            else {}
+        )
+        locations_by_timeframe = (
+            {
+                tf: asdict(self.regimes.location(state, last.close, nearby))
+                for tf, state in regime_states.items()
+            }
+            if last
+            else {}
+        )
         evidence = self.evidence_reader.observe(
             snapshot_id=identity,
             symbol=symbol,
@@ -312,6 +369,9 @@ class MarketObserver:
             max_age_seconds=validity_seconds * 1.5,
             required_roles=self.required_trend_roles,
             data_reference=data_reference,
+            regime_states=regime_states,
+            market_location=location,
+            market_locations=locations_by_timeframe,
         )
         narrative = MarketNarrative(
             tuple(narrative["context"]),
@@ -332,6 +392,8 @@ class MarketObserver:
                 "waiting_for_context",
             )
         narrative["state"] = status
+        narrative["regime"] = regime_state.as_dict()
+        narrative["market_location"] = location
         states = hierarchy["states"]
         return MarketSnapshot(
             identity,
@@ -347,9 +409,7 @@ class MarketObserver:
             },
             spread_pips,
             volatility,
-            "trend"
-            if structure.direction in {"bullish", "bearish"}
-            else structure.direction,
+            regime_state.regime,
             {
                 "direction": structure.direction,
                 "swings": [asdict(item) for item in structure.swings],
@@ -360,7 +420,12 @@ class MarketObserver:
             hierarchy["alignment"]["dominant_direction"],
             asdict(structure.swings[-1]) if structure.swings else None,
             "impulse" if structure.break_of_structure else "correction_or_undetermined",
-            range_position,
+            (
+                (last.close - regime_state.range_state["lower_boundary"])
+                / regime_state.range_state["range_width"]
+            )
+            if last and regime_state.range_state
+            else None,
             {"last_confirmed_swings": list(levels), "sweep": structure.liquidity_sweep},
             (),
             levels,
@@ -399,4 +464,22 @@ class MarketObserver:
             bearish_evidence=evidence.bearish_evidence,
             invalidating_evidence=evidence.invalidations,
             market_narrative=narrative,
+            market_regime_id=regime_state.regime_id,
+            regime=regime_state.regime,
+            regime_subtype=regime_state.subtype,
+            regime_maturity=regime_state.maturity,
+            regime_stability=regime_state.stability,
+            previous_regime=regime_state.previous_regime,
+            transition_status=regime_state.transition_status,
+            market_location=location,
+            range_id=regime_state.range_state.get("range_id", ""),
+            upper_boundary=regime_state.range_state.get("upper_boundary"),
+            lower_boundary=regime_state.range_state.get("lower_boundary"),
+            nearest_structural_level=location.get("nearest_structural_level"),
+            overlap_state=pa.overlap_state,
+            breakout_status=regime_state.breakout_behavior,
+            regime_model_version=regime_state.regime_model_version,
+            regime_config_hash=regime_state.regime_config_hash,
+            regime_state=regime_state.as_dict(),
+            regimes_by_timeframe={tf: s.as_dict() for tf, s in regime_states.items()},
         )

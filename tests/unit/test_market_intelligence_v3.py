@@ -13,6 +13,7 @@ from aurelia_fx.market_intelligence import (
     observation_only_result,
 )
 from aurelia_fx.price_action import PriceActionReader
+from aurelia_fx.replay_strategy import STRATEGY_METADATA
 from aurelia_fx.sessions import SessionWindow
 from aurelia_fx.trend import (
     ClosedBarAggregator,
@@ -349,6 +350,9 @@ class EvidenceTests(unittest.TestCase):
 
     def test_transition_is_no_trade_before_risk(self):
         snapshot = SimpleNamespace(
+            regime="TREND",
+            regime_subtype="BULL",
+            breakout_status="not_observed",
             invalidating_evidence=(),
             trend_hierarchy={
                 "states": {
@@ -358,12 +362,17 @@ class EvidenceTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            DecisionEngine(IntelligencePolicy()).context_gate(snapshot),
+            DecisionEngine(IntelligencePolicy(), STRATEGY_METADATA).context_gate(
+                snapshot
+            ),
             "TREND_TRANSITION_WAIT",
         )
 
     def test_structural_obstacle_vetoes_a_target(self):
         snapshot = SimpleNamespace(
+            regime="TREND",
+            regime_subtype="BULL",
+            breakout_status="not_observed",
             invalidating_evidence=(),
             trend_hierarchy={
                 "states": {
@@ -382,7 +391,7 @@ class EvidenceTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            DecisionEngine(IntelligencePolicy()).context_gate(
+            DecisionEngine(IntelligencePolicy(), STRATEGY_METADATA).context_gate(
                 snapshot, side="long", target=1.103
             ),
             "TARGET_OBSTRUCTED_BY_STRUCTURAL_ZONE",

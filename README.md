@@ -1,3 +1,8 @@
+# Prompt atual: V4
+
+[Prompt Mestre V4 consolidado](docs/PROMPT_MESTRE_V4.md) · [Motor de regime e nova referência](docs/market_regime_v4.md).
+Regime e localização precedem a seleção de estratégias; versões V3 permanecem como histórico.
+
 ﻿# Aurelia FX
 
 Interface local para análise de Forex em tempo real, com painel em português, filtros configuráveis, gestão de risco e arquitetura para múltiplos provedores.

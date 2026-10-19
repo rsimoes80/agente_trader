@@ -1,5 +1,9 @@
 # Decisão e aprendizado — V3
 
+## Atualização V4
+
+O fluxo vigente começa por regime e localização antes de selecionar estratégias. [Prompt Mestre V4](docs/PROMPT_MESTRE_V4.md) e [implementação/referência](docs/market_regime_v4.md). As versões anteriores abaixo são históricas.
+
 O contrato mental atual é o processo OBSERVE → CONTEXTUALIZE → CLASSIFY TREND → READ PRICE ACTION → MAP LEVELS → COLLECT EVIDENCE → IDENTIFY CONFLICTS → REMEMBER → FORM HYPOTHESIS → DEFINE EXPECTATION → WAIT → CONFIRM → TRIGGER → VALIDATE RISK → ACT OR WAIT → MANAGE → REVIEW → LEARN → TEST → PROMOTE.
 
 O [Prompt Mestre V3](docs/PROMPT_MESTRE_V3.md) é a referência consolidada. A [camada V3](docs/market_intelligence_v3.md) separa contexto, confluência, confirmação, gatilho e autorização de risco. O monitor Dukascopy permanece em observação; o replay implementa o ciclo com memória SQLite, custos e resultados simulados. Experiências congelam o contexto da entrada e recebem resultados por novos eventos. Jev e o learner legado não podem substituir esses contratos ou promover uma estratégia.

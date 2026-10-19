@@ -1,5 +1,9 @@
 # Especificação inicial de estratégia
 
+## V4: elegibilidade antes do setup
+
+`research_breakout_retest 3.0-v4` permite somente TREND no timeframe de contexto. RANGE/TRANSITION são incompatíveis e UNKNOWN exige espera. O classificador e parâmetros continuam needs_review. Veja [MarketRegimeEngine](market_regime_v4.md).
+
 ## Escopo
 
 O plugin implementado é `research_breakout_retest`, versão `2.0-v3`. Sua política aceita WITH_TREND, exige contexto/estrutura confirmados e usa [Market Intelligence V3](market_intelligence_v3.md) antes de formar hipótese. A confirmação é o retorno à zona congelada; o gatilho é um fechamento posterior além do extremo do candle de retorno. Contrato, gatilho e risco são gates distintos. Transições, evidência insuficiente/conflitante/invalidante e obstáculos estruturais ao alvo podem resultar em NO_TRADE. Essa política é de pesquisa e não demonstra vantagem estatística.

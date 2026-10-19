@@ -57,6 +57,34 @@
       "method": "visual_review_of_selected_scanned_pages",
       "status": "concepts_reviewed_not_strategy_validated",
       "full_book_reviewed": false
+    },
+    {
+      "document": "Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "title": "Operando Price Action: Lateralidades",
+      "author": "Al Brooks",
+      "pdf_pages": 688,
+      "sha256": "03278d531f739fd2587093695b99f702855c3d89e523f3b6993d8f810d413755",
+      "reviewed_pdf_pages": [
+        4,
+        12,
+        13,
+        14,
+        15,
+        67,
+        81,
+        137,
+        151,
+        231,
+        245,
+        391,
+        405,
+        406,
+        447,
+        461
+      ],
+      "method": "visual_review_of_selected_scanned_pages",
+      "status": "concepts_reviewed_not_strategy_validated",
+      "full_book_reviewed": false
     }
   ]
 }

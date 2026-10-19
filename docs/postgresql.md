@@ -47,3 +47,7 @@ superusuário e não pode criar bancos ou papéis. Alterações no journal devem
 novos eventos, sem editar as linhas existentes pelo DBeaver.
 
 Referência do driver: [pool e transações Psycopg](https://www.psycopg.org/psycopg3/docs/advanced/pool.html).
+
+## Consultas V4 no DBeaver
+
+As views `public.market_regime_history` e `public.experience_regime_history` expõem os novos campos. Registros anteriores não recebem regime retroativo. As versões do catálogo ficam em `project_records`.

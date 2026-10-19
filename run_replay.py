@@ -15,9 +15,10 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 # This repository entry point adds src before importing the local package.
-from aurelia_fx.storage import open_memory  # noqa: E402
+from aurelia_fx.regime import RegimeConfig  # noqa: E402
 from aurelia_fx.replay import ReplayConfig, run_replay  # noqa: E402
 from aurelia_fx.replay_data import load_csv  # noqa: E402
+from aurelia_fx.storage import open_memory  # noqa: E402
 from aurelia_fx.temporal_validation import run_temporal_validation  # noqa: E402
 from aurelia_fx.trend import HierarchyConfig  # noqa: E402
 
@@ -83,6 +84,11 @@ def main(argv=None) -> int:
         help="Periodo UTC fixo M<n>, H<n> ou D<n>; captura MT5 depende do terminal",
     )
     parser.add_argument("--count", type=int, default=1500)
+    parser.add_argument(
+        "--regime-config",
+        type=Path,
+        help="JSON versionado com parametros explicitos do classificador de regime",
+    )
     parser.add_argument(
         "--source", default="user_csv_unverified", help="Proveniencia declarada do CSV"
     )
@@ -152,6 +158,11 @@ def main(argv=None) -> int:
             args.timeframe,
         )
         config = ReplayConfig(
+            regime_config=RegimeConfig(
+                **json.loads(args.regime_config.read_text(encoding="utf-8"))
+            )
+            if args.regime_config
+            else RegimeConfig(),
             timeframe=args.timeframe,
             hierarchy=hierarchy,
             commission_per_million_side=args.commission_per_million_side,

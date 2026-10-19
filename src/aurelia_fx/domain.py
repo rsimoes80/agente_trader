@@ -190,7 +190,7 @@ class Decision:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "decision_id": self.decision_id,
             "run_id": self.run_id,
             "created_at_utc": self.created_at.astimezone(timezone.utc).isoformat(),

@@ -363,6 +363,90 @@
       "version": 1,
       "created_at": "2026-10-19",
       "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.range.bilateral-context.v1",
+      "title": "Lateralidade descreve negociação bilateral",
+      "category": "educational_concept",
+      "description": "Interpretar lateralidade como contexto de negociação bilateral, que pode ocorrer em mais de uma inclinação e horizonte; a taxonomia computacional é uma simplificação pesquisável.",
+      "source_document": "Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "source_location": "Parte IV, pp. impressas 365–366 / PDF 405–406. Conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.range.breakout-follow-through.v1",
+      "title": "Rompimento requer observação posterior",
+      "category": "educational_concept",
+      "description": "Separar tentativa de rompimento, continuidade, retorno e aceitação fora da faixa; a saída isolada não confirma tendência.",
+      "source_document": "Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "source_location": "Cap. 3, p. impressa 97 / PDF 137; cap. 5, p. 111 / PDF 151. Conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.range.pullback-timeframe.v1",
+      "title": "Correção e lateralidade dependem do horizonte",
+      "category": "educational_concept",
+      "description": "Uma correção pode ser uma lateralidade no horizonte observado e permanecer contida em uma estrutura maior; classificar cada timeframe separadamente.",
+      "source_document": "Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "source_location": "Parte III, p. impressa 205 / PDF 245. Conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.range.tight-range.v1",
+      "title": "Faixa estreita exige tratamento próprio",
+      "category": "educational_concept",
+      "description": "Sobreposição, pequenos corpos e movimentos em ambos os sentidos descrevem uma lateralidade estreita; largura mínima deve ser pesquisada por instrumento e custos.",
+      "source_document": "Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "source_location": "Cap. 22, p. impressa 421 / PDF 461. Conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
     }
   ]
 }

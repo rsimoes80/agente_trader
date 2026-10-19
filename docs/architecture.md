@@ -1,5 +1,9 @@
 # Arquitetura
 
+## Atualização V4
+
+Regime por timeframe e localização precedem tendência e seleção. Veja [motor V4](market_regime_v4.md), [Prompt Mestre atual](PROMPT_MESTRE_V4.md) e [PostgreSQL](postgresql.md).
+
 ## Estado atual
 
 O produto é uma aplicação Python monolítica servida por `app.py` e uma interface estática. O handler conhece configurações, secrets, feed, análise, backtest e otimização. `analysis.py` retorna candidato e parâmetros de entrada; `backtest.py` é quem simula fills e aplica seus próprios limites. MT5 e Dukascopy são dois caminhos de dados distintos. O gráfico web publicado consulta uma ponte MT5 em Windows; o feed Dukascopy pertence ao painel local e agrega ticks em memória. Credenciais usam DPAPI e, portanto, são específicas ao usuário Windows.

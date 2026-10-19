@@ -1,6 +1,6 @@
 """Categorical evidence with explicit feature lineage, contradictions and expiry."""
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 
 from ..trend import timeframe_seconds
@@ -24,6 +24,11 @@ class Evidence:
     expires_at: str
     data_reference: str
     dependency_group: str
+    regime_id: str = ""
+    regime: str = "UNKNOWN"
+    regime_subtype: str = "UNRESOLVED"
+    market_location: dict = field(default_factory=dict)
+    regime_stability: str = "uncertain"
 
 
 @dataclass(frozen=True)
@@ -183,6 +188,9 @@ class EvidenceEngine:
         max_age_seconds,
         required_roles=("context", "structure"),
         data_reference="",
+        regime_states=None,
+        market_location=None,
+        market_locations=None,
     ):
         until = now + timedelta(seconds=validity_seconds)
         items = []
@@ -197,6 +205,7 @@ class EvidenceEngine:
             group,
             tf=timeframe,
         ):
+            state = (regime_states or {}).get(tf)
             items.append(
                 Evidence(
                     snapshot_id + ":" + key,
@@ -215,9 +224,27 @@ class EvidenceEngine:
                     until.isoformat(),
                     data_reference,
                     group,
+                    regime_id=state.regime_id if state else "",
+                    regime=state.regime if state else "UNKNOWN",
+                    regime_subtype=state.subtype if state else "UNRESOLVED",
+                    market_location=(market_locations or {}).get(
+                        tf, market_location or {}
+                    ),
+                    regime_stability=state.stability if state else "uncertain",
                 )
             )
 
+        for tf, state in sorted((regime_states or {}).items()):
+            add(
+                "regime_" + tf,
+                "regime",
+                "MarketRegimeEngine",
+                "neutral",
+                f"{state.regime}/{state.subtype}; {state.classification_status}; {state.regime_model_version}",
+                "warning" if state.regime == "UNKNOWN" else "observed",
+                "bar_sequence",
+                tf,
+            )
         seen = set()
         for role, state in hierarchy["states"].items():
             if state["timeframe"] in seen:

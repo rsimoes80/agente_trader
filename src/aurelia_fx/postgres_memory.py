@@ -117,6 +117,23 @@ class PostgresMemory(ExperienceMemory):
                 db.execute(f"""CREATE OR REPLACE TRIGGER immutable_{table}
                     BEFORE UPDATE OR DELETE OR TRUNCATE ON {table}
                     FOR EACH STATEMENT EXECUTE FUNCTION reject_journal_mutation()""")
+            db.execute("""CREATE OR REPLACE VIEW market_regime_history AS
+                SELECT snapshot_id,created_at_utc,symbol,timeframe,
+                payload_json::jsonb ->> 'regime' AS regime,
+                payload_json::jsonb ->> 'regime_subtype' AS regime_subtype,
+                payload_json::jsonb ->> 'regime_model_version' AS regime_model_version,
+                payload_json::jsonb ->> 'regime_config_hash' AS regime_config_hash,
+                payload_json::jsonb -> 'regime_state' AS regime_state,
+                payload_json::jsonb -> 'market_location' AS market_location
+                FROM market_snapshots WHERE payload_json::jsonb ->> 'schema_version' = '4'""")
+            db.execute("""CREATE OR REPLACE VIEW experience_regime_history AS
+                SELECT experience_id,decision_id,created_at_utc,symbol,strategy_id,strategy_version,
+                payload_json::jsonb ->> 'regime' AS regime,
+                payload_json::jsonb ->> 'regime_model_version' AS regime_model_version,
+                payload_json::jsonb ->> 'regime_match' AS regime_match,
+                payload_json::jsonb -> 'strategy_regime_compatibility' AS strategy_regime_compatibility,
+                payload_json::jsonb -> 'financial_result' AS financial_result
+                FROM experiences WHERE jsonb_exists(payload_json::jsonb,'regime_model_version')""")
 
     def record_project_data(self, record_type: str, record_key: str, payload: dict):
         text, digest = self._encode(payload)

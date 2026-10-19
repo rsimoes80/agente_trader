@@ -1,5 +1,9 @@
 # Replay causal do EUR/USD
 
+## Versão atual V4
+
+A estratégia experimental é `3.0-v4`, com `MarketRegimeEngine 0.1.0-research`. Regime incompatível impede propor setup; `--regime-config arquivo.json` declara parâmetros e hash. Relatórios incluem regime/localização e `regime_performance.json`. Veja [contrato V4](market_regime_v4.md).
+
 O comando `run_replay.py` integra a fundação do agente: validação de candles, sessões com timezone, observação, estrutura, recuperação de experiências, hipótese, contrato de expectativa, comparação com candles posteriores, veto de risco, decisão e memória SQLite. Cada candle gera uma decisão, inclusive durante a espera. A estratégia experimental atual é `research_breakout_retest`, versão `2.0-v3`.
 
 A [Market Intelligence V3](market_intelligence_v3.md) acrescenta hierarquia de tendências configurável, leitura de price action, zonas, evidências categóricas e confirmação separada do gatilho. Resultados da versão 1.0 não validam os novos gates.

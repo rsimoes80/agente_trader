@@ -12,10 +12,12 @@ from .expectations import (
     ExpectationContract,
     ExpectedVsObservedEngine,
 )
+from .regime.strategy_metadata import StrategyMetadata
 from .structure import analyze_structure
 
 STRATEGY_ID = "research_breakout_retest"
-STRATEGY_VERSION = "2.0-v3"
+STRATEGY_VERSION = "3.0-v4"
+STRATEGY_METADATA = StrategyMetadata(STRATEGY_ID, STRATEGY_VERSION)
 
 
 @dataclass(frozen=True)

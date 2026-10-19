@@ -1,5 +1,9 @@
 # Contrato de decisão
 
+## Contrato atual V4
+
+Decisões e snapshots usam schema 4, com regime, localização, compatibilidade e versão/hash do classificador congelados no instante da decisão. O armazenamento físico continua schema 3, com extensão de payload. Veja [V4](market_regime_v4.md); exemplos V3 abaixo são históricos.
+
 Cada avaliação deve produzir um registro serializável, versionado e baseado somente nos dados disponíveis no instante da decisão.
 
 ```json

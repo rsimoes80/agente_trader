@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from .domain import DataQuality
 from .market_data import validate_candles
 from .observer import MarketObserver
+from .regime import RegimeConfig
 from .replay_data import unexpected_gap
 from .sessions import SessionEngine, SessionWindow
 from .trend import ClosedBarAggregator, HierarchyConfig, timeframe_seconds
@@ -20,6 +21,7 @@ class MarketIntelligenceSession:
         max_spread_pips: float,
         pip_size: float,
         swing_window: int = 2,
+        regime_config: RegimeConfig | None = None,
     ):
         self.symbol, self.hierarchy = symbol, hierarchy
         self.seconds = timeframe_seconds(hierarchy.execution_timeframe)
@@ -30,6 +32,7 @@ class MarketIntelligenceSession:
             max_spread_pips=max_spread_pips,
             swing_window=swing_window,
             level_tolerance=2 * pip_size,
+            regime_config=regime_config,
         )
         self.history = []
         self.last = None
@@ -110,6 +113,6 @@ def observation_only_result(legacy: dict, snapshot) -> dict:
         orders_enabled_by_application=False,
         reason_code="EXPECTATION_TRIGGER_RISK_REQUIRED",
         evidence_calibrated=False,
-        message=f"Leitura V3: {snapshot.evidence_status}. Aguarda hipótese, confirmação, gatilho e validação de risco no agente.",
+        message=f"Leitura V4: {snapshot.regime}/{snapshot.regime_subtype}, {snapshot.evidence_status}. Aguarda hipótese, confirmação, gatilho e validação de risco no agente.",
     )
     return result
