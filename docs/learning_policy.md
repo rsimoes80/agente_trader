@@ -17,3 +17,8 @@ O learner atual é regressão logística em features de sinais fechados, com hol
 ## Proibição de promoção autônoma
 
 O agente pode resumir, detectar padrões, produzir hipóteses e relatórios. Não altera regra ou configuração durante sessão ao vivo e não eleva aprovação. `approved_for_live` exige processo humano futuro e continuará sem executor habilitado neste projeto.
+
+
+## Livermore reference reviewed
+
+The local PDF in `Aprendizado/` was reviewed. The catalog records paraphrased concepts with page references: systematic price observation and forecast/result comparison (Chapter I, pp. 5-6); waiting for trend confirmation (Chapter II, p. 15); and distinguishing individual fluctuations from major moves (Chapter V, pp. 48-49). These are educational prompts for disciplined observation, not Forex evidence or trading signals. The records remain `needs_review` until separately tested in reproducible research.

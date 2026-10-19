@@ -49,3 +49,8 @@ MT5 | FIX | CSV/replay
 ```
 
 Os adaptadores atuais podem ser envolvidos pelas portas primeiro e substituídos depois. A migração deve manter o modo paper e nenhuma integração de ordem até haver política, testes, reconciliação e aprovação explícita separadas.
+
+
+## Implemented learning foundation
+
+`src/aurelia_fx/` now contains immutable domain types, candle validation, session identification, causal pivot/structure analysis, a read-only `MarketObserver`, an append-only SQLite `ExperienceMemory`, a fail-closed hypothetical risk gate, immutable expectation contracts, deterministic expected-versus-observed evaluation, and an offline experiment-readiness checker. SQLite is initialized at the caller-provided path; use `data/agent_memory.sqlite3` for the project-local journal (the database and WAL files are git-ignored). This is a domain foundation, not yet a wired end-to-end replay runner. Confirmation of a hypothesis does not authorize an order, and no execution adapter exists in this slice.

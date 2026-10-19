@@ -8,7 +8,10 @@
       "description": "Avaliar profundidade, ritmo relativo, volume apenas quando interpretável e preservação estrutural como itens separados; região de interesse não é gatilho.",
       "source_document": "EBOOK-MANUAL-DO-PULLBACK.pdf",
       "source_location": "Resumo local RESEARCH_NOTES.md, seção Manual do Pullback; página original ainda não verificada.",
-      "conditions": ["impulso e swings confirmados disponíveis", "dados de volume identificados por provedor quando usados"],
+      "conditions": [
+        "impulso e swings confirmados disponíveis",
+        "dados de volume identificados por provedor quando usados"
+      ],
       "expected_observation": "Correção mensurável e gatilho posterior ao retorno à região definida.",
       "invalidation": "Swing estrutural de invalidação rompido ou gatilho não confirmado.",
       "confidence_status": "needs_review",
@@ -27,7 +30,10 @@
       "description": "Distinguir fechamento além de pivô confirmado de simples pavio; confirmar pivô somente depois das barras à direita.",
       "source_document": "Smart Money Concepts - MARRAIK SMC 2 (1).pdf",
       "source_location": "Resumo local RESEARCH_NOTES.md, seção Smart Money Concepts; página original ainda não verificada.",
-      "conditions": ["pivô confirmado causalmente", "candle de avaliação fechado"],
+      "conditions": [
+        "pivô confirmado causalmente",
+        "candle de avaliação fechado"
+      ],
       "expected_observation": "Fechamento além do nível de swing utilizado como referência.",
       "invalidation": "Ausência de fechamento ou dado posterior usado para confirmar pivô no instante histórico.",
       "confidence_status": "needs_review",
@@ -46,7 +52,10 @@
       "description": "Um extremo atravessado por pavio e fechamento de volta pode ser marcado como proxy de sweep; exige contexto e validação separada.",
       "source_document": "Smart Money Concepts - MARRAIK SMC 2 (1).pdf",
       "source_location": "Resumo local RESEARCH_NOTES.md, seção Smart Money Concepts; página original ainda não verificada.",
-      "conditions": ["nível de liquidez definido antes do candle", "OHLC íntegro e candle fechado"],
+      "conditions": [
+        "nível de liquidez definido antes do candle",
+        "OHLC íntegro e candle fechado"
+      ],
       "expected_observation": "Preço excede nível e fecha de volta no lado anterior.",
       "invalidation": "Nível escolhido retrospectivamente ou fechamento sustenta rompimento.",
       "confidence_status": "needs_review",
@@ -65,7 +74,9 @@
       "description": "Não tratar volume tick ou atividade de um feed OTC como volume consolidado de todo o mercado Forex.",
       "source_document": "wyckoff-20-portugues-pr.pdf",
       "source_location": "Resumo local RESEARCH_NOTES.md, seção Wyckoff 2.0; página original ainda não verificada.",
-      "conditions": ["campo de volume fornecido por feed OTC"],
+      "conditions": [
+        "campo de volume fornecido por feed OTC"
+      ],
       "expected_observation": "Volume descrito e comparado somente dentro da fonte e contexto compatíveis.",
       "invalidation": "Conclusão sobre volume global a partir de um único provedor.",
       "confidence_status": "needs_review",
@@ -84,10 +95,78 @@
       "description": "Risco definido antes da operação não é ampliado por perdas recentes; martingale e revenge trading são proibidos.",
       "source_document": "Trading_in_the_Zone.PDF; Trading_the_zone_traduzido_portugues.PDF",
       "source_location": "Princípio exigido pela especificação do usuário; seção/página dos livros e duplicidade de edição pendentes de conferência.",
-      "conditions": ["qualquer modo operacional"],
+      "conditions": [
+        "qualquer modo operacional"
+      ],
       "expected_observation": "Orçamento de risco permanece limitado pela política previamente aprovada.",
       "invalidation": "Aumentar risco com justificativa de recuperar resultado anterior.",
       "confidence_status": "needs_review",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "livermore.systematic-observation.v1",
+      "title": "Registrar observações e comportamento posterior",
+      "category": "educational_concept",
+      "description": "Manter registro consistente do comportamento observado e comparar a expectativa com o que ocorreu depois.",
+      "source_document": "Reminiscências de Um Especulador Financeiro por Jesse Livermore e Edward Lefèvre.pdf",
+      "source_location": "Local PDF, Chapter I, pp. 5-6 (price observation, comparison with past patterns, and forecast notebook).",
+      "conditions": [
+        "snapshot de mercado produzido",
+        "origem e timestamp dos dados conhecidos"
+      ],
+      "expected_observation": "A experiência registra observação, expectativa, resultado e qualidade do processo com referências rastreáveis.",
+      "invalidation": "Registro sem fonte, contexto, versão ou distinção entre observação e interpretação.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "livermore.wait-for-favorable-conditions.v1",
+      "title": "Esperar por condições favoráveis",
+      "category": "educational_concept",
+      "description": "Observar sem agir enquanto as condições previamente definidas não se confirmarem; NO_TRADE é uma decisão válida.",
+      "source_document": "Reminiscências de Um Especulador Financeiro por Jesse Livermore e Edward Lefèvre.pdf",
+      "source_location": "Local PDF, Chapter I, p. 6; Chapter II, p. 15 (waiting to confirm a trend); Chapter V, pp. 48-49 (patience and major moves).",
+      "conditions": [
+        "critérios de confirmação e invalidação definidos antes da avaliação"
+      ],
+      "expected_observation": "A decisão permanece em observação/NO_TRADE até a confirmação e autorização de risco.",
+      "invalidation": "Aumentar frequência ou alterar critérios apenas por impaciência ou resultado recente.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "livermore.dominant-move-over-noise.v1",
+      "title": "Separar flutuação curta do movimento dominante",
+      "category": "hypothesis",
+      "description": "Comparar movimentos de curto prazo com o contexto e a estrutura de horizonte maior, sem confundir ruído com mudança confirmada.",
+      "source_document": "Reminiscências de Um Especulador Financeiro por Jesse Livermore e Edward Lefèvre.pdf",
+      "source_location": "Local PDF, Chapter V, pp. 48-49 (individual fluctuations contrasted with major moves and general trend).",
+      "conditions": [
+        "timeframes configurados",
+        "swings confirmados sem look-ahead",
+        "dados comparáveis"
+      ],
+      "expected_observation": "A narrativa registra o movimento dominante e as divergências menores como evidências separadas.",
+      "invalidation": "Declarar tendência/mudança de regime com base em uma flutuação isolada ou pivô ainda não confirmado.",
+      "confidence_status": "source_located_needs_research",
       "validation_status": "needs_review",
       "applicable_symbols": [],
       "applicable_sessions": [],

@@ -15,7 +15,7 @@ class KnowledgeRepositoryTests(unittest.TestCase):
     def test_learning_catalog_loads_and_is_not_approved_by_default(self) -> None:
         repository = KnowledgeRepository.load(ROOT / "data" / "knowledge" / "rules.json")
 
-        self.assertEqual(len(repository.rules), 5)
+        self.assertEqual(len(repository.rules), 8)
         for environment in KnowledgeEnvironment:
             self.assertEqual(repository.for_environment(environment), ())
 

@@ -21,6 +21,9 @@ data/decision_model_candidate.json
 data/*.log
 data/server.*
 data/knowledge/*.tmp
+data/*.sqlite3
+data/*.sqlite3-shm
+data/*.sqlite3-wal
 deploy/vm/mt5_bridge.env
 .pytest_cache/
 .mypy_cache/
