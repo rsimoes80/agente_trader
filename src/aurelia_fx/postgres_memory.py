@@ -83,12 +83,30 @@ class PostgresMemory(ExperienceMemory):
             return
         with self.pool.connection() as connection:
             with connection.transaction():
+                connection.execute("SELECT pg_advisory_xact_lock_shared(70616003)")
                 yield PostgresSession(connection)
 
     def _initialize(self):
-        with self._connect() as db:
+        with self.pool.connection() as connection, connection.transaction():
+            db = PostgresSession(connection)
             # Serialize concurrent startup migrations without locking other databases.
             db.execute("SELECT pg_advisory_xact_lock(70616003)")
+            if db.execute(
+                "SELECT to_regclass('public.metadata') AS relation"
+            ).fetchone()["relation"]:
+                revision = db.execute(
+                    "SELECT value FROM metadata WHERE key='postgres_backend_revision'"
+                ).fetchone()
+                version = db.execute(
+                    "SELECT value FROM metadata WHERE key='schema_version'"
+                ).fetchone()
+                if (
+                    revision
+                    and revision["value"] == "4.1"
+                    and version
+                    and version["value"] == str(self.SCHEMA_VERSION)
+                ):
+                    return
             schema = (
                 Path(__file__)
                 .with_name("journal_schema.sql")
@@ -134,6 +152,9 @@ class PostgresMemory(ExperienceMemory):
                 payload_json::jsonb -> 'strategy_regime_compatibility' AS strategy_regime_compatibility,
                 payload_json::jsonb -> 'financial_result' AS financial_result
                 FROM experiences WHERE jsonb_exists(payload_json::jsonb,'regime_model_version')""")
+            db.execute(
+                "INSERT INTO metadata(key,value) VALUES('postgres_backend_revision','4.1') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value"
+            )
 
     def record_project_data(self, record_type: str, record_key: str, payload: dict):
         text, digest = self._encode(payload)

@@ -161,6 +161,17 @@ class RegimeTests(unittest.TestCase):
         self.assertTrue(any(s.regime == "TRANSITION" for s in states))
         self.assertEqual(states[-1].regime, "RANGE")
 
+    def test_new_range_does_not_inherit_previous_breakout(self):
+        bars = range_bars(12) + [
+            candle(i, 1.1008 + (i - 12) * 0.0003) for i in range(12, 24)
+        ]
+        bars += [
+            candle(i, 1.1041 + (0.0001 if i % 2 else -0.0001)) for i in range(24, 48)
+        ]
+        _, states = self.feed(bars)
+        self.assertEqual(states[-1].regime, "RANGE")
+        self.assertEqual(states[-1].breakout, {})
+
     def test_no_future_or_repeated_bar_updates(self):
         bars = range_bars(12)
         engine, states = self.feed(bars)

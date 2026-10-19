@@ -46,6 +46,7 @@ def migrate(source: Path, backup_dir: Path) -> dict:
                 )
             with memory.pool.connection() as pg:
                 with pg.transaction():
+                    pg.execute("SELECT pg_advisory_xact_lock_shared(70616003)")
                     pg.execute("SELECT pg_advisory_xact_lock(70616004)")
                     for table in JOURNAL_TABLES:
                         cursor = source_db.execute(f"SELECT * FROM {table}")

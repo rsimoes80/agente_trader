@@ -389,6 +389,9 @@ class MarketRegimeEngine:
                     evidence_ids=feature_ids,
                     status=subtype,
                 )
+                breakout = None
+                track["upper_touch"] = last.high >= high - band
+                track["lower_touch"] = last.low <= low + band
         elif candidate == "TREND" and track["count"] >= cfg.confirmation_bars:
             old_direction = track["state"].direction if track["state"] else direction
             if previous == "TREND" and old_direction not in {

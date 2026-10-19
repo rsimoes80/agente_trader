@@ -51,3 +51,5 @@ Referência do driver: [pool e transações Psycopg](https://www.psycopg.org/psy
 ## Consultas V4 no DBeaver
 
 As views `public.market_regime_history` e `public.experience_regime_history` expõem os novos campos. Registros anteriores não recebem regime retroativo. As versões do catálogo ficam em `project_records`.
+
+Inicialização usa revisão postgres_backend_revision=4.1: migrations tomam lock consultivo exclusivo; transações do journal usam lock compartilhado. Quando a revisão já está aplicada, a inicialização não recria triggers/views.
