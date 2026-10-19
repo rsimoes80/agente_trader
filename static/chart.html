@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>EUR/USD · Gráfico MT5 | Aurelia FX</title>
+  <link rel="stylesheet" href="/chart.css">
+  <script src="/chart.js" defer></script>
+</head>
+<body>
+  <header class="toolbar">
+    <a class="brand" href="/">AURELIA <span>FX</span></a>
+    <div class="toolbar-divider"></div>
+    <strong class="chart-title">EUR/USD <small id="symbol-name">MT5</small></strong>
+    <div class="tool-group timeframes" aria-label="Período do gráfico">
+      <button data-timeframe="M1">M1</button><button data-timeframe="M5" class="active">M5</button><button data-timeframe="M15">M15</button>
+      <button data-timeframe="M30">M30</button><button data-timeframe="H1">H1</button><button data-timeframe="H4">H4</button>
+      <button data-timeframe="D1">D1</button><button data-timeframe="W1">W1</button><button data-timeframe="MN">MN</button>
+    </div>
+    <div class="tool-group chart-tools">
+      <button id="zoom-in" title="Aproximar" aria-label="Aproximar">＋</button>
+      <button id="zoom-out" title="Afastar" aria-label="Afastar">－</button>
+      <button id="ema-toggle" class="active" title="Exibir/ocultar EMA 21">EMA 21</button>
+      <button id="refresh" title="Atualizar agora" aria-label="Atualizar agora">↻</button>
+    </div>
+    <div class="connection"><i id="connection-dot"></i><span id="connection-label">Conectando ao MT5</span></div>
+  </header>
+  <main>
+    <div class="market-strip">
+      <div class="instrument"><span class="pair-icon">€</span><div><b>Euro vs Dólar americano</b><small id="market-meta">EUR/USD · M5 · aguardando dados</small></div></div>
+      <div class="quote-box bid"><small>BID</small><strong id="bid">—</strong></div>
+      <div class="quote-box ask"><small>ASK</small><strong id="ask">—</strong></div>
+      <div class="quote-box"><small>SPREAD</small><strong id="spread">—</strong></div>
+      <div class="quote-box"><small>ÚLTIMO CANDLE</small><strong id="last-close">—</strong></div>
+      <div class="quote-box source"><small>FONTE</small><strong id="source">MetaTrader 5 local</strong></div>
+    </div>
+    <section class="chart-shell" aria-label="Gráfico de candles EUR/USD">
+      <div class="chart-error" id="chart-error"><b>Sem conexão com o MT5</b><span id="error-message">Abra o terminal MetaTrader 5 e conecte-se à sua conta.</span><button id="retry">Tentar novamente</button></div>
+      <canvas id="chart" aria-label="Candles de EUR/USD e média móvel exponencial"></canvas>
+      <div class="chart-legend"><span class="candle-legend"></span> EUR/USD <span class="ema-legend"></span> EMA 21</div>
+      <div class="chart-watermark">AURELIA FX <small>VISUALIZAÇÃO DE MERCADO</small></div>
+    </section>
+    <footer class="statusbar"><span><i class="status-green"></i> Somente leitura · nenhuma ordem será enviada</span><span id="updated-at">Atualizando a cada 3 segundos</span><a href="/">Voltar ao painel</a></footer>
+  </main>
+</body>
+</html>
