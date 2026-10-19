@@ -280,6 +280,19 @@ def run_replay(
         ):
             for index, candle in enumerate(dataset.candles):
                 with memory.transaction():
+                    if hasattr(memory, "record_project_data"):
+                        memory.record_project_data(
+                            "closed_candle",
+                            f"{dataset.sha256}:{candle.timestamp.isoformat()}",
+                            {
+                                **asdict(candle),
+                                "timestamp": candle.timestamp.isoformat(),
+                                "source": dataset.source,
+                                "dataset_sha256": dataset.sha256,
+                                "symbol": config.symbol,
+                                "timeframe": config.timeframe,
+                            },
+                        )
                     now = candle.timestamp + delta
 
                     def move(state, reason):

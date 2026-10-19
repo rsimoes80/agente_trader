@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 # This repository entry point adds src before importing the local package.
-from aurelia_fx.experience_memory import ExperienceMemory  # noqa: E402
+from aurelia_fx.storage import open_memory  # noqa: E402
 from aurelia_fx.replay import ReplayConfig, run_replay  # noqa: E402
 from aurelia_fx.replay_data import load_csv  # noqa: E402
 from aurelia_fx.temporal_validation import run_temporal_validation  # noqa: E402
@@ -63,7 +63,7 @@ def capture_mt5(timeframe: str, count: int, directory: Path) -> Path:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Aurelia FX: replay causal EURUSD, SQLite e relatorio HTML."
+        description="Aurelia FX: replay causal EURUSD, PostgreSQL e relatorio HTML."
     )
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument(
@@ -86,7 +86,11 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--source", default="user_csv_unverified", help="Proveniencia declarada do CSV"
     )
-    parser.add_argument("--db", type=Path, default=ROOT / "data/agent_memory.sqlite3")
+    parser.add_argument(
+        "--db",
+        type=Path,
+        help="SQLite offline explicito; padrao: PostgreSQL configurado",
+    )
     parser.add_argument("--output", type=Path, default=ROOT / "data/replays")
     parser.add_argument(
         "--commission-per-million-side",
@@ -118,6 +122,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.include_holdout and not args.validate_temporal:
         parser.error("--include-holdout exige --validate-temporal")
+    memory = None
     try:
         path = (
             capture_mt5(args.timeframe, args.count, ROOT / "data/replay_inputs")
@@ -153,11 +158,12 @@ def main(argv=None) -> int:
             slippage_pips=args.slippage_pips,
             max_holding_bars=args.max_holding_bars,
         )
+        memory = open_memory(args.db)
         if args.validate_temporal:
             report = run_temporal_validation(
                 dataset,
                 config=config,
-                memory=ExperienceMemory(args.db),
+                memory=memory,
                 output_dir=args.output,
                 code_version=code_version,
                 include_holdout=args.include_holdout,
@@ -170,7 +176,7 @@ def main(argv=None) -> int:
             report = run_replay(
                 dataset,
                 config=config,
-                memory=ExperienceMemory(args.db),
+                memory=memory,
                 output_dir=args.output,
                 code_version=code_version,
             )
@@ -192,6 +198,9 @@ def main(argv=None) -> int:
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
         print(f"Replay interrompido: {exc}", file=sys.stderr)
         return 2
+    finally:
+        if memory is not None and hasattr(memory, "close"):
+            memory.close()
 
 
 if __name__ == "__main__":

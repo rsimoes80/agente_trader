@@ -53,3 +53,7 @@ TA-Lib fornece cálculos técnicos e detectores de padrões de candles; não é 
 - Credenciais criptografadas: `data/credentials.dpapi`.
 - O ambiente `.venv/` e as credenciais devem permanecer fora do controle de versão.
 - Calibração controlada de oito perfis no histórico MT5: usa 70% para ajuste e reserva 30% final para validação. Um modelo só é promovido se o período reservado tiver pelo menos 30 operações, acerto mínimo de 70%, fator de lucro mínimo 1 e modelo adaptativo aprovado. Caso contrário, a configuração atual é mantida.
+# Banco compartilhado
+
+O journal do agente usa PostgreSQL na VM. Veja [conexão, migração e backup](docs/postgresql.md).
+Credenciais ficam fora do Git. SQLite é opção explícita de pesquisa offline.

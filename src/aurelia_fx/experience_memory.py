@@ -115,113 +115,18 @@ class ExperienceMemory:
     def _initialize(self) -> None:
         with self._connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
-            db.executescript("""
-                CREATE TABLE IF NOT EXISTS metadata (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS market_snapshots (
-                    snapshot_id TEXT PRIMARY KEY,
-                    created_at_utc TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    session TEXT NOT NULL,
-                    market_regime TEXT NOT NULL,
-                    timeframe TEXT NOT NULL,
-                    data_reference TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS decisions (
-                    decision_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    created_at_utc TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    session TEXT NOT NULL,
-                    market_regime TEXT NOT NULL,
-                    strategy_id TEXT NOT NULL,
-                    strategy_version TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    reason_code TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS experiences (
-                    experience_id TEXT PRIMARY KEY,
-                    created_at_utc TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    session TEXT NOT NULL,
-                    market_regime TEXT NOT NULL,
-                    snapshot_id TEXT NOT NULL,
-                    decision_id TEXT NOT NULL,
-                    strategy_id TEXT NOT NULL,
-                    strategy_version TEXT NOT NULL,
-                    config_version TEXT NOT NULL,
-                    direction TEXT,
-                    action_taken TEXT NOT NULL,
-                    process_classification TEXT NOT NULL,
-                    result_in_r REAL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL,
-                    FOREIGN KEY(snapshot_id) REFERENCES market_snapshots(snapshot_id),
-                    FOREIGN KEY(decision_id) REFERENCES decisions(decision_id)
-                );
-                CREATE INDEX IF NOT EXISTS ix_experiences_context
-                    ON experiences(symbol, session, market_regime, strategy_id, strategy_version, direction);
-                CREATE TABLE IF NOT EXISTS hypothesis_events (
-                    event_id TEXT PRIMARY KEY,
-                    hypothesis_id TEXT NOT NULL,
-                    created_at_utc TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS expectation_events (
-                    event_id TEXT PRIMARY KEY,
-                    expectation_id TEXT NOT NULL,
-                    hypothesis_id TEXT NOT NULL,
-                    created_at_utc TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS experiment_artifacts (
-                    artifact_id TEXT PRIMARY KEY,
-                    created_at_utc TEXT NOT NULL,
-                    dataset_reference TEXT NOT NULL,
-                    code_version TEXT NOT NULL,
-                    strategy_version TEXT NOT NULL,
-                    config_hash TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS simulated_execution_events (
-                    event_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    decision_id TEXT NOT NULL,
-                    observed_at_utc TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL,
-                    FOREIGN KEY(decision_id) REFERENCES decisions(decision_id)
-                );
-                CREATE INDEX IF NOT EXISTS ix_execution_run ON simulated_execution_events(run_id, observed_at_utc);
-                CREATE TABLE IF NOT EXISTS market_intelligence (
-                    evidence_set_id TEXT PRIMARY KEY,
-                    snapshot_id TEXT NOT NULL,
-                    observed_at_utc TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL,
-                    FOREIGN KEY(snapshot_id) REFERENCES market_snapshots(snapshot_id)
-                );
-            """)
+            db.executescript(
+                Path(__file__)
+                .with_name("journal_schema.sql")
+                .read_text(encoding="utf-8")
+            )
             db.execute(
                 """INSERT OR IGNORE INTO metadata(key,value) VALUES('schema_version',?)""",
                 (str(self.SCHEMA_VERSION),),
             )
             version = db.execute(
                 "SELECT value FROM metadata WHERE key='schema_version'"
-            ).fetchone()[0]
+            ).fetchone()["value"]
             if version in {"1", "2"}:
                 db.execute(
                     "UPDATE metadata SET value=? WHERE key='schema_version'",
@@ -456,7 +361,7 @@ class ExperienceMemory:
                 WHERE d.run_id=? AND e.result_in_r IS NOT NULL ORDER BY e.created_at_utc""",
                 (run_id,),
             ).fetchall()
-        return tuple(json.loads(row[0]) for row in rows)
+        return tuple(json.loads(row["payload_json"]) for row in rows)
 
     def retrieve_similar(
         self,

@@ -526,12 +526,35 @@ class DukascopyFeed:
                 )
                 self._intelligence_signature = signature
             snapshot = self._intelligence.update(candles, spread_pips=spread_pips)
+            # Persist closed-bar observations before publishing them to the UI.
+            from src.aurelia_fx.storage import open_memory
+
+            if getattr(self, "_memory", None) is None:
+                self._memory = open_memory()
+            with self._memory.transaction():
+                self._memory.record_project_data(
+                    "closed_candle",
+                    f"dukascopy:{snapshot.symbol}:{snapshot.timeframe}:{candle['timestamp']}",
+                    {
+                        "source": "dukascopy_fix_mid",
+                        "symbol": snapshot.symbol,
+                        "timeframe": snapshot.timeframe,
+                        "candle": candle,
+                    },
+                )
+                self._memory.record_snapshot(
+                    snapshot.as_dict(),
+                    session="+".join(snapshot.session) or "outside_sessions",
+                    regime=snapshot.market_regime,
+                    data_reference="dukascopy_fix_mid",
+                )
+                self._memory.record_intelligence(snapshot.as_dict())
             result = observation_only_result(result, snapshot)
-        except (ValueError, TypeError) as exc:
+        except Exception:
             result = {
                 "signal": "WAIT",
-                "reason_code": "V3_DATA_ERROR",
-                "message": f"Leitura V3 indisponível: {exc}",
+                "reason_code": "V3_DATA_OR_STORAGE_ERROR",
+                "message": "Leitura V3 ou persistência indisponível. Verifique dados e conexão ao banco.",
                 "orders_enabled_by_application": False,
             }
         with self._lock:

@@ -1,0 +1,140 @@
+"""PostgreSQL journal using the same append-only contract as the local journal."""
+
+from __future__ import annotations
+
+import atexit
+import re
+import threading
+from contextlib import contextmanager
+from pathlib import Path
+
+from .experience_memory import ExperienceMemory
+
+JOURNAL_TABLES = (
+    "market_snapshots",
+    "decisions",
+    "experiences",
+    "hypothesis_events",
+    "expectation_events",
+    "experiment_artifacts",
+    "simulated_execution_events",
+    "market_intelligence",
+)
+
+
+class PostgresSession:
+    """Translate the journal's small, controlled SQL dialect; values stay bound."""
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, query, parameters=None):
+        from psycopg import Error
+
+        query = query.replace("e.direction IS ?", "e.direction IS NOT DISTINCT FROM ?")
+        query = re.sub(
+            r"json_extract\(e.payload_json,'\$\.([a-z_]+)'\)",
+            r"(e.payload_json::jsonb ->> '\1')",
+            query,
+        )
+        try:
+            return self.connection.execute(query.replace("?", "%s"), parameters)
+        except Error as exc:
+            raise RuntimeError(
+                f"PostgreSQL journal operation failed (SQLSTATE {exc.sqlstate or 'connection'})."
+            ) from None
+
+
+class PostgresMemory(ExperienceMemory):
+    def __init__(self, dsn: str):
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        self._local = threading.local()
+        self.pool = ConnectionPool(
+            dsn,
+            min_size=1,
+            max_size=4,
+            open=True,
+            timeout=15,
+            kwargs={
+                "row_factory": dict_row,
+                "connect_timeout": 10,
+                "application_name": "agente_trader",
+                "autocommit": True,
+            },
+        )
+        try:
+            self.pool.wait(timeout=15)
+            self._initialize()
+        except Exception:
+            self.pool.close()
+            raise
+        atexit.register(self.close)
+
+    def close(self):
+        self.pool.close()
+
+    @contextmanager
+    def _connect(self):
+        active = getattr(self._local, "connection", None)
+        if active is not None:
+            yield active
+            return
+        with self.pool.connection() as connection:
+            with connection.transaction():
+                yield PostgresSession(connection)
+
+    def _initialize(self):
+        with self._connect() as db:
+            # Serialize concurrent startup migrations without locking other databases.
+            db.execute("SELECT pg_advisory_xact_lock(70616003)")
+            schema = (
+                Path(__file__)
+                .with_name("journal_schema.sql")
+                .read_text(encoding="utf-8")
+            )
+            schema = schema.replace("result_in_r REAL", "result_in_r DOUBLE PRECISION")
+            db.connection.execute(schema, prepare=False)
+            db.execute("""CREATE TABLE IF NOT EXISTS project_records (
+                record_type TEXT NOT NULL, record_key TEXT NOT NULL,
+                payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY(record_type, record_key, payload_sha256))""")
+            db.execute(
+                "INSERT INTO metadata(key,value) VALUES('schema_version',?) ON CONFLICT DO NOTHING",
+                (str(self.SCHEMA_VERSION),),
+            )
+            version = db.execute(
+                "SELECT value FROM metadata WHERE key='schema_version'"
+            ).fetchone()["value"]
+            if version != str(self.SCHEMA_VERSION):
+                raise RuntimeError(f"PostgreSQL journal schema incompatible: {version}")
+            db.execute("""CREATE OR REPLACE FUNCTION reject_journal_mutation() RETURNS trigger
+                LANGUAGE plpgsql AS $$ BEGIN
+                RAISE EXCEPTION 'journal rows are append-only'; END $$""")
+            for table in (*JOURNAL_TABLES, "project_records"):
+                db.execute(f"""CREATE OR REPLACE TRIGGER immutable_{table}
+                    BEFORE UPDATE OR DELETE OR TRUNCATE ON {table}
+                    FOR EACH STATEMENT EXECUTE FUNCTION reject_journal_mutation()""")
+
+    def record_project_data(self, record_type: str, record_key: str, payload: dict):
+        text, digest = self._encode(payload)
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256)
+                VALUES(?,?,?,?) ON CONFLICT DO NOTHING""",
+                (record_type, record_key, text, digest),
+            )
+
+    def sync_knowledge(self, directory: Path):
+        import json
+
+        for name, field, key in (
+            ("rules.json", "rules", "rule_id"),
+            ("sources.json", "sources", "document"),
+        ):
+            payload = json.loads((directory / name).read_text(encoding="utf-8"))
+            with self.transaction():
+                for item in payload[field]:
+                    self.record_project_data(field, item[key], item)

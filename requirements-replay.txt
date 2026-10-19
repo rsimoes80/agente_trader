@@ -1,2 +1,3 @@
-# Offline replay uses the Python standard library. Windows requires IANA zones.
+# PostgreSQL is the shared journal; --db explicitly selects offline SQLite.
+psycopg[binary,pool]>=3.2,<4
 tzdata>=2025.2; platform_system == 'Windows'

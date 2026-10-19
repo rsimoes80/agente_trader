@@ -22,3 +22,8 @@ O agente pode resumir, detectar padrões, produzir hipóteses e relatórios. Nã
 ## Livermore reference reviewed
 
 The local PDF in `Aprendizado/` was reviewed. The catalog records paraphrased concepts with page references: systematic price observation and forecast/result comparison (Chapter I, pp. 5-6); waiting for trend confirmation (Chapter II, p. 15); and distinguishing individual fluctuations from major moves (Chapter V, pp. 48-49). These are educational prompts for disciplined observation, not Forex evidence or trading signals. The records remain `needs_review` until separately tested in reproducible research.
+# Persistência compartilhada
+
+O journal e o catálogo versionado são armazenados no PostgreSQL do projeto;
+veja [postgresql.md](postgresql.md). Referências anteriores a SQLite descrevem
+o histórico migrado ou pesquisa offline explicitamente selecionada.
