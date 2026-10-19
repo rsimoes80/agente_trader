@@ -1,0 +1,11 @@
+services:
+  chart:
+    image: nginx:1.28-alpine
+    container_name: agente-trader-chart
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - mt5_bridge.env
+    volumes:
+      - ../../static:/usr/share/nginx/html:ro
+      - ./nginx-chart.conf:/etc/nginx/templates/default.conf.template:ro
