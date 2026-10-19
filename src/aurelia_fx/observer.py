@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -62,6 +62,8 @@ class MarketObserver:
         quality: DataQuality,
         spread_pips: float | None,
         observed_at: datetime | None = None,
+        snapshot_id: str | None = None,
+        validity_seconds: float = 300,
     ) -> MarketSnapshot:
         now = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
         latest = quality.latest_timestamp
@@ -116,7 +118,7 @@ class MarketObserver:
             "state": status,
         }
         return MarketSnapshot(
-            str(uuid4()), now.isoformat(), symbol, timeframe, session.active_sessions, freshness,
+            snapshot_id or str(uuid4()), now.isoformat(), symbol, timeframe, session.active_sessions, freshness,
             {"valid": quality.valid, "errors": list(quality.errors), "warnings": list(quality.warnings)},
             spread_pips, volatility, "trend" if structure.direction in {"bullish", "bearish"} else structure.direction,
             {"direction": structure.direction, "swings": [asdict(item) for item in structure.swings], "bos": structure.break_of_structure, "sweep": structure.liquidity_sweep},
@@ -124,5 +126,5 @@ class MarketObserver:
             "impulse" if structure.break_of_structure else "correction_or_undetermined", range_position,
             {"last_confirmed_swings": list(levels), "sweep": structure.liquidity_sweep}, (), levels,
             volume_context, tuple(favorable), tuple(conflicting), tuple(missing), narrative,
-            clarity, status, now.isoformat(),
+            clarity, status, (now + timedelta(seconds=validity_seconds)).isoformat(),
         )

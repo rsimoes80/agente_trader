@@ -28,3 +28,5 @@ deploy/vm/mt5_bridge.env
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+data/replays/
+data/replay_inputs/

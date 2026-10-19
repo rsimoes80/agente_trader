@@ -1,5 +1,9 @@
 # Runbook inicial
 
+## Replay integrado EUR/USD
+
+Execute `python run_replay.py --capture-mt5 --count 1500` para capturar candles fechados e executar o ciclo de pesquisa. Para processamento offline, use `python run_replay.py --csv CAMINHO.csv --timeframe M5 --source FONTE`. O banco padrão fica em `data/agent_memory.sqlite3`; cada execução gera HTML, JSON, decisões e manifesto em `data/replays/<run_id>/`. Consulte [replay.md](replay.md) para requisitos do CSV, repetição, horário, custos hipotéticos e limites do simulador.
+
 ## Aplicação local
 
 No Windows, instalar dependências conforme `requirements.txt` no `.venv` existente e iniciar `python app.py`. A UI local escuta em `127.0.0.1:8768`. O modo continua `paper`; o feed FIX é leitura. Credenciais usam DPAPI do usuário atual.

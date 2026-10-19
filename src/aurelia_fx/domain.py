@@ -98,6 +98,8 @@ class Candidate:
     contradictions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not all(math.isfinite(value) and value > 0 for value in (self.entry, self.stop, self.target)):
+            raise ValueError("Candidate prices must be finite and positive.")
         if self.expires_at.tzinfo is None:
             raise ValueError("Candidate.expires_at precisa conter timezone.")
         if self.side not in {"long", "short"}:

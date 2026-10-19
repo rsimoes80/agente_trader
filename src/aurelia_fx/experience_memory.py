@@ -7,6 +7,7 @@ import json
 import math
 import sqlite3
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,12 +68,17 @@ class ExperienceMemory:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=10000")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as db:
@@ -184,8 +190,13 @@ class ExperienceMemory:
                 snapshot["timeframe"], data_reference, payload, digest,
             ))
 
-    def record_decision(self, decision: Decision, *, session: str, regime: str) -> None:
+    def record_decision(self, decision: Decision, *, session: str, regime: str,
+                        context: dict[str, Any] | None = None) -> None:
         payload_dict = decision.as_dict()
+        if context:
+            if set(context) & set(payload_dict):
+                raise ValueError("Decision context cannot overwrite contract fields.")
+            payload_dict.update(context)
         payload, digest = self._encode(payload_dict)
         with self._connect() as db:
             db.execute("""INSERT INTO decisions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
@@ -210,11 +221,12 @@ class ExperienceMemory:
                 record.process_classification, result_in_r, payload, digest,
             ))
 
-    def record_event(self, table: str, event_id: str, aggregate_id: str, status: str, payload: dict[str, Any]) -> None:
+    def record_event(self, table: str, event_id: str, aggregate_id: str, status: str, payload: dict[str, Any],
+                     *, observed_at: datetime | None = None) -> None:
         if table not in {"hypothesis_events", "expectation_events"}:
             raise ValueError("Somente eventos de hipótese/expectativa podem ser gravados por este método.")
         text, digest = self._encode(payload)
-        now = datetime.now(timezone.utc).isoformat()
+        now = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
         with self._connect() as db:
             if table == "hypothesis_events":
                 db.execute("INSERT INTO hypothesis_events VALUES(?,?,?,?,?,?)", (event_id, aggregate_id, now, status, text, digest))
@@ -236,18 +248,27 @@ class ExperienceMemory:
     def retrieve_similar(
         self, *, symbol: str, session: str, market_regime: str, strategy_id: str,
         strategy_version: str, direction: str | None, minimum_sample_count: int = 30,
+        run_id: str | None = None, before: datetime | None = None,
     ) -> SimilarityResult:
         if minimum_sample_count < 1:
             raise ValueError("minimum_sample_count precisa ser positivo.")
         with self._connect() as db:
-            rows = db.execute("""SELECT experience_id, process_classification, result_in_r FROM experiences
-                WHERE symbol=? AND session=? AND market_regime=? AND strategy_id=? AND strategy_version=?
-                AND direction IS ? ORDER BY created_at_utc""",
-                (symbol, session, market_regime, strategy_id, strategy_version, direction),
-            ).fetchall()
+            query = """SELECT e.experience_id, e.process_classification, e.result_in_r FROM experiences e
+                JOIN decisions d ON d.decision_id=e.decision_id
+                WHERE e.symbol=? AND e.session=? AND e.market_regime=? AND e.strategy_id=? AND e.strategy_version=?
+                AND e.direction IS ?"""
+            parameters: list[Any] = [symbol, session, market_regime, strategy_id, strategy_version, direction]
+            if run_id is not None:
+                query += " AND d.run_id=?"
+                parameters.append(run_id)
+            if before is not None:
+                query += " AND e.created_at_utc < ?"
+                parameters.append(before.astimezone(timezone.utc).isoformat())
+            query += " ORDER BY e.created_at_utc, e.experience_id"
+            rows = db.execute(query, parameters).fetchall()
         classes = Counter(row["process_classification"] for row in rows)
         returns = [row["result_in_r"] for row in rows if row["result_in_r"] is not None]
-        mean_r = sum(returns) / len(returns) if len(rows) >= minimum_sample_count and returns else None
+        mean_r = sum(returns) / len(returns) if len(returns) >= minimum_sample_count else None
         return SimilarityResult(
             sample_count=len(rows), minimum_sample_count=minimum_sample_count,
             sufficient_sample=len(rows) >= minimum_sample_count,

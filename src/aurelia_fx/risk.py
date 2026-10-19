@@ -34,8 +34,11 @@ def assess_candidate(
         reasons.append("SPREAD_UNAVAILABLE")
     elif spread_pips > limits.max_spread_pips:
         reasons.append("SPREAD_LIMIT")
-    if account.equity <= 0 or account.peak_equity <= 0 or account.daily_start_equity <= 0:
+    if not all(math.isfinite(value) and value > 0 for value in
+               (account.equity, account.peak_equity, account.daily_start_equity)):
         reasons.append("ACCOUNT_EQUITY_INVALID")
+    if isinstance(account.daily_trades, bool) or not isinstance(account.daily_trades, int) or account.daily_trades < 0:
+        reasons.append("DAILY_TRADE_COUNT_INVALID")
     if account.daily_trades >= limits.max_trades_per_day:
         reasons.append("DAILY_TRADE_LIMIT")
     if account.daily_start_equity > 0:
@@ -54,7 +57,7 @@ def assess_candidate(
         reasons.append("CONTRACT_VALUE_UNAVAILABLE")
     distance = abs(candidate.entry - candidate.stop)
     reward = abs(candidate.target - candidate.entry)
-    if distance <= 0 or reward <= 0:
+    if not all(math.isfinite(value) for value in (candidate.entry, candidate.stop, candidate.target)) or distance <= 0 or reward <= 0:
         reasons.append("INVALID_STOP_OR_TARGET")
     if reasons:
         return RiskAssessment(False, tuple(dict.fromkeys(reasons)))

@@ -1,0 +1,2 @@
+# Offline replay uses the Python standard library. Windows requires IANA zones.
+tzdata>=2025.2; platform_system == 'Windows'

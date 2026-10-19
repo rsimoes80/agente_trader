@@ -52,10 +52,10 @@ class AgentStateMachine:
         self.state = AgentState.BOOTING
         self.transitions: list[StateTransition] = []
 
-    def move(self, after: AgentState, reason: str) -> StateTransition:
+    def move(self, after: AgentState, reason: str, *, at: datetime | None = None) -> StateTransition:
         if after not in _ALLOWED[self.state]:
             raise ValueError(f"Transição proibida: {self.state.value} -> {after.value}.")
-        transition = StateTransition(self.state, after, datetime.now(timezone.utc), reason)
+        transition = StateTransition(self.state, after, at or datetime.now(timezone.utc), reason)
         self.transitions.append(transition)
         self.state = after
         return transition

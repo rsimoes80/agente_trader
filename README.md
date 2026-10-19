@@ -23,6 +23,8 @@ O gráfico recebe candles M5, EMA 21 e bid/ask do terminal MT5 demo no Windows p
 
 ## Recursos
 
+- Replay causal do EUR/USD com memória SQLite, contratos de expectativa, veto de risco e relatório HTML por execução. Execute `python run_replay.py --capture-mt5 --count 1500` ou use um CSV histórico. Consulte [docs/replay.md](docs/replay.md).
+
 - Painel visual em português para estratégia, risco, provedores, monitoramento e pesquisa.
 - Feed Dukascopy FIX 4.4 somente para leitura: cotações bid/ask e candles montados a partir dos dados ao vivo. A análise é refeita no fechamento de cada candle. Consulte [DUKASCOPY_FIX.md](DUKASCOPY_FIX.md).
 - Captura de histórico e validação temporal 70/30 usando candles reais do terminal MetaTrader 5 local, em modo somente leitura. Requer Windows, MetaTrader 5 aberto e conectado. Os 30% finais ficam fora do aprendizado.
