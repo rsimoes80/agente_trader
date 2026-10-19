@@ -1,0 +1,2 @@
+# Optional code-quality tool used by the V3 verification commands.
+ruff==0.17.1

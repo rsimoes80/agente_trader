@@ -1,4 +1,12 @@
-# Jev e aprendizado adaptativo
+# Decisão e aprendizado — V3
+
+O contrato mental atual é o processo OBSERVE → CONTEXTUALIZE → CLASSIFY TREND → READ PRICE ACTION → MAP LEVELS → COLLECT EVIDENCE → IDENTIFY CONFLICTS → REMEMBER → FORM HYPOTHESIS → DEFINE EXPECTATION → WAIT → CONFIRM → TRIGGER → VALIDATE RISK → ACT OR WAIT → MANAGE → REVIEW → LEARN → TEST → PROMOTE.
+
+O [Prompt Mestre V3](docs/PROMPT_MESTRE_V3.md) é a referência consolidada. A [camada V3](docs/market_intelligence_v3.md) separa contexto, confluência, confirmação, gatilho e autorização de risco. O monitor Dukascopy permanece em observação; o replay implementa o ciclo com memória SQLite, custos e resultados simulados. Experiências congelam o contexto da entrada e recebem resultados por novos eventos. Jev e o learner legado não podem substituir esses contratos ou promover uma estratégia.
+
+## Histórico do fluxo legado de pesquisa
+
+As seções abaixo documentam o comportamento anterior do caderno de pesquisa e do learner experimental; não são o contrato operacional V3. Os limiares numéricos do parecer Jev não representam probabilidade calibrada de mercado nem autorização de risco. A implementação atual já possui feed somente leitura, percepção V3 e simulador offline.
 
 ## Como uma decisão é avaliada
 

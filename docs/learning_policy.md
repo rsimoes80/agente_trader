@@ -2,17 +2,17 @@
 
 ## Fontes locais
 
-`Aprendizado/` contém cinco arquivos: `EBOOK-MANUAL-DO-PULLBACK.pdf`, `Smart Money Concepts - MARRAIK SMC 2 (1).pdf`, `wyckoff-20-portugues-pr.pdf`, `Trading_in_the_Zone.PDF` e `Trading_the_zone_traduzido_portugues.PDF`. As duas últimas aparentam ser versões do mesmo título e precisam de deduplicação bibliográfica. `RESEARCH_NOTES.md` já tem sínteses de Pullback, SMC e Wyckoff; não substitui a conferência de páginas/edição. A extração local de texto PDF não estava disponível durante esta auditoria.
+`Aprendizado/` contém oito PDFs: Pullback, SMC, Wyckoff, duas versões de Trading in the Zone, Livermore e as novas referências de Pring e Brooks. As duas versões de Douglas precisam de deduplicação bibliográfica. `RESEARCH_NOTES.md` conserva sínteses iniciais; [referencias_v3.md](referencias_v3.md) registra os capítulos selecionados conferidos de Pring/Brooks, a diferença entre páginas impressas e do PDF e o que foi operacionalizado. A revisão não equivale a leitura integral dos novos livros nem à validação de uma estratégia.
 
 ## Ingestão
 
-Usar `data/knowledge/rules.json` como catálogo inicial estruturado. Cada regra guarda ID, título, categoria, síntese curta, documento, localização, condições, observação esperada, invalidação, status, instrumentos/sessões/timeframes, versão e datas de criação/revisão. Armazenar hashes do arquivo e identificadores de edição na próxima etapa. Preferir paráfrases curtas; não copiar passagens extensas.
+Usar `data/knowledge/rules.json` como catálogo estruturado de 17 conceitos. Cada registro guarda ID, síntese curta, documento, localização, condições, observação esperada, invalidação e estado de revisão. `data/knowledge/sources.json` identifica os dois novos exemplares por SHA-256, edição/título, método e páginas conferidas. Preferir paráfrases curtas; não copiar passagens extensas. Os novos conceitos continuam `needs_review`; fórmulas e limiares de engenharia não são atribuídos aos autores.
 
 Status: `extracted`, `needs_review`, `approved_for_research`, `backtested`, `walk_forward_validated`, `approved_for_demo`, `approved_for_live`. Nenhuma transição é automática. Regras sem seção/página confirmada começam `needs_review`. Um livro oferece conceito, não autorização de operação. Conflitos entre fontes devem persistir como registros separados.
 
 ## Aprendizado de resultados
 
-O learner atual é regressão logística em features de sinais fechados, com holdout cronológico e piso de amostras. É filtro experimental, não memória semântica nem prova de causalidade. Resultados de backtests sobrepostos não são observações independentes. Próxima versão deve indexar cada experiência por dataset/hash, janela, estratégia/configuração, origem, custos e run; separar treino/validação/teste antes de acumular labels. Propostas ficam inativas até revisão e nova avaliação walk-forward.
+O learner legado usa regressão logística e permanece experimental; não é filtro operacional autorizado no monitor V3. O replay registra experiências por dataset/hash, janela, versão, custos e instante de conhecimento. O schema 3 acrescenta estados de tendência/alinhamento, price action, zonas, EvidenceSet, confirmação, gatilho, reversão parcial e continuidade. O contexto congelado na entrada acompanha o resultado posterior sem reclassificação. Resultados repetidos de backtests não são amostras independentes. O HypothesisLab produz coortes descritivas e exige revisão de dependência entre features e linhagem temporal; não transforma contagem de sinais em probabilidade. Desenvolvimento, validação e holdout são separados, com janela final reservada por padrão. Propostas ficam inativas até revisão e nova avaliação temporal.
 
 ## Proibição de promoção autônoma
 

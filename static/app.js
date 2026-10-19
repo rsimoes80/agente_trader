@@ -235,7 +235,7 @@ function renderLive(market) {
   const jev = market.jev_review;
   const jevCurrent = jev && jev.candle_time === market.last_closed_candle_utc;
   document.getElementById("live-signal").textContent = jevCurrent ? (jev.action === "approve" ? "JEV APROVOU" : "JEV VETOU") : analysis.signal === "BUY" ? "COMPRA" : analysis.signal === "SELL" ? "VENDA" : "AGUARDANDO";
-  document.getElementById("live-signal-detail").textContent = jevCurrent ? "Revisão do cenário concluída · sem ordem" : analysis.signal === "BUY" || analysis.signal === "SELL" ? `Candidato ${analysis.score || 0}/${analysis.score_total || 0} · padrões: ${Object.keys(analysis.analysis?.padroes_candle || {}).join(", ") || "nenhum"} · aguarda Jev/validação` : analysis.required_bars ? `${candles.length}/${analysis.required_bars} candles para aquecer os indicadores` : "Filtros não confirmam entrada";
+  document.getElementById("live-signal-detail").textContent = analysis.market_intelligence ? `V3 · ${analysis.market_intelligence.evidence_status} · contexto ${analysis.market_intelligence.context_trend.state} · execução ${analysis.market_intelligence.execution_trend.state} · aguarda hipótese e risco` : jevCurrent ? "Revisão do cenário concluída · sem ordem" : analysis.required_bars ? `${candles.length}/${analysis.required_bars} candles para aquecer os indicadores` : "Filtros não confirmam entrada";
   const bid = market.quote?.bid; const ask = market.quote?.ask;
   document.getElementById("live-quote-summary").textContent = Number.isFinite(bid) && Number.isFinite(ask)
     ? `Bid ${Number(bid).toFixed(5)} · Ask ${Number(ask).toFixed(5)} · ${market.instrument || state.config.instrument} · ${state.config.timeframe}`
@@ -465,7 +465,7 @@ async function runJevReview() {
     const result = response.result;
     const title = result.action === "approve" ? "Candidato aprovado para simulação" : "Aguardar: nenhuma entrada";
     const details = result.jev_choice
-      ? `Sinal local: ${result.local_signal} ? Jev: ${result.jev_choice} ? probabilidade de aprovação ${(result.approve_probability * 100).toFixed(1)}% ? confiança ${(result.confidence * 100).toFixed(1)}%.`
+      ? `Parecer experimental Jev: ${result.jev_choice}. Não representa probabilidade calibrada de mercado nem autorização de risco.`
       : `Sinal local: ${result.local_signal}.`;
     output.replaceChildren();
     const heading = document.createElement("strong"); heading.textContent = title;

@@ -33,3 +33,6 @@ O livro trabalha leitura de contexto e relação entre preço e volume, mas aler
 - `avulso/replica_robo_python/EBOOK-MANUAL-DO-PULLBACK.pdf` — critérios de correção, regiões, gatilhos e ficha de análise.
 - `avulso/replica_robo_python/Smart Money Concepts - MARRAIK SMC 2 (1).pdf` — estrutura, liquidez, sweeps, confirmação e risco.
 - `avulso/replica_robo_python/wyckoff-20-portugues-pr.pdf` — contexto, preço-volume, subjetividade dos rótulos e observações sobre OTC.
+# Atualização V3 — Pring e Brooks
+
+As novas referências foram incorporadas como conceitos em revisão, com capítulos selecionados conferidos e hashes dos exemplares em `data/knowledge/sources.json`. Veja [referencias_v3.md](docs/referencias_v3.md) para aprendizados, páginas e limites, e [Market Intelligence V3](docs/market_intelligence_v3.md) para a operacionalização. As notas históricas abaixo não autorizam execução nem substituem o [Prompt Mestre V3](docs/PROMPT_MESTRE_V3.md).

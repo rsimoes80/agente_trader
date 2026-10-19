@@ -2,6 +2,8 @@
 
 Interface local para análise de Forex em tempo real, com painel em português, filtros configuráveis, gestão de risco e arquitetura para múltiplos provedores.
 
+O agente de pesquisa utiliza a [Market Intelligence Layer V3](docs/market_intelligence_v3.md): tendências por timeframe, price action, zonas e evidências categóricas antes da hipótese, confirmação, gatilho e risco. O [Prompt Mestre V3 consolidado](docs/PROMPT_MESTRE_V3.md) é a referência atual. Veja [o que foi incorporado de Pring e Brooks](docs/referencias_v3.md), com páginas e limites da leitura.
+
 ## Iniciar
 
 No PowerShell, dentro desta pasta:

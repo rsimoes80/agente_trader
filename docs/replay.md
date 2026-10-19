@@ -1,6 +1,8 @@
 # Replay causal do EUR/USD
 
-O comando `run_replay.py` integra a fundação do agente: validação de candles, sessões com timezone, observação, estrutura, recuperação de experiências, hipótese, contrato de expectativa, comparação com candles posteriores, veto de risco, decisão e memória SQLite. Cada candle gera uma decisão, inclusive durante a espera. A estratégia experimental é identificada como `research_breakout_retest`, versão `1.0`.
+O comando `run_replay.py` integra a fundação do agente: validação de candles, sessões com timezone, observação, estrutura, recuperação de experiências, hipótese, contrato de expectativa, comparação com candles posteriores, veto de risco, decisão e memória SQLite. Cada candle gera uma decisão, inclusive durante a espera. A estratégia experimental atual é `research_breakout_retest`, versão `2.0-v3`.
+
+A [Market Intelligence V3](market_intelligence_v3.md) acrescenta hierarquia de tendências configurável, leitura de price action, zonas, evidências categóricas e confirmação separada do gatilho. Resultados da versão 1.0 não validam os novos gates.
 
 ## Executar
 
@@ -61,12 +63,14 @@ Cada execução recebe um ID novo e gera, em `data/replays/<run_id>/`:
 - `report.json` e `report.html`: contagens, limitações e tabela das decisões. Abra o HTML diretamente no navegador.
 - `execution.jsonl`: entradas, rejeições, saídas e resultados financeiros/processuais.
 - `equity.json`: saldo e equity simulada por fechamento.
+- `intelligence.jsonl.gz`: snapshots V3 completos, compactados para auditoria.
+- `research_cohorts.json`: coortes descritivas com piso amostral, sem promoção automática.
 
 O `decision_digest` ignora o namespace aleatório da execução e permite comparar o conteúdo das decisões. Com o mesmo dataset, fonte, configuração e código, ele deve ser idêntico mesmo após reiniciar o processo e reutilizar o banco. Manifestos e artefatos `started`, `completed` ou `failed` permitem distinguir execuções completas de registros parciais após falha. Uma falha de persistência interrompe o replay; não há retry que duplique decisões.
 
 ## Alcance desta etapa
 
-O replay agora simula preenchimento, custos, saídas, saldo e resultados em R. Os registros originais de observação continuam com resultado financeiro nulo; uma nova experiência é acrescentada quando o resultado fica conhecido. A documentação completa das hipóteses de execução, das limitações de MAE/MFE e do protocolo 60/20/20 está em [execution_simulation.md](execution_simulation.md). Não há evidência de rentabilidade nem validação HTF/LTF neste estágio. A integração ao monitor web é uma etapa posterior.
+O replay simula preenchimento, custos, saídas, saldo e resultados em R, com leitura HTF/LTF V3. Os registros originais de observação continuam com resultado financeiro nulo; uma nova experiência é acrescentada quando o resultado fica conhecido. A documentação completa das hipóteses de execução, das limitações de MAE/MFE e do protocolo 60/20/20 está em [execution_simulation.md](execution_simulation.md). Ainda não há demonstração de rentabilidade ou validação estatística da política HTF/LTF. O monitor web expõe percepção V3 em modo de observação; o fluxo operacional com journal, hipótese, gatilho e simulação é o replay.
 
 ## Verificação
 

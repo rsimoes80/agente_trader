@@ -174,6 +174,195 @@
       "version": 1,
       "created_at": "2026-10-19",
       "reviewed_at": null
+    },
+    {
+      "rule_id": "pring.trend-hierarchy.v1",
+      "title": "Tendências coexistem em horizontes diferentes",
+      "category": "educational_concept",
+      "description": "Classificar direção, duração relativa e relação com o timeframe pai; uma correção menor não é automaticamente reversão maior.",
+      "source_document": "analise-tecnica-explicadapdf-pdf-free.pdf",
+      "source_location": "Cap. 1, pp. impressas 3–4; PDF pp. 16–17.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "pring.partial-reversal.v1",
+      "title": "Quebra parcial pede confirmação adicional",
+      "category": "educational_concept",
+      "description": "Romper a sequência de fundos sem romper a de topos é um aviso parcial. Registrar a transição e evidências contrárias sem declarar reversão completa.",
+      "source_document": "analise-tecnica-explicadapdf-pdf-free.pdf",
+      "source_location": "Cap. 1, pp. impressas 11–13; PDF pp. 24–26.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "pring.structural-zones.v1",
+      "title": "Suporte e resistência são referências contextuais",
+      "category": "educational_concept",
+      "description": "Extremos anteriores podem originar zonas e mudar de função após rompimento; a presença do nível não garante reação.",
+      "source_document": "analise-tecnica-explicadapdf-pdf-free.pdf",
+      "source_location": "Cap. 5, pp. impressas 55–58; PDF pp. 68–71.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "pring.weight-of-evidence.v1",
+      "title": "Combinar evidências preservando incerteza",
+      "category": "educational_concept",
+      "description": "Usar o conjunto de evidências para avaliar continuidade ou mudança de tendência. A deduplicação por linhagem e as classes categóricas são decisões de engenharia V3, não pesos numéricos atribuídos pelo livro.",
+      "source_document": "analise-tecnica-explicadapdf-pdf-free.pdf",
+      "source_location": "Cap. 1, p. impressa 13 / PDF 26; cap. 20, p. impressa 423 / PDF 436.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.context-spectrum.v1",
+      "title": "Tendência e lateralidade dependem do contexto",
+      "category": "educational_concept",
+      "description": "Um movimento pode ser tendência no horizonte menor e parte de uma lateralidade ou correção no maior. Preservar essa relação em vez de dar um único rótulo ao ativo.",
+      "source_document": "operando-price-action-tendencias-al-brooks-5-pdf-free.pdf",
+      "source_location": "Cap. 1, p. impressa 63 / PDF 103, conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.bar-sequence.v1",
+      "title": "Ler corpo, pavios e sobreposição em sequência",
+      "category": "educational_concept",
+      "description": "Descrever a geometria das barras, o fechamento, a sobreposição e a progressão de preços como observações. Os limiares computacionais do projeto não são parâmetros extraídos do autor.",
+      "source_document": "operando-price-action-tendencias-al-brooks-5-pdf-free.pdf",
+      "source_location": "Cap. 2, p. impressa 67 / PDF 107; cap. 19, pp. 345–346 / PDF 385–386, conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.follow-through.v1",
+      "title": "Separar rompimento de continuidade",
+      "category": "educational_concept",
+      "description": "Registrar o rompimento, o retorno à faixa e a presença ou ausência de continuidade posterior. Setup, barra de entrada e continuidade são eventos distintos.",
+      "source_document": "operando-price-action-tendencias-al-brooks-5-pdf-free.pdf",
+      "source_location": "Cap. 3, p. impressa 87 / PDF 127; cap. 4, p. impressa 95 / PDF 135, conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.closed-bar.v1",
+      "title": "A aparência da barra pode mudar antes do fechamento",
+      "category": "educational_concept",
+      "description": "Usar apenas barras fechadas para a leitura causal e manter separadas a observação do setup, a confirmação e o gatilho.",
+      "source_document": "operando-price-action-tendencias-al-brooks-5-pdf-free.pdf",
+      "source_location": "Cap. 8, p. impressa 193 / PDF 233, conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
+    },
+    {
+      "rule_id": "brooks.horizontal-level-context.v1",
+      "title": "A função do nível depende do regime",
+      "category": "educational_concept",
+      "description": "Analisar níveis de swing junto com tendência, lateralidade, rompimento e retorno à região; o nível isolado não é autorização operacional.",
+      "source_document": "operando-price-action-tendencias-al-brooks-5-pdf-free.pdf",
+      "source_location": "Cap. 17, p. impressa 301 / PDF 341, conferência visual.",
+      "conditions": [
+        "dados fechados, UTC e contexto identificados"
+      ],
+      "expected_observation": "Registro auditável do contexto, das confirmações e das evidências contrárias.",
+      "invalidation": "Inferência sem dados suficientes, uso de informação futura ou aplicação sem validação de pesquisa.",
+      "confidence_status": "source_located_needs_research",
+      "validation_status": "needs_review",
+      "applicable_symbols": [],
+      "applicable_sessions": [],
+      "applicable_timeframes": [],
+      "version": 1,
+      "created_at": "2026-10-19",
+      "reviewed_at": null
     }
   ]
 }

@@ -1,34 +1,62 @@
 """Synthetic bars deliberately exercise causality and persistence, not performance."""
 
-from dataclasses import replace
-from contextlib import closing
-from datetime import datetime, time, timedelta, timezone
-from pathlib import Path
-from unittest.mock import patch
 import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
+from dataclasses import replace
+from datetime import datetime, time, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
 
 from aurelia_fx.domain import Candle
 from aurelia_fx.experience_memory import ExperienceMemory
 from aurelia_fx.replay import ReplayConfig, run_replay
 from aurelia_fx.replay_data import ReplayDataset, load_csv
 from aurelia_fx.sessions import SessionWindow
+from aurelia_fx.trend import HierarchyConfig
 
 
 def scenario(*, spread=0.2, invalidate=False):
     start = datetime(2026, 10, 19, 8, tzinfo=timezone.utc)
     bars = []
     for i in range(31):
-        price = 1.1 + (i // 4) * .0001 + (0, .0003, .0006, .0002)[i % 4]
-        bars.append(Candle(start + timedelta(minutes=5 * i), price, price + .00004,
-                           price - .00004, price, 100, spread))
+        price = 1.1 + (i // 4) * 0.0001 + (0, 0.0003, 0.0006, 0.0002)[i % 4]
+        bars.append(
+            Candle(
+                start + timedelta(minutes=5 * i),
+                price,
+                price + 0.00004,
+                price - 0.00004,
+                price,
+                100,
+                spread,
+            )
+        )
     price = bars[-1].close
-    bars.append(Candle(start + timedelta(minutes=155), price, price + .00002,
-                       1.099 if invalidate else price - .0002, price - .00005, 100, spread))
-    bars.append(Candle(start + timedelta(minutes=160), price, price + .0003,
-                       price - .00001, price + .00025, 100, spread))
+    bars.append(
+        Candle(
+            start + timedelta(minutes=155),
+            price,
+            price + 0.00002,
+            1.099 if invalidate else price - 0.0002,
+            price - 0.00005,
+            100,
+            spread,
+        )
+    )
+    bars.append(
+        Candle(
+            start + timedelta(minutes=160),
+            price,
+            price + 0.0003,
+            price - 0.00001,
+            price + 0.00025,
+            100,
+            spread,
+        )
+    )
     return tuple(bars)
 
 
@@ -38,17 +66,35 @@ class ReplayTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.db = self.root / "memory.sqlite3"
         self.memory = ExperienceMemory(self.db)
-        self.config = ReplayConfig(swing_window=1)
+        # Explicit single-feed aliases keep the execution fixture short; V3 HTF aggregation is tested separately.
+        self.config = ReplayConfig(
+            swing_window=1, hierarchy=HierarchyConfig("M5", "M5", "M5", "M5")
+        )
 
     def tearDown(self):
         self.temp.cleanup()
 
     def run_scenario(self, bars=None, config=None):
-        return run_replay(ReplayDataset(bars or scenario(), "test-synthetic", "synthetic-test-only", "synthetic-fixture"),
-            config=config or self.config, memory=self.memory, output_dir=self.root / "reports", code_version="test")
+        return run_replay(
+            ReplayDataset(
+                bars or scenario(),
+                "test-synthetic",
+                "synthetic-test-only",
+                "synthetic-fixture",
+            ),
+            config=config or self.config,
+            memory=self.memory,
+            output_dir=self.root / "reports",
+            code_version="test",
+        )
 
     def decisions(self, report):
-        return [json.loads(line) for line in (Path(report["report_directory"]) / "decisions.jsonl").read_text(encoding="utf-8").splitlines()]
+        return [
+            json.loads(line)
+            for line in (Path(report["report_directory"]) / "decisions.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
 
     def test_full_cycle_persists_across_restart_and_reruns_are_equivalent(self):
         first = self.run_scenario()
@@ -58,9 +104,19 @@ class ReplayTests(unittest.TestCase):
         self.assertNotEqual(first["run_id"], second["run_id"])
         self.assertEqual(first["decision_digest"], second["decision_digest"])
         with closing(sqlite3.connect(self.db)) as db:
-            self.assertEqual(db.execute("SELECT count(*) FROM decisions").fetchone()[0], first["bars"] * 2)
-            self.assertEqual(db.execute("SELECT count(*) FROM experiences WHERE action_taken IN ('NO_TRADE','HYPOTHETICAL_SIGNAL')").fetchone()[0], first["bars"] * 2)
-            self.assertIsNone(db.execute("SELECT max(result_in_r) FROM experiences").fetchone()[0])
+            self.assertEqual(
+                db.execute("SELECT count(*) FROM decisions").fetchone()[0],
+                first["bars"] * 2,
+            )
+            self.assertEqual(
+                db.execute(
+                    "SELECT count(*) FROM experiences WHERE action_taken IN ('NO_TRADE','HYPOTHETICAL_SIGNAL')"
+                ).fetchone()[0],
+                first["bars"] * 2,
+            )
+            self.assertIsNone(
+                db.execute("SELECT max(result_in_r) FROM experiences").fetchone()[0]
+            )
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("DELETE FROM decisions")
         self.assertTrue((Path(first["report_directory"]) / "report.html").exists())
@@ -70,17 +126,48 @@ class ReplayTests(unittest.TestCase):
         changed = list(scenario())
         changed[-1] = replace(changed[-1], high=1.5, close=1.4)
         second = self.decisions(self.run_scenario(tuple(changed)))
+
         def semantics(rows):
-            return [{k: v for k, v in row.items() if k not in {"run_id", "decision_id", "snapshot_id", "hypothesis_id"}}
-                    for row in rows]
+            return [
+                json.loads(
+                    json.dumps(
+                        {
+                            k: v
+                            for k, v in row.items()
+                            if k
+                            not in {
+                                "run_id",
+                                "decision_id",
+                                "snapshot_id",
+                                "hypothesis_id",
+                            }
+                        }
+                    ).replace(row["run_id"], "<run>")
+                )
+                for row in rows
+            ]
+
         self.assertEqual(semantics(first[:-1]), semantics(second[:-1]))
 
     def test_confirmed_hypothesis_can_be_vetoed_by_risk(self):
-        report = self.run_scenario(scenario(spread=5))
+        report = self.run_scenario(
+            config=replace(
+                self.config, limits=replace(self.config.limits, minimum_risk_reward=10)
+            )
+        )
         last = self.decisions(report)[-1]
         self.assertEqual(last["action"], "NO_TRADE")
         self.assertEqual(last["reason_code"], "RISK_VETO")
-        self.assertIn("SPREAD_LIMIT", last["risk"]["reasons"])
+        self.assertIn("NET_RISK_REWARD_TOO_LOW", last["risk"]["reasons"])
+
+    def test_invalidating_evidence_never_reaches_risk(self):
+        with patch(
+            "aurelia_fx.replay.assess_candidate",
+            side_effect=AssertionError("risk must not be called"),
+        ):
+            report = self.run_scenario(scenario(spread=5))
+        self.assertNotIn("HYPOTHETICAL_SIGNAL", report["actions"])
+        self.assertIn("EVIDENCE_INVALIDATED", report["reasons"])
 
     def test_invalidation_prevents_later_confirmation(self):
         report = self.run_scenario(scenario(invalidate=True))
@@ -90,13 +177,18 @@ class ReplayTests(unittest.TestCase):
 
     def test_missing_bar_cancels_hypothesis_and_restarts_warmup(self):
         bars = list(scenario())
-        bars[-1] = replace(bars[-1], timestamp=bars[-1].timestamp + timedelta(minutes=5))
+        bars[-1] = replace(
+            bars[-1], timestamp=bars[-1].timestamp + timedelta(minutes=5)
+        )
         rows = self.decisions(self.run_scenario(tuple(bars)))
         self.assertEqual(rows[-1]["reason_code"], "INVALID_MARKET_DATA")
         self.assertEqual(rows[-1]["action"], "NO_TRADE")
 
     def test_trigger_at_session_close_cannot_authorize_entry(self):
-        config = replace(self.config, sessions=(SessionWindow("research", "UTC", time(8), time(10, 45)),))
+        config = replace(
+            self.config,
+            sessions=(SessionWindow("research", "UTC", time(8), time(10, 45)),),
+        )
         report = self.run_scenario(config=config)
         rows = self.decisions(report)
         self.assertEqual(rows[-1]["reason_code"], "SESSION_NOT_AUTHORIZED")
@@ -105,49 +197,106 @@ class ReplayTests(unittest.TestCase):
     def test_expiry_and_no_session_are_valid_no_trade_results(self):
         report = self.run_scenario(config=replace(self.config, lifetime_bars=1))
         self.assertIn("EXPECTATION_EXPIRED", report["reasons"])
-        weekend = tuple(replace(c, timestamp=c.timestamp + timedelta(days=5)) for c in scenario())
+        weekend = tuple(
+            replace(c, timestamp=c.timestamp + timedelta(days=5)) for c in scenario()
+        )
         report = self.run_scenario(weekend)
         self.assertEqual(report["reasons"], {"SESSION_NOT_AUTHORIZED": len(weekend)})
 
     def test_csv_rejects_naive_timestamps_and_duplicate_data(self):
         path = self.root / "invalid.csv"
-        path.write_text("timestamp,open,high,low,close\n2026-01-01T08:00:00,1,2,1,2\n", encoding="utf-8")
+        path.write_text(
+            "timestamp,open,high,low,close\n2026-01-01T08:00:00,1,2,1,2\n",
+            encoding="utf-8",
+        )
         with self.assertRaises(ValueError):
             load_csv(path, source="test")
         line = "2026-01-01T08:00:00+00:00,1,2,1,2\n"
-        path.write_text("timestamp,open,high,low,close\n" + line + line, encoding="utf-8")
+        path.write_text(
+            "timestamp,open,high,low,close\n" + line + line, encoding="utf-8"
+        )
         with self.assertRaises(ValueError):
             load_csv(path, source="test")
 
     def test_journal_failure_aborts_and_records_failed_run(self):
-        with patch.object(self.memory, "record_experience", side_effect=sqlite3.OperationalError("disk unavailable")):
+        with patch.object(
+            self.memory,
+            "record_experience",
+            side_effect=sqlite3.OperationalError("disk unavailable"),
+        ):
             with self.assertRaises(sqlite3.OperationalError):
                 self.run_scenario()
         with closing(sqlite3.connect(self.db)) as db:
-            statuses = [row[0] for row in db.execute("SELECT status FROM experiment_artifacts")]
+            statuses = [
+                row[0] for row in db.execute("SELECT status FROM experiment_artifacts")
+            ]
         self.assertEqual(statuses, ["started", "failed"])
         self.assertFalse(list((self.root / "reports").glob("*/report.html")))
 
     def test_financial_outcome_appended_without_overwriting_signal(self):
         bars = list(scenario())
         start = bars[0].timestamp
-        bars.extend((Candle(start + timedelta(minutes=165), 1.10155, 1.1016, 1.1014, 1.1015, 100, .2),
-                     Candle(start + timedelta(minutes=170), 1.1015, 1.104, 1.1014, 1.1038, 100, .2)))
+        bars.extend(
+            (
+                Candle(
+                    start + timedelta(minutes=165),
+                    1.10155,
+                    1.1016,
+                    1.1014,
+                    1.1015,
+                    100,
+                    0.2,
+                ),
+                Candle(
+                    start + timedelta(minutes=170),
+                    1.1015,
+                    1.104,
+                    1.1014,
+                    1.1038,
+                    100,
+                    0.2,
+                ),
+            )
+        )
         first = self.run_scenario(tuple(bars))
         second = self.run_scenario(tuple(bars))
         self.assertEqual(first["execution"]["closed_trades"], 1)
         self.assertGreater(first["execution"]["net_pnl"], 0)
         metrics = first["execution"]
-        self.assertAlmostEqual(metrics["net_pnl"], metrics["gross_pnl_closed"] - metrics["spread_cost_closed"]
-                               - metrics["slippage_cost_closed"] - metrics["commission_closed"])
+        self.assertAlmostEqual(
+            metrics["net_pnl"],
+            metrics["gross_pnl_closed"]
+            - metrics["spread_cost_closed"]
+            - metrics["slippage_cost_closed"]
+            - metrics["commission_closed"],
+        )
         self.assertEqual(first["execution_digest"], second["execution_digest"])
         self.assertEqual(first["decision_digest"], second["decision_digest"])
         with closing(sqlite3.connect(self.db)) as db:
-            self.assertEqual(db.execute("SELECT count(*) FROM experiences WHERE result_in_r IS NOT NULL").fetchone()[0], 2)
-            self.assertEqual(db.execute("SELECT count(*) FROM simulated_execution_events WHERE status='closed'").fetchone()[0], 2)
-            original = json.loads(db.execute("SELECT payload_json FROM experiences WHERE action_taken='HYPOTHETICAL_SIGNAL' LIMIT 1").fetchone()[0])
+            self.assertEqual(
+                db.execute(
+                    "SELECT count(*) FROM experiences WHERE result_in_r IS NOT NULL"
+                ).fetchone()[0],
+                2,
+            )
+            self.assertEqual(
+                db.execute(
+                    "SELECT count(*) FROM simulated_execution_events WHERE status='closed'"
+                ).fetchone()[0],
+                2,
+            )
+            original = json.loads(
+                db.execute(
+                    "SELECT payload_json FROM experiences WHERE action_taken='HYPOTHETICAL_SIGNAL' LIMIT 1"
+                ).fetchone()[0]
+            )
             self.assertIsNone(original["financial_result"]["net_pnl"])
-            self.assertEqual(db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0], '2')
+            self.assertEqual(
+                db.execute(
+                    "SELECT value FROM metadata WHERE key='schema_version'"
+                ).fetchone()[0],
+                "3",
+            )
 
 
 if __name__ == "__main__":

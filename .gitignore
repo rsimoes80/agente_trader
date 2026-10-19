@@ -30,3 +30,4 @@ deploy/vm/mt5_bridge.env
 .ruff_cache/
 data/replays/
 data/replay_inputs/
+data/references_cache/

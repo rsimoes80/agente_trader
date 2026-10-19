@@ -2,6 +2,8 @@
 
 ## Escopo
 
+O plugin implementado é `research_breakout_retest`, versão `2.0-v3`. Sua política aceita WITH_TREND, exige contexto/estrutura confirmados e usa [Market Intelligence V3](market_intelligence_v3.md) antes de formar hipótese. A confirmação é o retorno à zona congelada; o gatilho é um fechamento posterior além do extremo do candle de retorno. Contrato, gatilho e risco são gates distintos. Transições, evidência insuficiente/conflitante/invalidante e obstáculos estruturais ao alvo podem resultar em NO_TRADE. Essa política é de pesquisa e não demonstra vantagem estatística.
+
 O primeiro plugin de pesquisa proposto é pullback em tendência. Ainda não está aprovado como vantagem estatística nem para execução. Todas as análises usam candles fechados; o candle 0 pode ser exibido no gráfico, mas não deve confirmar um sinal.
 
 ## Hipótese de pesquisa

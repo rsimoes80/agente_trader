@@ -2,7 +2,7 @@
 
 ## Replay integrado EUR/USD
 
-Execute `python run_replay.py --capture-mt5 --count 1500 --validate-temporal` para capturar candles fechados, avaliar desenvolvimento/validação e reservar os 20% finais. Para um replay completo offline, use `python run_replay.py --csv CAMINHO.csv --timeframe M5 --source FONTE`. O banco padrão fica em `data/agent_memory.sqlite3` (schema 2, migração aditiva); cada execução gera HTML, JSON, decisões, execuções simuladas, equity e manifesto em `data/replays/`. Consulte [replay.md](replay.md) e [execution_simulation.md](execution_simulation.md) para requisitos do CSV, custos, resultado em R, hipóteses de execução e partições temporais.
+Execute `python run_replay.py --capture-mt5 --count 1500 --validate-temporal` para capturar candles fechados, avaliar desenvolvimento/validação e reservar os 20% finais. Para processamento offline, use `python run_replay.py --csv CAMINHO.csv --timeframe M5 --source FONTE`. Configure os papéis com `--macro-timeframe`, `--context-timeframe` e `--structure-timeframe`; a V3 não fabrica histórico HTF quando ele é insuficiente. O banco `data/agent_memory.sqlite3` migra aditivamente para schema 3. Relatórios incluem estados técnicos, confirmação/gatilho, `intelligence.jsonl.gz`, execução, equity e coortes. Consulte [market_intelligence_v3.md](market_intelligence_v3.md), [replay.md](replay.md) e [execution_simulation.md](execution_simulation.md).
 
 ## Aplicação local
 

@@ -57,7 +57,7 @@ O saldo evolui com o P&L líquido realizado. Limites de perda diária usam dia U
 
 ## Aprendizado persistente
 
-O schema SQLite passa de 1 para 2 por migração aditiva e mantém os registros anteriores. `simulated_execution_events` guarda preenchimentos, rejeições, saídas e censura, com referência à decisão original, timestamp de conhecimento e hash do payload. O journal permanece append-only. Cada candle usa uma transação única para gravar suas observações, decisões e eventos relacionados; uma falha reverte esse conjunto e interrompe a execução.
+O schema SQLite atual é 3, com migração aditiva dos schemas 1/2. `simulated_execution_events` guarda preenchimentos, rejeições, saídas e censura; `market_intelligence` liga o EvidenceSet ao snapshot V3. O contexto original de tendência, evidências, confirmação e gatilho acompanha o resultado sem reclassificação posterior. O journal permanece append-only. Cada candle usa uma transação única para gravar suas observações, decisões e eventos relacionados; uma falha reverte esse conjunto e interrompe a execução.
 
 O resultado gera uma nova `ExperienceRecord` ligada ao snapshot, à decisão e à hipótese original. O registro antigo não recebe retrospectivamente informação futura. A recuperação de memória continua limitada à própria execução e a timestamps estritamente anteriores à decisão atual; resultados só ficam disponíveis depois de conhecidos.
 

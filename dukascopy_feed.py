@@ -8,13 +8,25 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
+from datetime import time as session_time
 from typing import Any, Callable
 
 from analysis import analyze
-from learning import ENTRY_PROBABILITY_FLOOR, features_from_signal, predict_win_probability
+from src.aurelia_fx.market_intelligence import (
+    MarketIntelligenceSession,
+    observation_only_result,
+)
+from src.aurelia_fx.sessions import SessionWindow
+from src.aurelia_fx.trend import HierarchyConfig
 
-
-TIMEFRAME_SECONDS = {"M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
+TIMEFRAME_SECONDS = {
+    "M5": 300,
+    "M15": 900,
+    "M30": 1800,
+    "H1": 3600,
+    "H4": 14400,
+    "D1": 86400,
+}
 SOH = b"\x01"
 
 
@@ -24,27 +36,45 @@ def _fix_time(value: str | None, date_value: str | None = None) -> datetime:
         if date_value and len(value) <= 15 and len(date_value) == 8:
             candidate = f"{date_value}-{value}"
         try:
-            return datetime.strptime(candidate[:21], "%Y%m%d-%H:%M:%S.%f").replace(tzinfo=timezone.utc)
+            return datetime.strptime(candidate[:21], "%Y%m%d-%H:%M:%S.%f").replace(
+                tzinfo=timezone.utc
+            )
         except ValueError:
             try:
-                return datetime.strptime(candidate[:17], "%Y%m%d-%H:%M:%S").replace(tzinfo=timezone.utc)
+                return datetime.strptime(candidate[:17], "%Y%m%d-%H:%M:%S").replace(
+                    tzinfo=timezone.utc
+                )
             except ValueError:
                 pass
         try:
             parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-            return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+            return (
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc)
+            )
         except ValueError:
             pass
     return datetime.now(timezone.utc)
 
 
-def _build_message(msg_type: str, seq: int, sender: str, target: str, fields: list[tuple[str, str]]) -> bytes:
+def _build_message(
+    msg_type: str, seq: int, sender: str, target: str, fields: list[tuple[str, str]]
+) -> bytes:
     sending_time = datetime.now(timezone.utc).strftime("%Y%m%d-%H:%M:%S.%f")[:-3]
-    body = SOH.join([
-        f"35={msg_type}".encode(), f"34={seq}".encode(), f"49={sender}".encode(),
-        f"52={sending_time}".encode(), f"56={target}".encode(),
-        *(f"{tag}={value}".encode() for tag, value in fields),
-    ]) + SOH
+    body = (
+        SOH.join(
+            [
+                f"35={msg_type}".encode(),
+                f"34={seq}".encode(),
+                f"49={sender}".encode(),
+                f"52={sending_time}".encode(),
+                f"56={target}".encode(),
+                *(f"{tag}={value}".encode() for tag, value in fields),
+            ]
+        )
+        + SOH
+    )
     prefix = b"8=FIX.4.4\x019=" + str(len(body)).encode() + SOH
     unsigned = prefix + body
     checksum = sum(unsigned) % 256
@@ -76,10 +106,10 @@ def _extract_frame(buffer: bytearray) -> dict[str, Any] | None:
         return None
     frame = bytes(buffer[:frame_end])
     del buffer[:frame_end]
-    if frame[checksum_start:checksum_start + 3] != b"10=":
+    if frame[checksum_start : checksum_start + 3] != b"10=":
         raise ValueError("Quadro FIX com checksum ausente ou inválido.")
     try:
-        received_checksum = int(frame[checksum_start + 3:checksum_start + 6])
+        received_checksum = int(frame[checksum_start + 3 : checksum_start + 6])
     except ValueError:
         raise ValueError("Checksum FIX malformado.") from None
     if sum(frame[:checksum_start]) % 256 != received_checksum:
@@ -89,7 +119,9 @@ def _extract_frame(buffer: bytearray) -> dict[str, Any] | None:
     for item in frame.rstrip(SOH).split(SOH):
         if b"=" in item:
             tag, value = item.split(b"=", 1)
-            pairs.append((tag.decode("ascii", "ignore"), value.decode("utf-8", "replace")))
+            pairs.append(
+                (tag.decode("ascii", "ignore"), value.decode("utf-8", "replace"))
+            )
     for tag, value in pairs:
         values[tag] = value
     values["_pairs"] = pairs
@@ -99,7 +131,11 @@ def _extract_frame(buffer: bytearray) -> dict[str, Any] | None:
 class DukascopyFeed:
     """One FIX market-data connection. Trading messages are never generated."""
 
-    def __init__(self, config_provider: Callable[[], dict[str, Any]], model_provider: Callable[[], dict[str, Any] | None] | None = None):
+    def __init__(
+        self,
+        config_provider: Callable[[], dict[str, Any]],
+        model_provider: Callable[[], dict[str, Any] | None] | None = None,
+    ):
         self.config_provider = config_provider
         self.model_provider = model_provider or (lambda: None)
         self._lock = threading.RLock()
@@ -108,14 +144,21 @@ class DukascopyFeed:
         self._socket: ssl.SSLSocket | None = None
         self._bars: deque[dict[str, Any]] = deque(maxlen=3000)
         self._events: deque[dict[str, Any]] = deque(maxlen=100)
-        self._state: dict[str, Any] = {"status": "desconectado", "message": "Feed ao vivo parado.", "ticks": 0}
+        self._state: dict[str, Any] = {
+            "status": "desconectado",
+            "message": "Feed ao vivo parado.",
+            "ticks": 0,
+        }
         self._bar: dict[str, Any] | None = None
         self._bucket: int | None = None
         self._bid: float | None = None
         self._ask: float | None = None
         self._seq = 1
         self._last_send = 0.0
-        self._analysis: dict[str, Any] = {"signal": "WAIT", "message": "Aguardando feed de mercado."}
+        self._analysis: dict[str, Any] = {
+            "signal": "WAIT",
+            "message": "Aguardando feed de mercado.",
+        }
         self._jev_review: dict[str, Any] | None = None
 
     def start(self, settings: dict[str, Any]) -> None:
@@ -128,10 +171,22 @@ class DukascopyFeed:
             self._bar = None
             self._bucket = None
             self._bid = self._ask = None
-            self._analysis = {"signal": "WAIT", "message": "Aguardando cotações e candles fechados."}
+            self._analysis = {
+                "signal": "WAIT",
+                "message": "Aguardando cotações e candles fechados.",
+            }
             self._jev_review = None
-            self._state = {"status": "conectando", "message": "Abrindo sessão FIX segura de leitura.", "ticks": 0}
-            self._thread = threading.Thread(target=self._run, args=(dict(settings), stop_event), name="dukascopy-market-data", daemon=True)
+            self._state = {
+                "status": "conectando",
+                "message": "Abrindo sessão FIX segura de leitura.",
+                "ticks": 0,
+            }
+            self._thread = threading.Thread(
+                target=self._run,
+                args=(dict(settings), stop_event),
+                name="dukascopy-market-data",
+                daemon=True,
+            )
             self._thread.start()
 
     def stop(self) -> None:
@@ -152,13 +207,23 @@ class DukascopyFeed:
                 pass
         with self._lock:
             if self._state.get("status") != "erro":
-                self._state.update(status="desconectado", message="Feed ao vivo parado.")
+                self._state.update(
+                    status="desconectado", message="Feed ao vivo parado."
+                )
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 **self._state,
-                "quote": {"bid": self._bid, "ask": self._ask, "mid": ((self._bid + self._ask) / 2 if self._bid is not None and self._ask is not None else None)},
+                "quote": {
+                    "bid": self._bid,
+                    "ask": self._ask,
+                    "mid": (
+                        (self._bid + self._ask) / 2
+                        if self._bid is not None and self._ask is not None
+                        else None
+                    ),
+                },
                 "current_candle": dict(self._bar) if self._bar else None,
                 "candles": [dict(item) for item in list(self._bars)[-500:]],
                 "analysis": dict(self._analysis),
@@ -167,7 +232,14 @@ class DukascopyFeed:
                 "live_orders_enabled": False,
             }
 
-    def _send(self, sock: ssl.SSLSocket, msg_type: str, target: str, sender: str, fields: list[tuple[str, str]] = ()) -> None:
+    def _send(
+        self,
+        sock: ssl.SSLSocket,
+        msg_type: str,
+        target: str,
+        sender: str,
+        fields: list[tuple[str, str]] = (),
+    ) -> None:
         message = _build_message(msg_type, self._seq, sender, target, list(fields))
         self._seq += 1
         sock.sendall(message)
@@ -183,17 +255,39 @@ class DukascopyFeed:
             feed_sender = sender if sender.startswith("FEED_") else f"FEED_{sender}"
             username = str(settings["username"])
             password = str(settings["password"])
-            if not host or not (1 <= port <= 65535) or not all((target, sender, username, password)):
-                raise ValueError("Complete host, porta, TargetCompID, SenderCompID do feed, usuário e senha FIX.")
+            if (
+                not host
+                or not (1 <= port <= 65535)
+                or not all((target, sender, username, password))
+            ):
+                raise ValueError(
+                    "Complete host, porta, TargetCompID, SenderCompID do feed, usuário e senha FIX."
+                )
             raw = socket.create_connection((host, port), timeout=15)
             context = ssl.create_default_context()
             sock = context.wrap_socket(raw, server_hostname=host)
             sock.settimeout(0.5)
             with self._lock:
                 self._socket = sock
-                self._state.update(status="autenticando", message="Conexão TLS aberta; aguardando logon FIX.", host=host)
+                self._state.update(
+                    status="autenticando",
+                    message="Conexão TLS aberta; aguardando logon FIX.",
+                    host=host,
+                )
             self._seq = 1
-            self._send(sock, "A", target, sender, [("98", "0"), ("108", "30"), ("141", "Y"), ("553", username), ("554", password)])
+            self._send(
+                sock,
+                "A",
+                target,
+                sender,
+                [
+                    ("98", "0"),
+                    ("108", "30"),
+                    ("141", "Y"),
+                    ("553", username),
+                    ("554", password),
+                ],
+            )
             buffer = bytearray()
             logged_in = False
             subscribed = False
@@ -217,35 +311,69 @@ class DukascopyFeed:
                     except ValueError:
                         incoming_seq = 0
                     if incoming_seq and expected_in and incoming_seq != expected_in:
-                        raise ConnectionError(f"Sequência FIX inesperada ({incoming_seq}; esperada {expected_in}).")
+                        raise ConnectionError(
+                            f"Sequência FIX inesperada ({incoming_seq}; esperada {expected_in})."
+                        )
                     if incoming_seq:
                         expected_in = incoming_seq + 1
                     msg_type = message.get("35")
                     if msg_type == "A":
                         logged_in = True
                         with self._lock:
-                            self._state.update(status="conectado", message="FIX autenticado; assinando cotações do instrumento.")
+                            self._state.update(
+                                status="conectado",
+                                message="FIX autenticado; assinando cotações do instrumento.",
+                            )
                     elif msg_type == "1":
-                        self._send(sock, "0", target, feed_sender, [("112", message.get("112", ""))] if message.get("112") else [])
+                        self._send(
+                            sock,
+                            "0",
+                            target,
+                            feed_sender,
+                            [("112", message.get("112", ""))]
+                            if message.get("112")
+                            else [],
+                        )
                     elif msg_type == "5":
                         raise ConnectionError("Sessão FIX encerrada pela corretora.")
                     elif msg_type == "3" or msg_type == "j":
                         reason = message.get("58", "Mensagem FIX rejeitada.")
-                        raise ConnectionError(f"A corretora rejeitou a sessão FIX: {reason[:180]}")
+                        raise ConnectionError(
+                            f"A corretora rejeitou a sessão FIX: {reason[:180]}"
+                        )
                     elif msg_type == "Y":
-                        raise ConnectionError(f"Assinatura de mercado rejeitada: {message.get('58', message.get('281', 'motivo não informado'))}")
+                        raise ConnectionError(
+                            f"Assinatura de mercado rejeitada: {message.get('58', message.get('281', 'motivo não informado'))}"
+                        )
                     elif msg_type == "W":
                         self._on_market_data(message)
                     if logged_in and not subscribed:
                         config = self.config_provider()
                         symbol = str(config.get("instrument", "EUR/USD"))
-                        self._send(sock, "V", target, feed_sender, [
-                            ("262", f"md-{symbol.replace('/', '')}"), ("263", "1"), ("264", "1"), ("265", "0"),
-                            ("146", "1"), ("55", symbol), ("267", "2"), ("269", "0"), ("269", "1"),
-                        ])
+                        self._send(
+                            sock,
+                            "V",
+                            target,
+                            feed_sender,
+                            [
+                                ("262", f"md-{symbol.replace('/', '')}"),
+                                ("263", "1"),
+                                ("264", "1"),
+                                ("265", "0"),
+                                ("146", "1"),
+                                ("55", symbol),
+                                ("267", "2"),
+                                ("269", "0"),
+                                ("269", "1"),
+                            ],
+                        )
                         subscribed = True
                         with self._lock:
-                            self._state.update(status="conectado", message=f"Assinatura ativa para {symbol}; aguardando bid/ask.", instrument=symbol)
+                            self._state.update(
+                                status="conectado",
+                                message=f"Assinatura ativa para {symbol}; aguardando bid/ask.",
+                                instrument=symbol,
+                            )
                 now = time.monotonic()
                 if now - last_receive > 90:
                     raise TimeoutError("Sem mensagens da corretora há 90 segundos.")
@@ -265,7 +393,9 @@ class DukascopyFeed:
                 if self._socket is sock:
                     self._socket = None
                 if stop_event.is_set() and self._state.get("status") != "erro":
-                    self._state.update(status="desconectado", message="Feed ao vivo parado.")
+                    self._state.update(
+                        status="desconectado", message="Feed ao vivo parado."
+                    )
             if sock:
                 try:
                     sock.close()
@@ -298,8 +428,14 @@ class DukascopyFeed:
                 ask = price
         if bid is None or ask is None or bid <= 0 or ask < bid:
             return
-        entry_time = f"{message['272']}-{message['273']}" if message.get("272") and message.get("273") else None
-        timestamp = _fix_time(message.get("60") or entry_time or message.get("52"), message.get("272"))
+        entry_time = (
+            f"{message['272']}-{message['273']}"
+            if message.get("272") and message.get("273")
+            else None
+        )
+        timestamp = _fix_time(
+            message.get("60") or entry_time or message.get("52"), message.get("272")
+        )
         mid = (bid + ask) / 2
         seconds = TIMEFRAME_SECONDS.get(str(config.get("timeframe", "M5")), 300)
         epoch = timestamp.timestamp()
@@ -307,14 +443,23 @@ class DukascopyFeed:
         closed: dict[str, Any] | None = None
         with self._lock:
             self._bid, self._ask = bid, ask
-            self._state.update(ticks=int(self._state.get("ticks", 0)) + 1, last_tick_utc=timestamp.isoformat(), spread_pips=round((ask - bid) / float(config.get("pip_size", 0.0001)), 2))
+            self._state.update(
+                ticks=int(self._state.get("ticks", 0)) + 1,
+                last_tick_utc=timestamp.isoformat(),
+                spread_pips=round(
+                    (ask - bid) / float(config.get("pip_size", 0.0001)), 2
+                ),
+            )
             if self._bucket is not None and bucket < self._bucket:
                 return
             if self._bucket is None or bucket > self._bucket:
                 if self._bucket is not None and bucket - self._bucket > seconds * 2:
                     self._bars.clear()
                     self._events.clear()
-                    self._analysis = {"signal": "WAIT", "message": "Pausa no feed detectada; reiniciando o aquecimento dos indicadores."}
+                    self._analysis = {
+                        "signal": "WAIT",
+                        "message": "Pausa no feed detectada; reiniciando o aquecimento dos indicadores.",
+                    }
                     self._jev_review = None
                 if self._bar:
                     closed = dict(self._bar)
@@ -322,9 +467,17 @@ class DukascopyFeed:
                     self._bars.append(closed)
                 self._bucket = bucket
                 self._bar = {
-                    "timestamp": datetime.fromtimestamp(bucket, timezone.utc).isoformat(),
-                    "open": mid, "high": mid, "low": mid, "close": mid, "volume": 0,
-                    "tick_count": 1, "bid": bid, "ask": ask,
+                    "timestamp": datetime.fromtimestamp(
+                        bucket, timezone.utc
+                    ).isoformat(),
+                    "open": mid,
+                    "high": mid,
+                    "low": mid,
+                    "close": mid,
+                    "volume": 0,
+                    "tick_count": 1,
+                    "bid": bid,
+                    "ask": ask,
                 }
             else:
                 self._bar["high"] = max(float(self._bar["high"]), mid)
@@ -342,31 +495,64 @@ class DukascopyFeed:
             candles = [dict(item) for item in self._bars]
             spread_pips = float(self._state.get("spread_pips", 0.0))
         result = analyze(candles, config)
-        if result.get("signal") in {"BUY", "SELL"} and spread_pips > float(config.get("max_spread_pips", 1.5)):
-            result = {**result, "signal": "WAIT", "message": f"Candidato bloqueado: spread atual de {spread_pips:.2f} pips excede o limite configurado de {config['max_spread_pips']:.2f} pips."}
-        if result.get("signal") in {"BUY", "SELL"}:
-            model = self.model_provider()
-            if model:
-                probability = predict_win_probability(model, features_from_signal(result))
-                result["learned_probability"] = round(probability, 4)
-                if probability < ENTRY_PROBABILITY_FLOOR:
-                    result = {
-                        **result,
-                        "signal": "WAIT",
-                        "message": f"Candidato vetado pelo modelo adaptativo ({probability:.1%} abaixo do limiar).",
-                    }
+        signature = (
+            config.get("instrument"),
+            config.get("timeframe"),
+            config.get("swing_window"),
+            config.get("max_spread_pips"),
+            config.get("pip_size"),
+        )
+        try:
+            if getattr(self, "_intelligence_signature", None) != signature:
+                self._intelligence = MarketIntelligenceSession(
+                    symbol=str(config.get("instrument", "EUR/USD")),
+                    hierarchy=HierarchyConfig.for_execution(
+                        str(config.get("timeframe", "M5"))
+                    ),
+                    sessions=(
+                        SessionWindow(
+                            "london", "Europe/London", session_time(8), session_time(17)
+                        ),
+                        SessionWindow(
+                            "new_york",
+                            "America/New_York",
+                            session_time(8),
+                            session_time(17),
+                        ),
+                    ),
+                    max_spread_pips=float(config.get("max_spread_pips", 1.5)),
+                    pip_size=float(config.get("pip_size", 0.0001)),
+                    swing_window=int(config.get("swing_window", 2)),
+                )
+                self._intelligence_signature = signature
+            snapshot = self._intelligence.update(candles, spread_pips=spread_pips)
+            result = observation_only_result(result, snapshot)
+        except (ValueError, TypeError) as exc:
+            result = {
+                "signal": "WAIT",
+                "reason_code": "V3_DATA_ERROR",
+                "message": f"Leitura V3 indisponível: {exc}",
+                "orders_enabled_by_application": False,
+            }
         with self._lock:
             self._analysis = result
             self._state["closed_candles"] = len(candles)
             self._state["last_closed_candle_utc"] = candle["timestamp"]
             if result.get("signal") in {"BUY", "SELL"}:
                 self._jev_review = None
-                self._events.appendleft({
-                    "timestamp": candle["timestamp"], "signal": result["signal"], "side": result.get("side"),
-                    "entry": result.get("entry"), "stop": result.get("stop"), "target": result.get("target"),
-                    "score": result.get("score"), "score_total": result.get("score_total"),
-                    "message": "Candidato técnico detectado em candle fechado. Nenhuma ordem enviada.",
-                })
+                self._events.appendleft(
+                    {
+                        "timestamp": candle["timestamp"],
+                        "signal": result["signal"],
+                        "side": result.get("side"),
+                        "entry": result.get("entry"),
+                        "stop": result.get("stop"),
+                        "target": result.get("target"),
+                        "score": result.get("score"),
+                        "score_total": result.get("score_total"),
+                        "message": "Candidato técnico detectado em candle fechado. Nenhuma ordem enviada.",
+                    }
+                )
 
     def set_jev_review(self, result: dict[str, Any], candle_time: str) -> None:
         with self._lock:

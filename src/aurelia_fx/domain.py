@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-import math
 from typing import Any
 from uuid import uuid4
 
@@ -62,19 +62,27 @@ class Candle:
         prices = (self.open, self.high, self.low, self.close, self.volume)
         if not all(math.isfinite(value) for value in prices):
             raise ValueError("OHLCV precisa conter somente números finitos.")
-        if self.low > min(self.open, self.close) or self.high < max(self.open, self.close):
+        if self.low > min(self.open, self.close) or self.high < max(
+            self.open, self.close
+        ):
             raise ValueError("OHLC inválido: low/high não abrangem open e close.")
         if self.low > self.high:
             raise ValueError("OHLC inválido: low maior que high.")
         if self.volume < 0:
             raise ValueError("Volume não pode ser negativo.")
-        if self.spread_pips is not None and (not math.isfinite(self.spread_pips) or self.spread_pips < 0):
+        if self.spread_pips is not None and (
+            not math.isfinite(self.spread_pips) or self.spread_pips < 0
+        ):
             raise ValueError("Spread precisa ser finito e não negativo.")
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "timestamp": self.timestamp.isoformat(), "open": self.open, "high": self.high,
-            "low": self.low, "close": self.close, "volume": self.volume,
+            "timestamp": self.timestamp.isoformat(),
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
             "spread_pips": self.spread_pips,
         }
 
@@ -98,7 +106,10 @@ class Candidate:
     contradictions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not all(math.isfinite(value) and value > 0 for value in (self.entry, self.stop, self.target)):
+        if not all(
+            math.isfinite(value) and value > 0
+            for value in (self.entry, self.stop, self.target)
+        ):
             raise ValueError("Candidate prices must be finite and positive.")
         if self.expires_at.tzinfo is None:
             raise ValueError("Candidate.expires_at precisa conter timezone.")
@@ -120,12 +131,21 @@ class RiskLimits:
     max_trades_per_day: int
 
     def __post_init__(self) -> None:
-        values = (self.risk_per_trade_pct, self.max_daily_loss_pct, self.max_drawdown_pct,
-                  self.max_spread_pips, self.minimum_risk_reward)
+        values = (
+            self.risk_per_trade_pct,
+            self.max_daily_loss_pct,
+            self.max_drawdown_pct,
+            self.max_spread_pips,
+            self.minimum_risk_reward,
+        )
         if not all(math.isfinite(value) and value >= 0 for value in values):
-            raise ValueError("RiskLimits precisa conter valores finitos e não negativos.")
+            raise ValueError(
+                "RiskLimits precisa conter valores finitos e não negativos."
+            )
         if not 0 < self.risk_per_trade_pct <= 2:
-            raise ValueError("Risco por operação deve ficar entre 0 e 2 por cento nesta fundação.")
+            raise ValueError(
+                "Risco por operação deve ficar entre 0 e 2 por cento nesta fundação."
+            )
         if self.max_trades_per_day < 1:
             raise ValueError("max_trades_per_day precisa ser positivo.")
 
@@ -170,22 +190,43 @@ class Decision:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 1, "decision_id": self.decision_id, "run_id": self.run_id,
+            "schema_version": 3,
+            "decision_id": self.decision_id,
+            "run_id": self.run_id,
             "created_at_utc": self.created_at.astimezone(timezone.utc).isoformat(),
-            "symbol": self.symbol, "timeframe": self.timeframe, "data_source": self.data_source,
-            "data_timestamp_utc": self.data_timestamp.astimezone(timezone.utc).isoformat(),
-            "action": self.action.value, "reason_code": self.reason_code, "state": self.state.value,
-            "strategy_id": self.strategy_id, "strategy_version": self.strategy_version,
-            "config_hash": self.config_hash, "evidence": list(self.evidence),
-            "contradictions": list(self.contradictions), "missing_data": list(self.missing_data),
-            "candidate": None if self.candidate is None else {
-                "side": self.candidate.side, "entry": self.candidate.entry, "stop": self.candidate.stop,
-                "target": self.candidate.target, "expires_at_utc": self.candidate.expires_at.isoformat(),
-                "evidence": list(self.candidate.evidence), "contradictions": list(self.candidate.contradictions),
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "data_source": self.data_source,
+            "data_timestamp_utc": self.data_timestamp.astimezone(
+                timezone.utc
+            ).isoformat(),
+            "action": self.action.value,
+            "reason_code": self.reason_code,
+            "state": self.state.value,
+            "strategy_id": self.strategy_id,
+            "strategy_version": self.strategy_version,
+            "config_hash": self.config_hash,
+            "evidence": list(self.evidence),
+            "contradictions": list(self.contradictions),
+            "missing_data": list(self.missing_data),
+            "candidate": None
+            if self.candidate is None
+            else {
+                "side": self.candidate.side,
+                "entry": self.candidate.entry,
+                "stop": self.candidate.stop,
+                "target": self.candidate.target,
+                "expires_at_utc": self.candidate.expires_at.isoformat(),
+                "evidence": list(self.candidate.evidence),
+                "contradictions": list(self.candidate.contradictions),
             },
-            "risk": None if self.risk is None else {
-                "approved": self.risk.approved, "reasons": list(self.risk.reasons),
-                "risk_budget": self.risk.risk_budget, "hypothetical_units": self.risk.hypothetical_units,
+            "risk": None
+            if self.risk is None
+            else {
+                "approved": self.risk.approved,
+                "reasons": list(self.risk.reasons),
+                "risk_budget": self.risk.risk_budget,
+                "hypothetical_units": self.risk.hypothetical_units,
                 "risk_reward": self.risk.risk_reward,
             },
         }

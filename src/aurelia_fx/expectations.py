@@ -34,7 +34,9 @@ class CandidateHypothesis:
 
     def __post_init__(self) -> None:
         if not self.hypothesis_id or not self.prediction or not self.rejection_criteria:
-            raise ValueError("Hipótese precisa de ID, previsão e critérios de rejeição.")
+            raise ValueError(
+                "Hipótese precisa de ID, previsão e critérios de rejeição."
+            )
         if self.created_at.tzinfo is None:
             raise ValueError("created_at precisa conter timezone.")
 
@@ -54,12 +56,16 @@ class ExpectationContract:
     tolerance: tuple[str, ...] = ()
     alert_events: tuple[str, ...] = ()
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    trigger_event: str | None = None
+    expected_context: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if self.direction not in {"long", "short", "neutral"}:
             raise ValueError("direction deve ser long, short ou neutral.")
         if not self.expected_events or not self.invalidation_events:
-            raise ValueError("Contrato precisa definir eventos esperados e de invalidação.")
+            raise ValueError(
+                "Contrato precisa definir eventos esperados e de invalidação."
+            )
         if self.expires_at.tzinfo is None or self.created_at.tzinfo is None:
             raise ValueError("Datas do contrato precisam conter timezone.")
         if self.expires_at <= self.created_at:
@@ -77,6 +83,9 @@ class Evaluation:
     missing: tuple[str, ...]
     observed_at: datetime
     execution_eligible: bool = False
+    confirmation_state: str = "not_confirmed"
+    trigger_state: str = "not_defined"
+    context_comparison: tuple[tuple[str, str, str], ...] = ()
 
 
 class ExpectedVsObservedEngine:
@@ -89,17 +98,54 @@ class ExpectedVsObservedEngine:
         *,
         now: datetime | None = None,
         data_valid: bool = True,
+        evidence_set: dict | None = None,
+        observed_context: Mapping[str, str] | None = None,
     ) -> Evaluation:
         stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        favorable = tuple(event for event in contract.expected_events if observed_events.get(event) is True)
-        contrary = tuple(event for event in contract.invalidation_events if observed_events.get(event) is True)
-        missing = tuple(event for event in contract.expected_events if observed_events.get(event) is not True)
+        favorable = tuple(
+            event
+            for event in contract.expected_events
+            if observed_events.get(event) is True
+        )
+        contrary = tuple(
+            event
+            for event in contract.invalidation_events
+            if observed_events.get(event) is True
+        )
+        missing = tuple(
+            event
+            for event in contract.expected_events
+            if observed_events.get(event) is not True
+        )
+        comparisons = tuple(
+            (key, expected, (observed_context or {}).get(key, "unknown"))
+            for key, expected in contract.expected_context
+        )
+        contextual_conflicts = tuple(
+            key for key, expected, observed in comparisons if expected != observed
+        )
+        trigger = (
+            "not_defined"
+            if contract.trigger_event is None
+            else "triggered"
+            if observed_events.get(contract.trigger_event) is True
+            else "waiting"
+        )
         if not data_valid:
             status = ExpectationStatus.INSUFFICIENT_DATA
         elif stamp >= contract.expires_at.astimezone(timezone.utc):
             status = ExpectationStatus.EXPIRED
-        elif contrary:
+        elif contrary or (evidence_set and evidence_set.get("invalidations")):
             status = ExpectationStatus.INVALIDATED
+        elif (
+            evidence_set
+            and datetime.fromisoformat(evidence_set["valid_until"]) <= stamp
+        ):
+            status = ExpectationStatus.INSUFFICIENT_DATA
+        elif contextual_conflicts:
+            status = ExpectationStatus.CONTRADICTED
+        elif evidence_set and evidence_set.get("evidence_quality") == "CONFLICTED":
+            status = ExpectationStatus.WEAKENING
         elif not missing:
             status = ExpectationStatus.CONFIRMED
         elif favorable:
@@ -108,5 +154,17 @@ class ExpectedVsObservedEngine:
             status = ExpectationStatus.WEAKENING
         else:
             status = ExpectationStatus.MONITORING
-        return Evaluation(str(uuid4()), contract.expectation_id, contract.hypothesis_id,
-                          status, favorable, contrary, missing, stamp, False)
+        return Evaluation(
+            str(uuid4()),
+            contract.expectation_id,
+            contract.hypothesis_id,
+            status,
+            favorable,
+            contrary + contextual_conflicts,
+            missing,
+            stamp,
+            False,
+            "confirmed" if status == ExpectationStatus.CONFIRMED else "not_confirmed",
+            trigger,
+            comparisons,
+        )
