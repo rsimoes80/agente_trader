@@ -42,7 +42,7 @@ O toque no stop, a expiração após 12 períodos, uma mudança de sessão ou um
 
 As sessões padrão são Londres (08h–17h local) e Nova York (08h–17h local), em dias úteis e com horário de verão. Londres tem prioridade durante a sobreposição. A autorização usa o instante da decisão, no fechamento do candle: um gatilho que fecha exatamente no fim da sessão já não pode autorizar entrada nessa sessão. Esses horários são parâmetros de pesquisa, não horários oficiais de abertura de uma bolsa Forex.
 
-O sinal hipotético só aparece depois do veto independente de risco. Os padrões de pesquisa são conta sintética USD 10.000, risco de 0,5%, spread máximo de 2 pips, slippage de 0,2 pip, recompensa bruta de 2,5 vezes a distância ao stop e relação líquida mínima de 2. No máximo cinco sinais são aceitos por dia UTC. Os parâmetros ficam no manifesto de cada execução; o CLI não lê credenciais nem o saldo da conta MT5.
+O sinal hipotético só aparece depois do veto independente de risco. Os padrões de pesquisa são conta sintética USD 10.000, risco de 0,5%, spread máximo de 2 pips, slippage de 0,2 pip por execução de mercado, comissão de USD 35 por milhão de unidades por lado, recompensa bruta de 2,5 vezes a distância ao stop e relação líquida mínima de 2. Esses custos são hipóteses de pesquisa e precisam ser substituídos pelos custos da corretora. A entrada ocorre na abertura seguinte, com nova validação e dimensionamento pelo saldo simulado. No máximo cinco entradas são aceitas por dia UTC, com uma exposição por vez. Os parâmetros ficam no manifesto de cada execução; o CLI não lê o saldo da conta MT5.
 
 Os conceitos dos livros continuam no catálogo com sua proveniência e estado de revisão. Não são importados como regras de entrada desta estratégia experimental.
 
@@ -59,12 +59,14 @@ Cada execução recebe um ID novo e gera, em `data/replays/<run_id>/`:
 - `decisions.jsonl`: todas as decisões e seus motivos, hipótese, risco e amostra recuperada.
 - `transitions.json`: transições de estado com relógio do replay.
 - `report.json` e `report.html`: contagens, limitações e tabela das decisões. Abra o HTML diretamente no navegador.
+- `execution.jsonl`: entradas, rejeições, saídas e resultados financeiros/processuais.
+- `equity.json`: saldo e equity simulada por fechamento.
 
 O `decision_digest` ignora o namespace aleatório da execução e permite comparar o conteúdo das decisões. Com o mesmo dataset, fonte, configuração e código, ele deve ser idêntico mesmo após reiniciar o processo e reutilizar o banco. Manifestos e artefatos `started`, `completed` ou `failed` permitem distinguir execuções completas de registros parciais após falha. Uma falha de persistência interrompe o replay; não há retry que duplique decisões.
 
 ## Alcance desta etapa
 
-Este replay valida o encadeamento causal e a persistência. Não simula preenchimento, comissões, P&L, MAE/MFE ou evolução do saldo. Stop e alvo são planos hipotéticos; `result_in_r` e `net_pnl` permanecem nulos. Não há evidência de rentabilidade nem validação HTF/LTF neste estágio. O próximo passo de pesquisa é um simulador de execução e avaliação de resultados com custos, datasets separados e validação temporal. A integração ao monitor web é uma etapa posterior.
+O replay agora simula preenchimento, custos, saídas, saldo e resultados em R. Os registros originais de observação continuam com resultado financeiro nulo; uma nova experiência é acrescentada quando o resultado fica conhecido. A documentação completa das hipóteses de execução, das limitações de MAE/MFE e do protocolo 60/20/20 está em [execution_simulation.md](execution_simulation.md). Não há evidência de rentabilidade nem validação HTF/LTF neste estágio. A integração ao monitor web é uma etapa posterior.
 
 ## Verificação
 

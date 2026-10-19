@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from aurelia_fx.experience_memory import ExperienceMemory
 from aurelia_fx.replay import ReplayConfig, run_replay
 from aurelia_fx.replay_data import TIMEFRAMES, load_csv
+from aurelia_fx.temporal_validation import run_temporal_validation
 
 
 def capture_mt5(timeframe: str, count: int, directory: Path) -> Path:
@@ -46,7 +47,15 @@ def main(argv=None) -> int:
     parser.add_argument("--source", default="user_csv_unverified", help="Proveniencia declarada do CSV")
     parser.add_argument("--db", type=Path, default=ROOT / "data/agent_memory.sqlite3")
     parser.add_argument("--output", type=Path, default=ROOT / "data/replays")
+    parser.add_argument("--commission-per-million-side", type=float, default=35.0,
+                        help="USD por milhao de unidades e por lado; hipotese de pesquisa, nao tarifa da corretora")
+    parser.add_argument("--slippage-pips", type=float, default=.2)
+    parser.add_argument("--max-holding-bars", type=int, default=24)
+    parser.add_argument("--validate-temporal", action="store_true", help="60/20/20; reserva janela final por padrao")
+    parser.add_argument("--include-holdout", action="store_true", help="Avalia tambem a janela final com config congelada")
     args = parser.parse_args(argv)
+    if args.include_holdout and not args.validate_temporal:
+        parser.error("--include-holdout exige --validate-temporal")
     try:
         path = capture_mt5(args.timeframe, args.count, ROOT / "data/replay_inputs") if args.capture_mt5 else args.csv
         source = "mt5_local_closed_bars" if args.capture_mt5 else args.source
@@ -58,11 +67,18 @@ def main(argv=None) -> int:
                 code_version += "+dirty"
         except (OSError, subprocess.CalledProcessError):
             code_version = "unknown"
-        config = ReplayConfig(timeframe=args.timeframe)
-        report = run_replay(dataset, config=config, memory=ExperienceMemory(args.db),
-                            output_dir=args.output, code_version=code_version)
-        print(json.dumps({key: report[key] for key in
-            ("run_id", "bars", "actions", "reasons", "decision_digest", "report_directory")}, indent=2))
+        config = ReplayConfig(timeframe=args.timeframe, commission_per_million_side=args.commission_per_million_side,
+                              slippage_pips=args.slippage_pips, max_holding_bars=args.max_holding_bars)
+        if args.validate_temporal:
+            report = run_temporal_validation(dataset, config=config, memory=ExperienceMemory(args.db),
+                output_dir=args.output, code_version=code_version, include_holdout=args.include_holdout)
+            result = {key: report[key] for key in ("plan_id", "holdout_status", "report_directory")}
+        else:
+            report = run_replay(dataset, config=config, memory=ExperienceMemory(args.db),
+                                output_dir=args.output, code_version=code_version)
+            result = {key: report[key] for key in
+                ("run_id", "bars", "actions", "reasons", "execution", "decision_digest", "execution_digest", "report_directory")}
+        print(json.dumps(result, indent=2))
         return 0
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
         print(f"Replay interrompido: {exc}", file=sys.stderr)

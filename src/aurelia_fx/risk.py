@@ -21,6 +21,8 @@ def assess_candidate(
     account: AccountSnapshot,
     limits: RiskLimits,
     now: datetime | None = None,
+    commission_per_unit: float = 0.0,
+    entry_is_executable: bool = False,
 ) -> RiskAssessment:
     reasons: list[str] = []
     stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -55,6 +57,8 @@ def assess_candidate(
         reasons.append("SLIPPAGE_ASSUMPTION_INVALID")
     if not math.isfinite(value_per_price_unit) or value_per_price_unit <= 0:
         reasons.append("CONTRACT_VALUE_UNAVAILABLE")
+    if not math.isfinite(commission_per_unit) or commission_per_unit < 0:
+        reasons.append("COMMISSION_INVALID")
     distance = abs(candidate.entry - candidate.stop)
     reward = abs(candidate.target - candidate.entry)
     if not all(math.isfinite(value) for value in (candidate.entry, candidate.stop, candidate.target)) or distance <= 0 or reward <= 0:
@@ -62,7 +66,8 @@ def assess_candidate(
     if reasons:
         return RiskAssessment(False, tuple(dict.fromkeys(reasons)))
 
-    cost_price = float(spread_pips) * pip_size + max_slippage_price
+    cost_price = (0 if entry_is_executable else float(spread_pips) * pip_size) + max_slippage_price
+    cost_price += commission_per_unit / value_per_price_unit
     net_risk_distance = distance + cost_price
     net_reward_distance = max(0.0, reward - cost_price)
     ratio = net_reward_distance / net_risk_distance if net_risk_distance > 0 else 0.0

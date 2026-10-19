@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import sqlite3
+import threading
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -61,15 +62,20 @@ class SimilarityResult:
 class ExperienceMemory:
     """Persistent memory; writes are append-only and never promote hypotheses."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, path: Path):
         self.path = path
+        self._local = threading.local()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
     @contextmanager
     def _connect(self):
+        active = getattr(self._local, "connection", None)
+        if active is not None:
+            yield active
+            return
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
@@ -79,6 +85,18 @@ class ExperienceMemory:
                 yield connection
         finally:
             connection.close()
+
+    @contextmanager
+    def transaction(self):
+        """Commit one observation and its related events atomically."""
+        if getattr(self._local, "connection", None) is not None:
+            raise RuntimeError("Nested journal transactions are not supported.")
+        with self._connect() as connection:
+            self._local.connection = connection
+            try:
+                yield
+            finally:
+                del self._local.connection
 
     def _initialize(self) -> None:
         with self._connect() as db:
@@ -163,12 +181,26 @@ class ExperienceMemory:
                     payload_json TEXT NOT NULL,
                     payload_sha256 TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS simulated_execution_events (
+                    event_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    decision_id TEXT NOT NULL,
+                    observed_at_utc TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    payload_sha256 TEXT NOT NULL,
+                    FOREIGN KEY(decision_id) REFERENCES decisions(decision_id)
+                );
+                CREATE INDEX IF NOT EXISTS ix_execution_run ON simulated_execution_events(run_id, observed_at_utc);
             """)
             db.execute("""INSERT OR IGNORE INTO metadata(key,value) VALUES('schema_version',?)""", (str(self.SCHEMA_VERSION),))
             version = db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]
+            if version == "1":
+                db.execute("UPDATE metadata SET value=? WHERE key='schema_version'", (str(self.SCHEMA_VERSION),))
+                version = str(self.SCHEMA_VERSION)
             if version != str(self.SCHEMA_VERSION):
                 raise RuntimeError(f"SQLite schema incompatível: {version}.")
-            for table in ("market_snapshots", "decisions", "experiences", "hypothesis_events", "expectation_events", "experiment_artifacts"):
+            for table in ("market_snapshots", "decisions", "experiences", "hypothesis_events", "expectation_events", "experiment_artifacts", "simulated_execution_events"):
                 for operation in ("UPDATE", "DELETE"):
                     trigger = f"immutable_{table}_{operation.lower()}"
                     db.execute(f"""CREATE TRIGGER IF NOT EXISTS {trigger} BEFORE {operation} ON {table}
@@ -244,6 +276,12 @@ class ExperienceMemory:
                 artifact_id, datetime.now(timezone.utc).isoformat(), dataset_reference, code_version,
                 strategy_version, config_hash, status, text, digest,
             ))
+
+    def record_execution(self, run_id: str, event: dict[str, Any]) -> None:
+        payload, digest = self._encode(event)
+        with self._connect() as db:
+            db.execute("INSERT INTO simulated_execution_events VALUES(?,?,?,?,?,?,?)", (
+                event["event_id"], run_id, event["decision_id"], event["observed_at"], event["status"], payload, digest))
 
     def retrieve_similar(
         self, *, symbol: str, session: str, market_regime: str, strategy_id: str,

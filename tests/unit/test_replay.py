@@ -59,7 +59,7 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(first["decision_digest"], second["decision_digest"])
         with closing(sqlite3.connect(self.db)) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM decisions").fetchone()[0], first["bars"] * 2)
-            self.assertEqual(db.execute("SELECT count(*) FROM experiences").fetchone()[0], first["bars"] * 2)
+            self.assertEqual(db.execute("SELECT count(*) FROM experiences WHERE action_taken IN ('NO_TRADE','HYPOTHETICAL_SIGNAL')").fetchone()[0], first["bars"] * 2)
             self.assertIsNone(db.execute("SELECT max(result_in_r) FROM experiences").fetchone()[0])
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("DELETE FROM decisions")
@@ -127,6 +127,27 @@ class ReplayTests(unittest.TestCase):
             statuses = [row[0] for row in db.execute("SELECT status FROM experiment_artifacts")]
         self.assertEqual(statuses, ["started", "failed"])
         self.assertFalse(list((self.root / "reports").glob("*/report.html")))
+
+    def test_financial_outcome_appended_without_overwriting_signal(self):
+        bars = list(scenario())
+        start = bars[0].timestamp
+        bars.extend((Candle(start + timedelta(minutes=165), 1.10155, 1.1016, 1.1014, 1.1015, 100, .2),
+                     Candle(start + timedelta(minutes=170), 1.1015, 1.104, 1.1014, 1.1038, 100, .2)))
+        first = self.run_scenario(tuple(bars))
+        second = self.run_scenario(tuple(bars))
+        self.assertEqual(first["execution"]["closed_trades"], 1)
+        self.assertGreater(first["execution"]["net_pnl"], 0)
+        metrics = first["execution"]
+        self.assertAlmostEqual(metrics["net_pnl"], metrics["gross_pnl_closed"] - metrics["spread_cost_closed"]
+                               - metrics["slippage_cost_closed"] - metrics["commission_closed"])
+        self.assertEqual(first["execution_digest"], second["execution_digest"])
+        self.assertEqual(first["decision_digest"], second["decision_digest"])
+        with closing(sqlite3.connect(self.db)) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM experiences WHERE result_in_r IS NOT NULL").fetchone()[0], 2)
+            self.assertEqual(db.execute("SELECT count(*) FROM simulated_execution_events WHERE status='closed'").fetchone()[0], 2)
+            original = json.loads(db.execute("SELECT payload_json FROM experiences WHERE action_taken='HYPOTHETICAL_SIGNAL' LIMIT 1").fetchone()[0])
+            self.assertIsNone(original["financial_result"]["net_pnl"])
+            self.assertEqual(db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0], '2')
 
 
 if __name__ == "__main__":
