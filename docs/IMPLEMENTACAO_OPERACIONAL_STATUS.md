@@ -112,6 +112,33 @@ http://192.168.97.221:8097/ com o commit `b206738`.**
 14. Nova regressão após recuperação automática: **191 testes executados,
     189 aprovados e dois de navegador separados por ambiente**, com PostgreSQL
     e modelo real habilitados. Nenhuma falha.
+15. Pesquisa de 210 dias concluída: 631 experiências técnicas encerradas,
+    divididas em 423/33/175; o filtro foi ajustado e houve três avaliações
+    walk-forward no desenvolvimento. Zero oportunidades elegíveis na validação
+    impediu a comparação financeira e a aprovação; resultado final não avaliado.
+16. A última janela prevista, 365 dias incluindo 30 de aquecimento, também
+    terminou: 1.421 experiências técnicas, divisões 979/248/194, dois exemplos
+    elegíveis no arquivo inteiro e zero na validação. Candidato persistido
+    `570b0d3b4c54b3c0098d301ad7571ba1f9681669fdbf0fb6dafea49827760ca8`;
+    relatório `run_id=661f1b42-0b1d-4066-a145-85f8cd0334ae`. Estado correto:
+    `TRAINING_BLOCKED / INSUFFICIENT_OPERATIONAL_VALIDATION_SAMPLES`.
+    Foram preservadas também 478 experiências do benchmark independente.
+    Não houve aprovação, avaliação financeira final ou envio de ordem.
+17. Auditoria dos 1.421 exemplos selecionados: 632 em TRANSITION, 423 em RANGE,
+    359 em UNKNOWN e sete em TREND; nesses sete, somente dois tinham direção H1
+    conhecida. São contagens das experiências selecionadas, não estatística de
+    todos os candles do mercado. Isso localiza a escassez na interseção entre
+    setup, regime de execução e contexto H1; não demonstra erro do classificador
+    nem autoriza reduzir seus limites. Uma alteração exige hipótese versionada
+    e novo experimento, preservando os resultados atuais.
+18. A tarefa automática assumiu o serviço depois da pesquisa concluída;
+    heartbeat disponível e estado bloqueado/sem posição preservados. O painel
+    agora pode consultar o último relatório efetivamente associado a um run da
+    mesma sessão. Uma pesquisa independente não pode aparecer como seu resultado.
+19. Verificação do relatório associado: nove testes PostgreSQL/HTTP/coordenador
+    aprovados; regressão de 192 testes, com 190 aprovados e dois testes Chrome
+    executados separadamente e aprovados. A regra de associação usa IDs da sessão
+    e run, sem depender da comparação entre relógios Windows e PostgreSQL.
 
 ## Regras que permanecem
 
@@ -128,10 +155,10 @@ http://192.168.97.221:8097/ com o commit `b206738`.**
 
 ## Pendente para concluir o plano integral
 
-1. Concluir e conferir o replay atual da versão contrafactual/batched, inspecionar
-   amostras, custos, elegibilidade e comparações. Se faltar amostra, ampliar
-   histórico M5 de pesquisa dentro de um protocolo explícito e limitado;
-   a baseline mensal dos sete períodos deve continuar separada.
+1. A execução real de todas as janelas previstas terminou. Manter bloqueio:
+   houve ajuste de filtro, mas não amostra operacional para sua validação.
+   Investigar a interseção de critérios em novo experimento explícito, sem
+   ampliar além de 365 dias automaticamente nem rebaixar os limites atuais.
 2. Testar as fronteiras temporais, benchmark independente, seleção de limiar,
    bloqueio de final e resultados dos relatórios. A última implementação ainda
    precisa de verificação integral com dados reais e regressão final.
@@ -144,9 +171,8 @@ http://192.168.97.221:8097/ com o commit `b206738`.**
    stops, reconciliação e prevenção de duplicatas; conta real continua bloqueada.
 6. Conferir novamente previsão, níveis e resumo após publicação, com o serviço
    Windows atualizado; a revisão local desktop/celular já passou.
-7. Ao terminar a pesquisa em curso, transferir o lease para o serviço automático
-   atualizado e conferir retomada/estado. Instalação, backend, tela principal
-   e verificação HTTP/navegador já foram feitos. Não interromper o replay só
-   para fazer essa troca e não autorizar versão reprovada.
+7. Serviço automático disponível e estado real preservado após o fim da pesquisa.
+   Conferir sua próxima preparação por comando autenticado ao realizar um
+   novo experimento, sem autorizar o candidato bloqueado.
 8. Atualizar contratos/documentação operacional e executar auditoria de conclusão
    por requisito. Não declarar o objetivo completo com os itens acima pendentes.

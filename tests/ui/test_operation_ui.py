@@ -28,6 +28,7 @@ class OperationBrowserTests(unittest.TestCase):
         self.state = dict(state="STOPPED", desired="stopped", stage="connection", message="Escolha o lote e inicie.",
                           lot="0.01", updated_at=self.now.isoformat(), session_id="browser-fixture", training=None)
         self.authenticated = False
+        self.last_report = None
         self.page.route("**/*", self.route)
 
     def route(self, route):
@@ -40,6 +41,7 @@ class OperationBrowserTests(unittest.TestCase):
                 self.assertEqual(route.request.headers["x-diagnostics-csrf"], "browser-fixture-csrf")
                 self.state.update(state="QUEUED", desired="running", lot=self.commands[-1].get("lot", "0.01"))
             route.fulfill(json=dict(ok=True, state=self.state, authenticated=self.authenticated,
+                                    last_training_report=self.last_report,
                                     csrf="browser-fixture-csrf", worker=dict(available=True)))
         elif path == "/api/mt5/chart":
             rows = [dict(timestamp=(self.clock - timedelta(minutes=5*i)).isoformat(),
@@ -76,6 +78,9 @@ class OperationBrowserTests(unittest.TestCase):
 
     def test_mobile_forecast_expiry_source_identity_and_position_levels(self):
         self.page.set_viewport_size(dict(width=390, height=844))
+        self.last_report=dict(report_id="fixture-report",samples=120,candidate_version="fixture-model",
+                              training_period=dict(days=180),operational_validation_samples=0,
+                              reason="INSUFFICIENT_OPERATIONAL_VALIDATION_SAMPLES")
         forecast=dict(symbol="EURUSD", timeframe="M5", clock_id="browser-clock", reference_at=self.clock.isoformat(),
                       valid_until=(self.clock+timedelta(minutes=5)).isoformat(), reference_price=1.1005,
                       points=[dict(at=(self.clock+timedelta(minutes=5*(i+1))).isoformat(),low=1.099,median=1.101,high=1.102) for i in range(12)])
@@ -85,6 +90,8 @@ class OperationBrowserTests(unittest.TestCase):
         self.page.goto("http://127.0.0.1:37771/")
         self.page.wait_for_function("document.getElementById('forecast-note').textContent.includes('estimativa avaliada')")
         self.assertIn("Compra", self.page.locator("#position").inner_text())
+        self.assertIn("120 experiências encerradas",self.page.locator("#last-research").inner_text())
+        self.assertIn("0 oportunidades",self.page.locator("#last-research").inner_text())
         self.assertFalse(self.page.evaluate("document.documentElement.scrollWidth > innerWidth"))
         self.page.evaluate("window.dispatchEvent(new Event('resize'))")
         forecast["clock_id"]="other-clock"

@@ -82,6 +82,21 @@ class OperationControl:
         with self.memory.pool.connection() as c:
             return self.latest(c)
 
+    def latest_training_report(self, state):
+        if not state.get("session_id"):
+            return None
+        with self.memory.pool.connection() as c:
+            row = c.execute("""SELECT report.payload_json FROM project_records report
+                WHERE report.record_type='agent_training_report'
+                AND report.payload_json::jsonb ->> 'lot'=%s
+                AND EXISTS (SELECT 1 FROM project_records event
+                    WHERE event.record_type='agent_operation_state'
+                    AND event.payload_json::jsonb ->> 'session_id'=%s
+                    AND event.payload_json::jsonb #>> '{training,run_id}' = report.payload_json::jsonb ->> 'run_id')
+                ORDER BY report.recorded_at DESC LIMIT 1""",
+                (state["lot"],state["session_id"])).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
     def command(self, payload, key, *, actor):
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{16,128}", key):
             raise ValueError("Identificador de comando inválido. Atualize a página.")

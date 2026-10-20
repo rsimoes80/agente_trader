@@ -147,6 +147,14 @@ class AgentRegistryTests(unittest.TestCase):
                 actor="synthetic-test",
             )
 
+    def test_previous_report_must_belong_to_a_run_of_the_current_session(self):
+        report = dict(run_id="fixture-run",report_id="fixture-report",lot="0.01")
+        self.record("agent_training_report","fixture-report",report)
+        self.assertIsNone(self.control.latest_training_report(self.control.status()))
+        self.control.publish(self.state["session_id"],training=dict(run_id="fixture-run"))
+        self.record("agent_training_report","unrelated-report",dict(run_id="other-run",lot="0.01"))
+        self.assertEqual(self.control.latest_training_report(self.control.status()),report)
+
     def test_paper_state_checkpoint_and_events_commit_together_and_owner_is_fenced(
         self,
     ):

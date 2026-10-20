@@ -12,7 +12,9 @@ motivo concreto do bloqueio. A janela de pesquisa pode ser maior que 30 dias.
 
 O modo atual é **simulado**. Aprovação, posições e resultados são persistidos
 no PostgreSQL; [contrato e limitações](docs/agent_live_simulation.md).
-O treino real ainda está em execução e não há versão de mercado aprovada.
+O treino real terminou as janelas previstas até 365 dias: o filtro candidato
+foi ajustado, mas faltaram oportunidades elegíveis para validá-lo. O agente
+permanece bloqueado e não há versão de mercado aprovada.
 Integração de execução demo ainda pendente; nenhuma ordem MT5 é enviada.
 
 Gráfico detalhado: [/mercado](http://192.168.97.221:8097/mercado).

@@ -223,12 +223,14 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/diagnostics/agent":
+                state = app.operation.status()
                 self.send(
                     200,
                     dict(
                         ok=True,
                         csrf=CSRF,
-                        state=app.operation.status(),
+                        state=state,
+                        last_training_report=app.operation.latest_training_report(state),
                         worker=app.operation.worker_status(),
                         authenticated=app.operator_sessions.authenticated(
                             self.headers.get("Cookie")
