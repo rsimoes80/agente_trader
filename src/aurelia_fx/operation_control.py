@@ -11,7 +11,13 @@ from uuid import uuid4
 
 LOCK = 70616031
 WORKER_LOCK = 70616032
-TERMINAL = {"STOPPED", "ERROR", "INSUFFICIENT_DATA", "TRAINING_UNAVAILABLE", "TRAINING_BLOCKED"}
+TERMINAL = {
+    "STOPPED",
+    "ERROR",
+    "INSUFFICIENT_DATA",
+    "TRAINING_UNAVAILABLE",
+    "TRAINING_BLOCKED",
+}
 
 
 def validate_lot(value, contract=None):
@@ -200,6 +206,11 @@ class OperationControl:
                 )
             ):
                 return None
+            if isinstance(changes.get("training"), dict):
+                changes["training"] = {
+                    **(state.get("training") or {}),
+                    **changes["training"],
+                }
             return self.append(
                 c, {**state, **changes, "sequence": state["sequence"] + 1}
             )

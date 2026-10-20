@@ -26,18 +26,18 @@ def portfolio(
     ]
     signals = {s["entry_at"]: s for s in samples}
     if not samples:
-        return dict(
-            closed_trades=0,
-            net_pnl=0,
+        result = simulation.summary()
+        result.update(
             expectancy=None,
             profit_factor=None,
-            max_close_equity_drawdown_pct=0,
-            censored_trades=0,
+            no_losses_observed=False,
             exposure_bars=0,
             risk_rejections=0,
             model_rejections=0,
+            unresolved_position=False,
             events=[],
         )
+        return result
     first = min(s["entry_at"] for s in samples)
     last = max(s["exit_at"] for s in samples)
     exposure = 0
@@ -97,6 +97,10 @@ def portfolio(
         model_rejections=rejected,
         unresolved_position=simulation.position is not None,
         events=simulation.events,
+        risk_rejections=sum(
+            e["status"] == "rejected" and e.get("reason") == "ENTRY_RISK_VETO"
+            for e in simulation.events
+        ),
     )
     return summary
 
@@ -207,6 +211,11 @@ def validate(memory, dataset, partitions, candles, *, lot, contract, progress, c
         message="Comparando estratégia técnica, filtro Timestral e modelo conjunto no período de validação.",
         training={**report, "status": "validating"},
     )
+    report["operational_validation_samples"] = sum(
+        s.get("production_eligible", False) for s in validation
+    )
+    if report["operational_validation_samples"] < PROTOCOL["minimum_trades_validation"]:
+        return finish("INSUFFICIENT_OPERATIONAL_VALIDATION_SAMPLES")
     technical = portfolio(validation, candles, units=units)
     forecast = portfolio(
         partitions["benchmark_validation"], candles, units=units, timestral_only=True

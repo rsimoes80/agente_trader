@@ -59,6 +59,17 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
    pesquisa/produção. O grupo Timestral passou em 23 testes, incluindo duas
    séries distintas no mesmo lote real de inferência e contextos de comprimentos
    diferentes. Mudanças posteriores ainda exigem regressão final.
+8. A primeira execução conjunta da versão de pesquisa produziu 167 hipóteses
+   técnicas encerradas (114 desenvolvimento, 21 validação, 32 final) e 49
+   hipóteses do benchmark Timestral independente. Apenas uma hipótese técnica
+   cumpria também a elegibilidade operacional. Os 326 vetos técnicos de risco
+   foram por relação retorno/risco líquida insuficiente; não viraram perdas de
+   treino. A validação ficou abaixo do mínimo de 30 e o resultado final não foi
+   consultado. O código agora prevê ampliação limitada do arquivo M5 para
+   60/120/210/365 dias somente por insuficiência amostral, preservando os 30 dias
+   recentes do produto e os limites numéricos do protocolo.
+9. A regressão posterior passou em **169 testes** com PostgreSQL e modelo real
+   habilitados. A nova ampliação automática ainda precisa de execução integral.
 
 ## Regras que permanecem
 

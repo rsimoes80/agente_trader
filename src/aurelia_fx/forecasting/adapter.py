@@ -111,6 +111,12 @@ class TimestralAdapter:
                 "Falha no carregamento Timestral: " + ready.get("error_type", "unknown")
             )
 
+    def warmup(self):
+        if not self.config.enabled:
+            raise ModelUnavailable("Timestral desabilitado.")
+        with self.lock:
+            self._start()
+
     def forecast(self, values):
         return self._request({"values": values})
 

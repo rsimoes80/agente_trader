@@ -142,8 +142,10 @@ def prepare(control, repository, state, fetch, worker_id, stop):
     def capture(symbol, timeframe, count, *, include_current=False):
         check()
         publish(
-            state="LOADING_HISTORY",
-            stage="history",
+            state="LOADING_HISTORY"
+            if capture_days == 30
+            else "LOADING_RESEARCH_HISTORY",
+            stage="history" if capture_days == 30 else "training",
             message=f"Atualizando {capture_days} dias de {symbol} em {timeframe}. Os dados válidos existentes serão reutilizados.",
             current_timeframe=timeframe,
         )
@@ -161,6 +163,7 @@ def prepare(control, repository, state, fetch, worker_id, stop):
         raise ValueError(
             "A fonte não informou o contrato de lotes do ativo. Atualize a ponte MT5."
         )
+    publish(symbol_contract=contract)
     validate_lot(state["lot"], contract)
     if (
         contract.get("currency_profit") != "USD"
@@ -205,27 +208,8 @@ def prepare(control, repository, state, fetch, worker_id, stop):
         symbol_contract=contract,
         message="Os 30 dias estão preparados. Capturando mais 30 dias anteriores para aquecer a análise sem usar informações futuras.",
     )
-    capture_days = 60
     from aurelia_fx.agent_history import collect_training_history
-
-    warmup = collect_training_history(
-        repository, capture, days=60, expected_clock_id=baseline["clock_id"]
-    )
-    check()
-    if warmup["clock_id"] != baseline["clock_id"]:
-        raise ValueError("O servidor mudou durante a captura de aquecimento.")
-    if warmup["status"] != "ready":
-        publish(
-            state="INSUFFICIENT_DATA",
-            stage="history",
-            history=history,
-            message="Os 30 dias recentes foram preparados, mas falta histórico anterior para o aquecimento: "
-            + "cobertura M5 anterior insuficiente.",
-        )
-        return
-    frozen, rows = repository.frozen_candles(
-        warmup, record_type="agent_training_history"
-    )
+    from aurelia_fx.agent_model import PROTOCOL
     from aurelia_fx.agent_research import build_samples
     from aurelia_fx.agent_validation import validate
     from aurelia_fx.forecasting.adapter import TimestralAdapter
@@ -234,31 +218,80 @@ def prepare(control, repository, state, fetch, worker_id, stop):
     config = load_config()
     if not config.enabled or config.revision == "main":
         raise ValueError(
-            "Ative o Timestral com uma revisão imutável dos pesos antes de treinar."
+            "Ative o Timestral com uma revisao imutavel dos pesos antes de treinar."
         )
     adapter = TimestralAdapter(config)
+    report = None
     try:
-        dataset, partitions, candles = build_samples(
-            repository.memory,
-            rows,
-            baseline=frozen,
-            lot=state["lot"],
-            contract=contract,
-            forecast_config=config,
-            adapter=adapter,
-            progress=publish,
-            check=check,
+        publish(
+            state="CHECKING_MODEL",
+            stage="training",
+            message="Verificando o Timestral local antes da pesquisa historica.",
         )
-        report = validate(
-            repository.memory,
-            dataset,
-            partitions,
-            candles,
-            lot=state["lot"],
-            contract=contract,
-            progress=publish,
-            check=check,
-        )
+        adapter.warmup()
+        for capture_days in PROTOCOL["research_history_days"]:
+            check()
+            publish(
+                state="LOADING_RESEARCH_HISTORY",
+                stage="training",
+                history=history,
+                message=f"Preparando {capture_days - 30} dias de pesquisa M5 e 30 dias anteriores de aquecimento.",
+                training=dict(
+                    status="preparing_examples",
+                    samples=None,
+                    candidate_version=None,
+                    report_id=None,
+                    partitions=None,
+                    final_accessed=False,
+                    validation=None,
+                    final=None,
+                    research_history_days=capture_days,
+                ),
+            )
+            warmup = collect_training_history(
+                repository,
+                capture,
+                days=capture_days,
+                expected_clock_id=baseline["clock_id"],
+            )
+            check()
+            if warmup["status"] != "ready":
+                if report is not None:
+                    report = {**report, "history_extension_unavailable": capture_days}
+                    break
+                publish(
+                    state="INSUFFICIENT_DATA",
+                    stage="history",
+                    history=history,
+                    message="O historico recente foi preparado, mas o arquivo anterior M5 ainda nao tem cobertura suficiente. Carregue mais historico no MT5.",
+                )
+                return
+            frozen, rows = repository.frozen_candles(
+                warmup, record_type="agent_training_history"
+            )
+            dataset, partitions, candles = build_samples(
+                repository.memory,
+                rows,
+                baseline=frozen,
+                lot=state["lot"],
+                contract=contract,
+                forecast_config=config,
+                adapter=adapter,
+                progress=publish,
+                check=check,
+            )
+            report = validate(
+                repository.memory,
+                dataset,
+                partitions,
+                candles,
+                lot=state["lot"],
+                contract=contract,
+                progress=publish,
+                check=check,
+            )
+            if report["status"] != "insufficient_samples":
+                break
     finally:
         adapter.close()
     check()

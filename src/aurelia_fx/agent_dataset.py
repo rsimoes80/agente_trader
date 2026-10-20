@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -243,6 +244,27 @@ def build_samples(
         ),
         created_at=datetime.now(timezone.utc).isoformat(),
     )
+    root = Path(__file__).resolve().parents[2]
+    try:
+        manifest["code_version"] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).strip()
+        manifest["dirty_worktree"] = bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=root,
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            ).strip()
+        )
+    except (OSError, subprocess.SubprocessError):
+        manifest["code_version"] = "unknown"
+        manifest["dirty_worktree"] = True
     manifest["experiment_hash"] = fingerprint(manifest)
     memory.record_project_data("agent_training_manifest", run_id, manifest)
     session = intelligence_session()
@@ -254,11 +276,11 @@ def build_samples(
         if index % 48 == 0:
             check()
             progress(
-                state="REPLAYING",
+                state="PREPARING_EXPERIENCES",
                 stage="training",
                 message=f"Analisando o histórico: {index}/{len(candles)} candles, {len(candidates)} hipóteses de pesquisa.",
                 training=dict(
-                    status="replaying",
+                    status="preparing_examples",
                     samples=None,
                     run_id=run_id,
                     processed_bars=index,
