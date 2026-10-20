@@ -5,6 +5,7 @@ data/models/
 data/timestral.json
 data/timestral.pid
 data/history.pid
+data/agent.pid
 data/platform-operator.token
 .agents/
 .tools/

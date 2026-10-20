@@ -1,5 +1,8 @@
 # Prompt atual: V4
 
+[Plano operacional aprovado](docs/PLANO_OPERACIONAL_E_TREINAMENTO.md) ·
+[Progresso da implementação integrada](docs/IMPLEMENTACAO_OPERACIONAL_STATUS.md).
+
 [Revisão humana simples e comportamento posterior](docs/human_review_panel.md):
 parecer estruturado, leitura original e acompanhamento sem treino automático.
 

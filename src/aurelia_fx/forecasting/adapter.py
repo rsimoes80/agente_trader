@@ -112,14 +112,22 @@ class TimestralAdapter:
             )
 
     def forecast(self, values):
+        return self._request({"values": values})
+
+    def forecast_batch(self, contexts):
+        if not 1 <= len(contexts) <= 8:
+            raise ValueError(
+                "Timestral aceita de 1 a 8 contextos por lote de inferência."
+            )
+        return self._request({"batch_values": contexts})["batch_outputs"]
+
+    def _request(self, request):
         if not self.config.enabled:
             raise ModelUnavailable("Timestral desabilitado.")
         with self.lock:
             try:
                 self._start()
-                self.process.stdin.write(
-                    json.dumps({"values": values}, allow_nan=False) + "\n"
-                )
+                self.process.stdin.write(json.dumps(request, allow_nan=False) + "\n")
                 self.process.stdin.flush()
                 result = self._wait(self.config.timeout_seconds)
                 if not result.get("ok"):

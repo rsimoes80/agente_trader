@@ -7,6 +7,22 @@ from aurelia_fx.execution_simulator import ExecutionConfig, ExecutionSimulator, 
 
 
 class ExecutionSimulatorTests(unittest.TestCase):
+    def test_fixed_lot_preserves_units_instead_of_spending_full_risk_budget(self):
+        self.simulator = ExecutionSimulator(replace(self.config, fixed_units=1000), self.limits)
+        self.simulator.submit(self.request())
+        fill = self.advance(self.bar())[0]
+        self.assertEqual(fill["status"], "filled")
+        self.assertEqual(fill["units"], 1000)
+        self.assertLess(fill["initial_risk"], 50)
+
+    def test_fixed_lot_above_risk_budget_is_rejected_without_resizing(self):
+        self.simulator = ExecutionSimulator(replace(self.config, fixed_units=1_000_000), self.limits)
+        self.simulator.submit(self.request())
+        result = self.advance(self.bar())[0]
+        self.assertEqual(result["status"], "rejected")
+        self.assertIn("FIXED_LOT_EXCEEDS_RISK_BUDGET", result["risk"]["reasons"])
+        self.assertIsNone(self.simulator.position)
+
     def setUp(self):
         self.start = datetime(2026, 10, 19, 8, tzinfo=timezone.utc)
         self.config = ExecutionConfig()

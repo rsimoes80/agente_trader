@@ -22,10 +22,15 @@ class MarketIntelligenceSession:
         pip_size: float,
         swing_window: int = 2,
         regime_config: RegimeConfig | None = None,
+        aggregator=None,
+        gap_detector=None,
     ):
         self.symbol, self.hierarchy = symbol, hierarchy
+        self.gap_detector = gap_detector or unexpected_gap
         self.seconds = timeframe_seconds(hierarchy.execution_timeframe)
-        self.aggregator = ClosedBarAggregator(hierarchy)
+        self.aggregator = (
+            aggregator if aggregator is not None else ClosedBarAggregator(hierarchy)
+        )
         self.observer = MarketObserver(
             SessionEngine(sessions),
             hierarchy_config=hierarchy,
@@ -64,7 +69,9 @@ class MarketIntelligenceSession:
             if self.last is None or bar.timestamp > self.last.timestamp
         ]
         for i, bar in enumerate(fresh):
-            gap = self.last is not None and unexpected_gap(self.last, bar, self.seconds)
+            gap = self.last is not None and self.gap_detector(
+                self.last, bar, self.seconds
+            )
             if gap:
                 self.history.clear()
                 self.observer.reset()

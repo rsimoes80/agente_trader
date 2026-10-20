@@ -65,23 +65,41 @@ def engine_main():
         for line in sys.stdin:
             try:
                 request = json.loads(line)
-                values = request["values"]
-                if not config.min_context <= len(values) <= config.context:
-                    raise ValueError("Contexto fora dos limites.")
-                context = np.asarray(values, dtype=np.float64).reshape(1, 1, -1)
-                if not np.isfinite(context).all() or (context <= 0).any():
-                    raise ValueError("Contexto contém valores inválidos.")
+                batches = request.get("batch_values")
+                batching = batches is not None
+                if not batching:
+                    batches = [request["values"]]
+                if not 1 <= len(batches) <= 8:
+                    raise ValueError("Lote de inferência fora dos limites.")
+                width = max(len(values) for values in batches)
+                context = np.full((len(batches), 1, width), np.nan, dtype=np.float64)
+                for index, values in enumerate(batches):
+                    if not config.min_context <= len(values) <= config.context:
+                        raise ValueError("Contexto fora dos limites.")
+                    array = np.asarray(values, dtype=np.float64)
+                    if (
+                        array.ndim != 1
+                        or not np.isfinite(array).all()
+                        or (array <= 0).any()
+                    ):
+                        raise ValueError("Contexto contém valores inválidos.")
+                    context[index, 0, -len(values) :] = array
                 started = time.monotonic()
                 forecast = model.forecast(context, prediction_length=12)
                 quantiles = torch.stack(
-                    [forecast.quantile(q)[0, 0] for q in (0.1, 0.5, 0.9)], dim=-1
+                    [forecast.quantile(q)[:, 0] for q in (0.1, 0.5, 0.9)], dim=-1
                 )
-                result = dict(
-                    **metadata,
-                    levels=[0.1, 0.5, 0.9],
-                    quantiles=quantiles.detach().cpu().double().tolist(),
-                    latency_ms=(time.monotonic() - started) * 1000,
-                )
+                results = [
+                    dict(
+                        **metadata,
+                        levels=[0.1, 0.5, 0.9],
+                        quantiles=values,
+                        latency_ms=(time.monotonic() - started) * 1000,
+                        batch_size=len(batches),
+                    )
+                    for values in quantiles.detach().cpu().double().tolist()
+                ]
+                result = dict(batch_outputs=results) if batching else results[0]
                 print(json.dumps(dict(ok=True, **result), allow_nan=False), flush=True)
             except Exception as exc:
                 print(

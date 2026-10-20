@@ -174,6 +174,18 @@ class TimestralPostgresTests(unittest.TestCase):
                 ).fetchone()["n"],
                 3,
             )
+            contexts = [
+                [row.close for row in rows],
+                [row.close * 2 for row in rows[-64:]],
+            ]
+            outputs = engine.forecast_batch(contexts)
+            self.assertEqual(len(outputs), 2)
+            self.assertTrue(
+                all(o["batch_size"] == 2 and len(o["quantiles"]) == 12 for o in outputs)
+            )
+            self.assertGreater(
+                outputs[1]["quantiles"][2][1], outputs[0]["quantiles"][2][1] * 1.5
+            )
         finally:
             engine.close()
 

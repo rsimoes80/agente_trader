@@ -212,6 +212,26 @@ def fetch_history(
                 "to_utc": candles[-1]["timestamp"],
                 "digits": info.digits,
                 "pip_size": pip_size,
+                "symbol_contract": {
+                    "volume_min": float(info.volume_min),
+                    "volume_max": float(info.volume_max),
+                    "volume_step": float(info.volume_step),
+                    "contract_size": float(info.trade_contract_size),
+                    "currency_profit": info.currency_profit,
+                    "currency_margin": info.currency_margin,
+                }
+                if all(
+                    hasattr(info, key)
+                    for key in (
+                        "volume_min",
+                        "volume_max",
+                        "volume_step",
+                        "trade_contract_size",
+                        "currency_profit",
+                        "currency_margin",
+                    )
+                )
+                else None,
                 "broker": terminal["broker"],
                 "server": terminal["server"],
                 "trade_mode": terminal["trade_mode"],

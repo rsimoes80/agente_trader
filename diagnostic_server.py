@@ -25,7 +25,9 @@ from aurelia_fx.diagnostics_repository import DiagnosticsRepository  # noqa: E40
 from aurelia_fx.forecasting.repository import ForecastRepository  # noqa: E402
 from aurelia_fx.historical.repository import HistoricalRepository  # noqa: E402
 from aurelia_fx.learning_audit import build_report  # noqa: E402
+from aurelia_fx.operation_control import OperationControl  # noqa: E402
 from aurelia_fx.operator_auth import authorized  # noqa: E402
+from aurelia_fx.operator_session import OperatorSessions  # noqa: E402
 from aurelia_fx.platform_control import ObservationController, preflight  # noqa: E402
 from aurelia_fx.regime_research import compare_regime_parameters  # noqa: E402
 from aurelia_fx.storage import open_memory  # noqa: E402
@@ -37,6 +39,9 @@ ALLOWED_ORIGINS = {
     "http://localhost:8770",
 }
 STATIC = {
+    "/operacao": "operation.html",
+    "/operation.css": "operation.css",
+    "/operation.js": "operation.js",
     "/diagnostico": "diagnostics.html",
     "/diagnostico/": "diagnostics.html",
     "/diagnostics.css": "diagnostics.css",
@@ -87,6 +92,8 @@ class Application:
         self.controller = ObservationController(self.memory, self.preflight)
         self.controller.recover()
         self.observer.session_controller = self.controller
+        self.operation = OperationControl(self.memory)
+        self.operator_sessions = OperatorSessions(self.operator_token)
 
     def preflight(self):
         observer = self.observer.status()
@@ -169,13 +176,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(self.command, urlparse(self.path).path, flush=True)
 
-    def send(self, status, payload):
+    def send(self, status, payload, *, cookie=None):
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
 
@@ -191,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(
                     "Content-Type",
                     "text/html; charset=utf-8"
-                    if path.startswith("/diagnostico")
+                    if path.startswith("/diagnostico") or path == "/operacao"
                     else "text/css; charset=utf-8"
                     if path.endswith(".css")
                     else "application/javascript; charset=utf-8",
@@ -211,6 +220,21 @@ class Handler(BaseHTTPRequestHandler):
                         "orders_enabled": False,
                         "timezone": "UTC",
                     },
+                )
+                return
+            if path == "/api/diagnostics/agent":
+                self.send(
+                    200,
+                    dict(
+                        ok=True,
+                        csrf=CSRF,
+                        state=app.operation.status(),
+                        worker=app.operation.worker_status(),
+                        authenticated=app.operator_sessions.authenticated(
+                            self.headers.get("Cookie")
+                        ),
+                        access_configured=bool(app.operator_token),
+                    ),
                 )
                 return
             if path == "/api/diagnostics/platform":
@@ -310,6 +334,41 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("Objeto JSON obrigatório.")
             path = urlparse(self.path).path
+            if path == "/api/diagnostics/agent/login":
+                try:
+                    cookie = self.server.app.operator_sessions.login(
+                        payload.get("password"), self.client_address[0]
+                    )
+                except ValueError as exc:
+                    self.send(403, dict(ok=False, error=str(exc)))
+                    return
+                self.send(200, dict(ok=True), cookie=cookie)
+                return
+            if path == "/api/diagnostics/agent/command":
+                if not self.server.app.operator_sessions.authenticated(
+                    self.headers.get("Cookie")
+                ):
+                    self.send(
+                        403,
+                        dict(
+                            ok=False, error="Entre no projeto para controlar o agente."
+                        ),
+                    )
+                    return
+                result = self.server.app.operation.command(
+                    payload, self.headers.get("Idempotency-Key", ""), actor="operator"
+                )
+                self.send(200, dict(ok=True, state=result))
+                return
+            if path == "/api/diagnostics/agent/logout":
+                self.send(
+                    200,
+                    dict(ok=True),
+                    cookie=self.server.app.operator_sessions.logout(
+                        self.headers.get("Cookie")
+                    ),
+                )
+                return
             if path == "/api/diagnostics/platform/command":
                 if not authorized(
                     self.headers.get("X-Operator-Token", ""),

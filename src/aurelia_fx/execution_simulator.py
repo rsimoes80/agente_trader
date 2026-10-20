@@ -30,8 +30,13 @@ class ExecutionConfig:
     value_per_price_unit: float = 1.0
     initial_equity: float = 10_000.0
     bar_seconds: int = 300
+    fixed_units: float | None = None
 
     def __post_init__(self):
+        if self.fixed_units is not None and (
+            not math.isfinite(self.fixed_units) or self.fixed_units <= 0
+        ):
+            raise ValueError("Fixed lot units must be finite and positive.")
         for value in (self.pip_size, self.value_per_price_unit, self.initial_equity):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError("Execution parameters must be finite and positive.")
@@ -207,6 +212,7 @@ class ExecutionSimulator:
                         account=self.account(candle.timestamp),
                         limits=self.limits,
                         now=candle.timestamp,
+                        fixed_units=self.config.fixed_units,
                     )
                     if not risk.approved:
                         self._event(
