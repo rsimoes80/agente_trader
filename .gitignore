@@ -1,4 +1,9 @@
 .venv/
+.venv-timestral/
+vendor/timestral/
+data/models/
+data/timestral.json
+data/timestral.pid
 .agents/
 .tools/
 nautilus_trader/

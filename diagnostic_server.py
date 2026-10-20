@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aurelia_fx.diagnostic_observer import DiagnosticObserver  # noqa: E402
 from aurelia_fx.diagnostics_repository import DiagnosticsRepository  # noqa: E402
+from aurelia_fx.forecasting.repository import ForecastRepository  # noqa: E402
 from aurelia_fx.regime_research import compare_regime_parameters  # noqa: E402
 from aurelia_fx.storage import open_memory  # noqa: E402
 
@@ -35,6 +36,8 @@ STATIC = {
     "/diagnostico/": "diagnostics.html",
     "/diagnostics.css": "diagnostics.css",
     "/diagnostics.js": "diagnostics.js",
+    "/timestral.css": "timestral.css",
+    "/timestral-panel.js": "timestral-panel.js",
 }
 
 
@@ -42,6 +45,7 @@ class Application:
     def __init__(self):
         self.memory = open_memory()
         self.repo = DiagnosticsRepository(self.memory)
+        self.forecasts = ForecastRepository(self.memory)
         self.stop = threading.Event()
         self.research_lock = threading.Lock()
         try:
@@ -171,6 +175,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/diagnostics/audit":
                 self.send(200, {"ok": True, **app.repo.audit(args)})
+                return
+            if path == "/api/diagnostics/timestral":
+                self.send(
+                    200,
+                    {
+                        "ok": True,
+                        **app.forecasts.summary(
+                            scope=args.get("scope", "live"),
+                            source_id=args.get("source_id"),
+                        ),
+                    },
+                )
                 return
             if path == "/api/diagnostics/samples":
                 self.send(

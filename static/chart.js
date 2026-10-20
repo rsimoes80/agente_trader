@@ -65,13 +65,17 @@ function draw() {
   const right = 66, top = 14, bottom = 33, left = 10;
   const plotW = w - left - right, plotH = h - top - bottom;
   const visible = state.candles.slice(-state.visible);
+  const forecast = state.timeframe === "M5" ? (window.aureliaTimestral || []).filter(p =>
+    Date.now() - new Date(p.as_of).getTime() < 360000 &&
+    visible.some(c => c.timestamp === p.reference_time)) : [];
+  const extra = forecast.length ? 12 : 0;
   const ema = emaValues(state.candles).slice(-visible.length);
-  const rawMin = Math.min(...visible.map(c => c.low));
-  const rawMax = Math.max(...visible.map(c => c.high));
+  const rawMin = Math.min(...visible.map(c => c.low), ...forecast.map(p => p.quantiles["0.1"]));
+  const rawMax = Math.max(...visible.map(c => c.high), ...forecast.map(p => p.quantiles["0.9"]));
   const pad = (rawMax - rawMin) * .08 || .0001;
   const min = rawMin - pad, max = rawMax + pad;
   const y = price => top + (max - price) / (max - min) * plotH;
-  const candleW = Math.max(2, Math.min(10, plotW / visible.length * .64));
+  const candleW = Math.max(2, Math.min(10, plotW / (visible.length + extra) * .64));
 
   ctx.lineWidth = 1;
   ctx.font = "10px 'DM Mono', monospace";
@@ -93,7 +97,8 @@ function draw() {
     ctx.setLineDash([2, 4]);
     ctx.beginPath(); ctx.moveTo(gx, top); ctx.lineTo(gx, h - bottom); ctx.stroke();
     ctx.setLineDash([]);
-    const candle = visible[Math.min(visible.length - 1, Math.floor(i / 10 * visible.length))];
+    const gridIndex = Math.floor(i / 10 * (visible.length + extra));
+    const candle = visible[gridIndex] || (extra ? { timestamp: new Date(new Date(visible.at(-1).timestamp).getTime() + (gridIndex - visible.length + 1) * 300000).toISOString() } : visible.at(-1));
     if (candle) {
       const stamp = new Date(candle.timestamp);
       const label = state.timeframe.startsWith("D") || state.timeframe.startsWith("W") || state.timeframe === "MN"
@@ -104,7 +109,7 @@ function draw() {
     }
   }
 
-  const step = plotW / visible.length;
+  const step = plotW / (visible.length + extra);
   visible.forEach((c, i) => {
     const x = left + i * step + step / 2;
     const up = c.close >= c.open;
@@ -124,6 +129,22 @@ function draw() {
       if (!i) ctx.moveTo(x, y(value)); else ctx.lineTo(x, y(value));
     });
     ctx.stroke();
+  }
+
+  if (forecast.length === 3) {
+    const referenceIndex = visible.findIndex(c => c.timestamp === forecast[0].reference_time);
+    const points = [{ index: referenceIndex, median: forecast[0].base_price,
+      low: forecast[0].base_price, high: forecast[0].base_price }, ...forecast.map(p => ({
+        index: referenceIndex + p.horizon, median: p.median,
+        low: p.quantiles["0.1"], high: p.quantiles["0.9"] }))];
+    const fx = p => left + p.index * step + step / 2;
+    ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(fx(p), y(p.high)) : ctx.moveTo(fx(p), y(p.high)));
+    [...points].reverse().forEach(p => ctx.lineTo(fx(p), y(p.low)));
+    ctx.closePath(); ctx.fillStyle = "#6baaff22"; ctx.fill();
+    ctx.beginPath(); ctx.strokeStyle = "#85b7ff"; ctx.setLineDash([5, 4]);
+    points.forEach((p, i) => i ? ctx.lineTo(fx(p), y(p.median)) : ctx.moveTo(fx(p), y(p.median)));
+    ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "#9fc7ff"; ctx.textAlign = "right";
+    ctx.fillText("Timestral · 15/30/60 min · Q10–Q90 nominal", w - right - 8, top + 12);
   }
 
   const price = state.quote?.bid || visible.at(-1).close;
@@ -151,5 +172,6 @@ document.getElementById("retry").addEventListener("click", loadChart);
 canvas.addEventListener("mousemove", event => { const rect = canvas.getBoundingClientRect(); state.crosshair = { x: event.clientX - rect.left, y: event.clientY - rect.top }; draw(); });
 canvas.addEventListener("mouseleave", () => { state.crosshair = null; draw(); });
 window.addEventListener("resize", draw);
+window.addEventListener("timestral-update", draw);
 loadChart();
 state.timer = window.setInterval(loadChart, 3000);

@@ -147,10 +147,15 @@ def run_replay(
     memory: ExperienceMemory,
     output_dir: Path,
     code_version: str = "unknown",
+    forecast_service=None,
+    forecast_stride: int = 12,
 ) -> dict:
     """Each step sees a prefix only; execution is simulated without a broker API."""
     if not dataset.candles:
         raise ValueError("Dataset vazio.")
+    if forecast_stride < 1:
+        raise ValueError("Forecast stride deve ser positivo.")
+    forecast_stats = Counter()
     seconds = timeframe_seconds(config.timeframe)
     delta = timedelta(seconds=seconds)
     stamps = [c.timestamp for c in dataset.candles]
@@ -778,6 +783,20 @@ def run_replay(
                         )
                 journal.write(encode(payload) + "\n")
                 intelligence_journal.write(encode(snapshot.as_dict()) + "\n")
+                if forecast_service is not None:
+                    forecast_result = forecast_service.observe(
+                        history,
+                        as_of=now,
+                        scope="replay",
+                        source_id=run_id,
+                        regime=regime,
+                        issue=index % forecast_stride == 0,
+                    )
+                    forecast_stats[forecast_result["status"]] += 1
+                    forecast_stats["predictions"] += len(
+                        forecast_result.get("predictions", [])
+                    )
+                    forecast_stats["evaluations"] += forecast_result.get("evaluated", 0)
                 decisions.append(payload)
                 previous = candle
         with memory.transaction():
@@ -810,6 +829,19 @@ def run_replay(
         semantic = encode(decisions).replace(run_id, "<run>")
         report = {
             **manifest,
+            **(
+                {
+                    "timestral": {
+                        "mode": "observe_only",
+                        "stride": forecast_stride,
+                        "config_hash": forecast_service.config.fingerprint,
+                        "counts": dict(forecast_stats),
+                        "decision_authority": False,
+                    }
+                }
+                if forecast_service is not None
+                else {}
+            ),
             "status": "completed",
             "bars": len(decisions),
             "actions": dict(Counter(d["action"] for d in decisions)),

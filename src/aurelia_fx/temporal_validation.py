@@ -47,7 +47,10 @@ def run_temporal_validation(
     output_dir: Path,
     code_version: str = "unknown",
     include_holdout: bool = False,
+    forecast_service=None,
 ) -> dict:
+    if forecast_service is not None and include_holdout:
+        raise ValueError("Timestral inicial não acessa o holdout final.")
     parts = split_dataset(dataset, warmup_bars=config.warmup_bars)
     plan_id = "validation-" + str(uuid4())
     directory = output_dir / plan_id
@@ -98,6 +101,11 @@ def run_temporal_validation(
                 memory=memory,
                 output_dir=directory,
                 code_version=code_version,
+                **(
+                    {"forecast_service": forecast_service}
+                    if forecast_service is not None
+                    else {}
+                ),
             )
         summary = {
             **plan,

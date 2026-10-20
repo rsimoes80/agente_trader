@@ -1,5 +1,8 @@
 # Prompt atual: V4
 
+[Timestral: instalação e previsão em observação](docs/timestral.md). Modelo local opcional,
+previsões e avaliações no PostgreSQL, sem influência nas decisões V4.
+
 [Painel de diagnóstico de regimes](http://192.168.97.221:8097/diagnostico) · [Operação e revisão humana](docs/diagnostics.md).
 
 [Prompt Mestre V4 consolidado](docs/PROMPT_MESTRE_V4.md) · [Motor de regime e nova referência](docs/market_regime_v4.md).

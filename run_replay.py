@@ -72,6 +72,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Aurelia FX: replay causal EURUSD, PostgreSQL e relatorio HTML."
     )
+    parser.add_argument(
+        "--timestral",
+        action="store_true",
+        help="Evidência Timestral isolada; somente PostgreSQL",
+    )
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument(
         "--csv",
@@ -135,6 +140,7 @@ def main(argv=None) -> int:
     if args.include_holdout and not args.validate_temporal:
         parser.error("--include-holdout exige --validate-temporal")
     memory = None
+    forecast_adapter = None
     try:
         path = (
             capture_mt5(args.timeframe, args.count, ROOT / "data/replay_inputs")
@@ -176,6 +182,27 @@ def main(argv=None) -> int:
             max_holding_bars=args.max_holding_bars,
         )
         memory = open_memory(args.db)
+        forecast_service = None
+        if args.timestral:
+            from dataclasses import replace
+
+            from aurelia_fx.forecasting.adapter import TimestralAdapter
+            from aurelia_fx.forecasting.config import load_config
+            from aurelia_fx.forecasting.repository import ForecastRepository
+            from aurelia_fx.forecasting.service import ForecastService
+
+            if args.db is not None or args.timeframe != "M5" or args.include_holdout:
+                raise ValueError(
+                    "Timestral exige PostgreSQL/M5 e preserva o holdout final."
+                )
+            forecast_config = replace(load_config(), enabled=True)
+            forecast_repo = ForecastRepository(memory)
+            if not forecast_repo.installed():
+                raise ValueError("Aplique a migration Timestral antes do replay.")
+            forecast_adapter = TimestralAdapter(forecast_config)
+            forecast_service = ForecastService(
+                forecast_config, forecast_repo, forecast_adapter
+            )
         if args.validate_temporal:
             report = run_temporal_validation(
                 dataset,
@@ -184,6 +211,11 @@ def main(argv=None) -> int:
                 output_dir=args.output,
                 code_version=code_version,
                 include_holdout=args.include_holdout,
+                **(
+                    {"forecast_service": forecast_service}
+                    if forecast_service is not None
+                    else {}
+                ),
             )
             result = {
                 key: report[key]
@@ -196,6 +228,11 @@ def main(argv=None) -> int:
                 memory=memory,
                 output_dir=args.output,
                 code_version=code_version,
+                **(
+                    {"forecast_service": forecast_service}
+                    if forecast_service is not None
+                    else {}
+                ),
             )
             result = {
                 key: report[key]
@@ -216,6 +253,8 @@ def main(argv=None) -> int:
         print(f"Replay interrompido: {exc}", file=sys.stderr)
         return 2
     finally:
+        if forecast_adapter is not None:
+            forecast_adapter.close()
         if memory is not None and hasattr(memory, "close"):
             memory.close()
 

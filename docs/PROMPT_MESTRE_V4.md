@@ -1,5 +1,16 @@
 # PROMPT MESTRE V4 — AURELIA FX / AGENTE TRADER
 
+## Extensão opcional Timestral — observe_only
+
+Timestral fornece previsões locais de preço e quantis para 15/30/60 minutos,
+usando somente candles M5 fechados e UTC validado. Previsões e avaliações
+posteriores são imutáveis no PostgreSQL e separadas por origem ao vivo/replay.
+A consulta pelo V4 é opcional; a integração inicial não altera classificações,
+hipóteses, decisões, gatilhos, risco, JEV ou aprendizado. Nenhuma previsão
+autoriza ordens ou promoção. Ausência/falha/desativação preserva o fluxo V4.
+Quantis não são probabilidades calibradas de lucro. Holdout permanece reservado.
+Contrato e operação: [Timestral](timestral.md).
+
 Versão consolidada: prompt original + fundação V2 + integração V3 + MarketRegimeEngine V4. O bloco V4 substitui regras de regime, ordenação e seleção anteriores. Este arquivo substitui as listas antigas de estados, o contrato mental e o vertical slice. O adendo V2 permanece como histórico.
 
 ## PROCESSO MENTAL OPERACIONAL DO AGENTE
