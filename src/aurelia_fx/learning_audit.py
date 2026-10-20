@@ -87,7 +87,7 @@ def assess(rows, *, observations):
             dict(
                 event_id=payload["event_id"],
                 entry_at=payload["entry_at"],
-                outcome=int(finance["net_pnl"] > 0),
+                outcome=(finance["net_pnl"] > 0) - (finance["net_pnl"] < 0),
                 result_in_r=finance["result_in_r"],
             )
         )
@@ -103,8 +103,9 @@ def assess(rows, *, observations):
                 regime_model_version=key[4],
                 scope="simulated_only",
                 samples=len(samples),
-                wins=sum(s["outcome"] for s in samples),
-                losses=sum(not s["outcome"] for s in samples),
+                wins=sum(s["outcome"] > 0 for s in samples),
+                losses=sum(s["outcome"] < 0 for s in samples),
+                breakeven=sum(s["outcome"] == 0 for s in samples),
                 minimum_rows=MIN_ROWS,
                 sample_floor_met=len(samples) >= MIN_ROWS,
                 dataset_sha256=hashlib.sha256(

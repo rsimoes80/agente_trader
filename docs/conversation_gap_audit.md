@@ -157,6 +157,21 @@ próprios; não foram declarados como entregues.
 Testes novos cobrem preflight, credencial ausente/incorreta, idempotência,
 emergência persistente, modo live rejeitado, pausa, retomada, recuperação e
 qualidade/deduplicação das amostras. Os testes PostgreSQL usam schema isolado
-desfeito por rollback. Controles reais de sessão serão verificados na API
-publicada em modo somente observação. Nenhuma ordem é necessária para validar
-essas funções.
+desfeito por rollback. A suíte completa passou com PostgreSQL e modelo local
+habilitados (147 testes); a verificação adicional de resultado financeiro zero
+também passou, separando empate de perda.
+
+Na API publicada, cinco START simultâneos conservaram uma única sessão;
+repetição de chave, pausa, retomada, emergência persistente e rearme passaram.
+Credencial ausente/incorreta, CSRF incorreto e modo live foram rejeitados.
+Reiniciar o serviço durante uma sessão exigiu RECOVERY_REQUIRED e retomada
+explícita. O teste terminou em STOPPED, com observador automático saudável.
+
+Navegador Chrome: comandos de início/encerramento, painel no gráfico e no
+diagnóstico, desktop e celular, sem exceções JavaScript. Os painéis anteriores
+de histórico e Timestral também passaram nos testes de regressão. O histórico
+consultado estava pronto, com 41.220 candles nos sete períodos.
+
+Na VM, o timer diário está ativo, a execução manual do serviço terminou com
+Result=success e o dump passou em gzip e checksum SHA256. Nenhuma ordem foi
+enviada e nenhum modelo foi treinado ou promovido nessa validação.

@@ -35,6 +35,14 @@ def row():
 
 
 class LearningAuditTests(unittest.TestCase):
+    def test_breakeven_is_separate_from_a_loss(self):
+        sample = row()
+        sample["payload_json"]["financial_result"].update(net_pnl=0, result_in_r=0)
+        cohort = assess([sample], observations=0)["cohorts"][0]
+        self.assertEqual(cohort["wins"], 0)
+        self.assertEqual(cohort["losses"], 0)
+        self.assertEqual(cohort["breakeven"], 1)
+
     def test_no_trade_is_never_a_losing_training_example(self):
         report = assess([], observations=10000)
         self.assertEqual(report["eligible_samples"], 0)

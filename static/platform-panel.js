@@ -27,7 +27,9 @@
       status.textContent = `${labels[state.state] || state.state}${state.session_id ? ` · ${state.session_id.slice(0, 8)}` : ""} · ordens desativadas`;
       checks.textContent = `Pré-condições: ${data.preflight.ready ? "disponíveis para observar" : data.preflight.checks.filter(c => !c.passed).map(c => c.reason).join(" · ")}${data.operator_configured ? "" : " · credencial de operador não configurada"}`;
       const audit = data.learning;
-      learning.textContent = audit ? `Aprendizado local: ${audit.eligible_samples} amostras compatíveis, ${audit.closed_events_inspected} resultados simulados inspecionados, ${audit.no_trade_observations} decisões de espera. Treino não iniciado: faltam amostra suficiente e contrato aprovado de features. Promoção automática desativada.` : "Auditoria de aprendizado aguardando execução local.";
+      const blockers = { INSUFFICIENT_CLOSED_TRADE_SAMPLES: "amostra insuficiente de trades encerrados", APPROVED_V4_TO_LEARNER_FEATURE_SCHEMA_REQUIRED: "contrato de features V4 ainda precisa de aprovação" };
+      const waiting = (audit?.blockers || []).map(code => blockers[code] || code).join("; ");
+      learning.textContent = audit ? `Aprendizado local: ${audit.eligible_samples} amostras compatíveis, ${audit.closed_events_inspected} resultados simulados inspecionados, ${audit.no_trade_observations} decisões de espera. Treino não iniciado${waiting ? `: ${waiting}` : ""}. Promoção automática desativada.` : "Auditoria de aprendizado aguardando execução local.";
       enabled();
     } catch (error) { status.textContent = error.message; latest = null; enabled(); }
   }
