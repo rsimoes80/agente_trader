@@ -3,7 +3,8 @@
 Objetivo integral: executar o [plano aprovado](PLANO_OPERACIONAL_E_TREINAMENTO.md),
 do lote e início único até treinamento integrado, validação, simulação ao vivo
 e integração de conta demo. **Este documento é um checkpoint de trabalho,
-não declaração de conclusão. A tela principal nova ainda não foi publicada.**
+não declaração de conclusão. A tela principal foi publicada em
+http://192.168.97.221:8097/ com o commit `b206738`.**
 
 ## Implementado no código, com validação parcial
 
@@ -18,7 +19,10 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
   sobrescrever uma retomada. Modo permitido neste momento: somente `paper`.
 - `run_agent.py`: consumidor Windows com lease exclusivo, validação do lote no
   contrato real do símbolo, captura mensal e preparo do arquivo de pesquisa.
-  Ainda não instalado como tarefa automática nesta entrega; há instaladores.
+  Instalado como tarefa automática exclusiva `AgenteTrader-Agent`, ao login,
+  com usuário limitado e proteção contra instâncias simultâneas. A pesquisa
+  em curso permanece com seu processo original até terminar; a tarefa aguarda
+  o lease e não substitui esse processo durante o trabalho.
 - Novo arquivo M5 de pesquisa, separado da baseline mensal, com 30 dias de
   aquecimento. `frozen_candles` confere hash e instante de persistência.
 - `agent_strategy`: setup de pesquisa versionado, variáveis V4 + Timestral,
@@ -90,6 +94,24 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
     passaram separadamente no ambiente Playwright/Chrome. PostgreSQL e modelo
     real estavam habilitados na regressão; todos os oito testes do registro,
     HTTP e coordenador simulado passaram. Isso não aprova um modelo de mercado.
+12. Publicação `b206738` na VM: backup PostgreSQL concluído com `Result=success`,
+    atualização fast-forward, reinício apenas do diagnóstico e container do
+    projeto, configuração Nginx válida. `/`, `/mercado`, `/diagnostico`, estado
+    do agente e gráfico responderam HTTP 200; CSS/JS publicados coincidem com
+    os hashes locais. Comando sem autenticação foi recusado com HTTP 403.
+    Chrome conferiu a página publicada em desktop/390 px sem erros JavaScript
+    nem rolagem horizontal. A tarefa Windows foi registrada e conferida como
+    Running/Enabled, IgnoreNew, Limited e diretório/ação deste projeto.
+13. Preparação ganhou estado `WAITING_SOURCE` e nova tentativa automática em
+    dez segundos para terminal indisponível ou relógio ainda não validado.
+    Três testes verificam erro transitório versus configuração inválida,
+    prazo/intenção do operador e o laço do serviço recuperando a mesma sessão.
+    O instalador agora interrompe imediatamente em erro de permissão, inclusive
+    ao consultar a propriedade da tarefa, em vez de tratar acesso negado como
+    ausência de uma tarefa existente.
+14. Nova regressão após recuperação automática: **191 testes executados,
+    189 aprovados e dois de navegador separados por ambiente**, com PostgreSQL
+    e modelo real habilitados. Nenhuma falha.
 
 ## Regras que permanecem
 
@@ -122,7 +144,9 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
    stops, reconciliação e prevenção de duplicatas; conta real continua bloqueada.
 6. Conferir novamente previsão, níveis e resumo após publicação, com o serviço
    Windows atualizado; a revisão local desktop/celular já passou.
-7. Instalar o serviço Windows do agente, publicar backend/arquivos na VM,
-   trocar o índice Nginx para a tela principal nova e verificar o fluxo completo.
+7. Ao terminar a pesquisa em curso, transferir o lease para o serviço automático
+   atualizado e conferir retomada/estado. Instalação, backend, tela principal
+   e verificação HTTP/navegador já foram feitos. Não interromper o replay só
+   para fazer essa troca e não autorizar versão reprovada.
 8. Atualizar contratos/documentação operacional e executar auditoria de conclusão
    por requisito. Não declarar o objetivo completo com os itens acima pendentes.

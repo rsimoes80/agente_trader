@@ -68,6 +68,10 @@ class OperationBrowserTests(unittest.TestCase):
         self.page.wait_for_function("document.getElementById('state-title').textContent==='Início solicitado'")
         self.assertEqual(self.commands, [dict(action="START", mode="paper", lot="0.02")])
         self.assertTrue(self.page.locator("#lot").is_disabled())
+        self.state.update(state="WAITING_SOURCE", desired="running", message="Aguardando MT5; nova tentativa automática.")
+        self.page.wait_for_function("document.getElementById('state-title').textContent==='Aguardando conexão com o MT5'")
+        self.assertTrue(self.page.locator("#pause").is_enabled())
+        self.assertTrue(self.page.locator("#stop").is_enabled())
         self.assertEqual(self.errors, [])
 
     def test_mobile_forecast_expiry_source_identity_and_position_levels(self):

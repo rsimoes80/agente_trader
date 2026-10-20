@@ -7,6 +7,7 @@ import signal
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,10 +23,28 @@ from aurelia_fx.operation_control import (  # noqa: E402
     validate_lot,
 )
 from aurelia_fx.storage import open_memory  # noqa: E402
+from aurelia_fx.source_clock import SourceClockUnavailable  # noqa: E402
 
 
 class InterruptedPreparation(Exception):
     pass
+
+
+class RecoverableSourceError(RuntimeError):
+    pass
+
+
+def guarded_fetch(fetch, *args, **kwargs):
+    try:
+        return fetch(*args, **kwargs)
+    except RuntimeError as exc:
+        raise RecoverableSourceError(str(exc)) from exc
+
+
+def retry_due(state, now=None):
+    if state.get("state") != "WAITING_SOURCE" or state.get("desired") != "running":
+        return False
+    return (now or datetime.now(timezone.utc)) >= datetime.fromisoformat(state["retry_after"])
 
 
 def main():
@@ -95,6 +114,14 @@ def main():
                             else "Agente pausado. Clique em Retomar para continuar.",
                         )
                     handled = None
+                elif retry_due(state):
+                    control.publish(
+                        session_id,
+                        expected_generation=state["generation"],
+                        state="QUEUED",
+                        message="Verificando novamente a conexão e o relógio do MT5.",
+                    )
+                    handled = None
                 elif (
                     session_id
                     and state["state"] == "QUEUED"
@@ -112,6 +139,15 @@ def main():
                         )
                     except InterruptedPreparation:
                         pass
+                    except (RecoverableSourceError, SourceClockUnavailable) as exc:
+                        control.publish(
+                            session_id,
+                            expected_generation=state.get("generation"),
+                            state="WAITING_SOURCE",
+                            stage="connection",
+                            retry_after=(datetime.now(timezone.utc)+timedelta(seconds=10)).isoformat(),
+                            message="Aguardando o MT5 conectado e o horário da fonte validado. Nova tentativa automática em 10 segundos: " + str(exc)[:140],
+                        )
                     except Exception as exc:
                         if lease.closed:
                             raise
@@ -139,6 +175,10 @@ def main():
 
 
 def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
+    original_fetch = fetch
+    def fetch(*args, **kwargs):
+        return guarded_fetch(original_fetch, *args, **kwargs)
+
     session_id = state["session_id"]
     generation = state["generation"]
     capture_days = 30

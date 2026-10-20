@@ -1,8 +1,8 @@
 # Aprovação e simulação operacional
 
-Status: implementadas no ramo `feat/agent-operational-cycle`, com testes
-isolados de persistência, execução e interface. Publicação e validação com
-uma versão aprovada a partir do mercado ainda pendentes. Nenhuma aprovação
+Status: integradas ao `main` e publicadas na VM no commit `b206738`, com testes
+isolados de persistência, execução e interface. Validação com
+uma versão aprovada a partir do mercado ainda pendente. Nenhuma aprovação
 sintética de teste é gravada na base de produção.
 
 ## Fluxo
@@ -47,6 +47,7 @@ USD 10.000; não representa saldo de corretora. Os limites são 0,5% por entrada
 | Pausar | Bloqueia novas entradas; continua acompanhando posição existente |
 | Parar | Fecha a posição simulada na próxima cotação válida e encerra |
 | Fonte indisponível | Preserva posição/checkpoint; aguarda cotação válida |
+| MT5 fechado/calibrando durante a preparação | Mantém a sessão e repete automaticamente após dez segundos; Pausar/Parar continuam válidos |
 | Aprovação expirada ou histórico indisponível | Bloqueia entradas e continua a gestão da posição |
 | Reinício do serviço | Solicita revisão/retomada; reconcilia a posição persistida |
 | Tentativa de iniciar outra sessão com posição | Recusa; não descarta a posição |

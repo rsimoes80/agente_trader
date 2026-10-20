@@ -3,6 +3,24 @@
 [Plano operacional aprovado](docs/PLANO_OPERACIONAL_E_TREINAMENTO.md) ·
 [Progresso da implementação integrada](docs/IMPLEMENTACAO_OPERACIONAL_STATUS.md).
 
+## Fluxo operacional publicado
+
+Abra **[Aurelia FX](http://192.168.97.221:8097/)**, escolha o lote e inicie o
+agente. O serviço prepara 30 dias de histórico e procura uma versão aprovada;
+se não existir, executa a pesquisa e apresenta treinamento/validação ou o
+motivo concreto do bloqueio. A janela de pesquisa pode ser maior que 30 dias.
+
+O modo atual é **simulado**. Aprovação, posições e resultados são persistidos
+no PostgreSQL; [contrato e limitações](docs/agent_live_simulation.md).
+O treino real ainda está em execução e não há versão de mercado aprovada.
+Integração de execução demo ainda pendente; nenhuma ordem MT5 é enviada.
+
+Gráfico detalhado: [/mercado](http://192.168.97.221:8097/mercado).
+Diagnósticos: [/diagnostico](http://192.168.97.221:8097/diagnostico).
+O serviço Windows é a tarefa `AgenteTrader-Agent`; MT5 e sessão Windows
+continuam necessários. A autenticação dos controles usa a credencial privada
+do projeto, configurada por `AURELIA_OPERATOR_TOKEN` ou `data/platform-operator.token`.
+
 [Revisão humana simples e comportamento posterior](docs/human_review_panel.md):
 parecer estruturado, leitura original e acompanhamento sem treino automático.
 
@@ -12,8 +30,9 @@ sessões de observação, pré-condições, prontidão de aprendizado e backup p
 [Histórico mensal antes da análise](docs/historical_context.md): coleta MT5 de 30 dias,
 sete períodos, estatísticas no PostgreSQL e testes de hipóteses com holdout reservado.
 
-[Timestral: instalação e previsão em observação](docs/timestral.md). Modelo local opcional,
-previsões e avaliações no PostgreSQL, sem influência nas decisões V4.
+[Timestral: instalação e previsão em observação](docs/timestral.md) descreve o
+perfil legado. No fluxo integrado, previsões causais entram no filtro de decisão
+que precisa ser treinado, validado e aprovado antes da simulação ao vivo.
 
 [Painel de diagnóstico de regimes](http://192.168.97.221:8097/diagnostico) · [Operação e revisão humana](docs/diagnostics.md).
 
@@ -24,9 +43,9 @@ Regime e localização precedem a seleção de estratégias; versões V3 permane
 
 Interface local para análise de Forex em tempo real, com painel em português, filtros configuráveis, gestão de risco e arquitetura para múltiplos provedores.
 
-O agente de pesquisa utiliza a [Market Intelligence Layer V3](docs/market_intelligence_v3.md): tendências por timeframe, price action, zonas e evidências categóricas antes da hipótese, confirmação, gatilho e risco. O [Prompt Mestre V3 consolidado](docs/PROMPT_MESTRE_V3.md) é a referência atual. Veja [o que foi incorporado de Pring e Brooks](docs/referencias_v3.md), com páginas e limites da leitura.
+O agente de pesquisa utiliza a [Market Intelligence Layer V3](docs/market_intelligence_v3.md), ampliada no [Prompt Mestre V4](docs/PROMPT_MESTRE_V4.md): regime, tendências por timeframe, price action, zonas e evidências antes de hipótese, confirmação, gatilho e risco. Veja [o que foi incorporado de Pring e Brooks](docs/referencias_v3.md), com páginas e limites da leitura.
 
-## Iniciar
+## Painel legado local no Windows
 
 No PowerShell, dentro desta pasta:
 
@@ -41,7 +60,10 @@ Para visualizar o gráfico EUR/USD no estilo do MT5, abra **Gráfico EUR/USD** n
 
 ## Página publicada na VM Linux
 
-A visualização do gráfico está publicada na VM `svrdev`: <http://192.168.97.221:8097/>. O container `aurelia-fx-chart` serve `static/chart.html`, `static/chart.css` e `static/chart.js`; a configuração do proxy Nginx está em [deploy/vm/nginx-chart.conf](deploy/vm/nginx-chart.conf).
+A tela operacional está publicada na VM `svrdev`: <http://192.168.97.221:8097/>.
+O container exclusivo `agente-trader-chart` serve a tela `static/operation.html`;
+o gráfico anterior permanece em `/mercado`. A configuração Nginx está em
+[deploy/vm/nginx-chart.conf](deploy/vm/nginx-chart.conf).
 
 O gráfico recebe candles M5, EMA 21 e bid/ask do terminal MT5 demo no Windows por meio da ponte somente leitura [mt5_bridge.py](mt5_bridge.py), escutando no adaptador privado `192.168.200.1:8769`. Para iniciar/reiniciar a ponte manualmente, execute `.\run_mt5_bridge.ps1` no PowerShell deste projeto. A sessão Windows e o terminal MT5 precisam permanecer ligados e conectados. A página não envia ordens. O endereço publicado usa o IP privado da VM e depende da mesma rede/VPN.
 
