@@ -1,5 +1,7 @@
 # Auditoria inicial do diagnóstico — 20/10/2026
 
+> Auditoria histórica anterior ao contrato UTC validado. Reavaliar horários de sessão e parâmetros com nova captura normalizada; estes resultados são preservados como registro histórico.
+
 Execução de desenvolvimento: `8c09f518-0caf-491d-911b-4a7f1574ccfd`. Dataset `a6f4979a0e0be077d120611fb93f6dad51b217612cb2488683162a82ca7d3b6a`. Contexto M30, execução M5; 900 observações. Não há avaliação financeira nesta comparação.
 
 ## Bloqueios registrados

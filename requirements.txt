@@ -5,3 +5,4 @@ TA-Lib>=0.6.5,<0.9
 # NautilusTrader is installed separately in the isolated .venv from its official
 # pre-release wheel, matching the cloned 2.0.0rc7 source tree.
 MetaTrader5>=5.0.45; platform_system == 'Windows'
+tzdata>=2025.2; platform_system == 'Windows'

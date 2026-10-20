@@ -25,7 +25,7 @@ async function loadChart() {
     document.getElementById("ask").textContent = fmt(state.quote?.ask);
     document.getElementById("spread").textContent = state.quote ? `${((state.quote.ask - state.quote.bid) / data.pip_size).toFixed(1)} pips` : "—";
     document.getElementById("last-close").textContent = fmt(state.candles.at(-1)?.close);
-    document.getElementById("market-meta").textContent = `EUR/USD · ${state.timeframe} · ${state.candles.length} candles · ${data.broker || "MT5"}`;
+    document.getElementById("market-meta").textContent = `EUR/USD · ${state.timeframe} · ${state.candles.length} candles · UTC · ${data.broker || "MT5"}`;
     document.getElementById("updated-at").textContent = `Atualizado ${new Date().toLocaleTimeString("pt-BR")} · próximo em 3 s`;
     document.getElementById("connection-label").textContent = "MT5 conectado";
     document.querySelector(".connection").classList.add("connected");

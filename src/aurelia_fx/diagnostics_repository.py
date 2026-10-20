@@ -65,6 +65,8 @@ class DiagnosticsRepository:
                     "model_version": payload.get("regime_model_version", ""),
                     "bars": payload.get("bars"),
                     "config_hash": payload.get("config_hash", ""),
+                    "utc_normalized": payload.get("source_clock", {}).get("contract")
+                    == "mt5-utc-v1",
                 }
             )
         return result
@@ -288,6 +290,10 @@ class DiagnosticsRepository:
         if not run or run["partition"] != "development":
             raise ValueError(
                 "Comparações aceitam apenas partições seladas como desenvolvimento."
+            )
+        if not run.get("utc_normalized"):
+            raise ValueError(
+                "Horário legado sem validação UTC. Recapture os candles antes de comparar parâmetros."
             )
         manifest = self.manifest(run_id)
         rows = self.query(

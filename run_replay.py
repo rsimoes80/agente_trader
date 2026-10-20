@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -47,11 +48,16 @@ def capture_mt5(timeframe: str, count: int, directory: Path) -> Path:
             ),
         )
         writer.writeheader()
-        writer.writerows(history["candles"])
+        writer.writerows(
+            {key: row[key] for key in writer.fieldnames} for row in history["candles"]
+        )
     metadata = {
         "symbol": history["symbol"],
         "timeframe": timeframe,
-        "source": "mt5_local_closed_bars",
+        "source": "mt5_local_closed_bars_utc_v1",
+        "csv_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "source_clock": history.get("source_clock", {}),
+        "timestamp_semantics": history.get("timestamp_semantics"),
         "count": len(history["candles"]),
         "pip_size": history["pip_size"],
         "closed_bars_only": True,
@@ -135,7 +141,7 @@ def main(argv=None) -> int:
             if args.capture_mt5
             else args.csv
         )
-        source = "mt5_local_closed_bars" if args.capture_mt5 else args.source
+        source = "mt5_local_closed_bars_utc_v1" if args.capture_mt5 else args.source
         dataset = load_csv(path, source=source)
         try:
             code_version = subprocess.check_output(

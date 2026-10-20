@@ -5,8 +5,8 @@ import json
 import threading
 from dataclasses import asdict
 from datetime import datetime, time, timedelta, timezone
-from urllib.request import urlopen
 from urllib.error import HTTPError
+from urllib.request import urlopen
 from uuid import uuid4
 
 from .decision_engine import DecisionEngine, IntelligencePolicy
@@ -15,13 +15,10 @@ from .experience_memory import ExperienceRecord
 from .market_intelligence import MarketIntelligenceSession
 from .replay_strategy import STRATEGY_METADATA
 from .sessions import SessionWindow
+from .source_clock import SourceClockUnavailable, validate_source_clock
 from .trend import HierarchyConfig, timeframe_seconds
 
-
-class MarketSourceUnavailable(RuntimeError):
-    def __init__(self, status, message):
-        self.status, self.public_message = status, message
-        super().__init__(message)
+MarketSourceUnavailable = SourceClockUnavailable
 
 
 class DiagnosticObserver:
@@ -41,6 +38,8 @@ class DiagnosticObserver:
         self.lock = threading.Lock()
         self.session = None
         self.ready = False
+        self.source_clock = None
+        self.require_checkpoint_reload = True
         self.last_saved = None
         self.run_id = "observer-" + str(uuid4())
         self.hierarchy = HierarchyConfig.for_execution("M5")
@@ -85,8 +84,7 @@ class DiagnosticObserver:
             self.stop.wait(20)
 
     def collect(self, lease):
-        checkpoint = self.repository.recent_records("diagnostic_observer_checkpoint", 1)
-        self.last_saved = checkpoint[0]["last_candle"] if checkpoint else None
+        self.require_checkpoint_reload = True
         while not self.stop.is_set():
             lease.execute("SELECT 1")
             try:
@@ -112,6 +110,18 @@ class DiagnosticObserver:
                 raw = response.read(4_000_001)
         except HTTPError as exc:
             body = exc.read(4000).decode("utf-8", errors="replace")
+            if any(
+                message in body
+                for message in (
+                    "Calibrando relógio",
+                    "Relógio MT5 não validado",
+                    "Aguardando tick válido",
+                )
+            ):
+                raise MarketSourceUnavailable(
+                    "clock_calibrating",
+                    "Aguardando ticks recentes para calibrar automaticamente o horário do MT5.",
+                ) from None
             if "Falha ao ler histórico" in body:
                 raise MarketSourceUnavailable(
                     "history_unavailable",
@@ -126,6 +136,8 @@ class DiagnosticObserver:
         data = json.loads(raw)
         if not data.get("ok") or data.get("timeframe") != "M5":
             raise ValueError("Invalid bridge data")
+        clock = validate_source_clock(data, datetime.now(timezone.utc))
+        self.adopt_clock(clock)
         seconds = timeframe_seconds("M5")
         if any(
             datetime.fromisoformat(row["timestamp"]) > now + timedelta(seconds=5)
@@ -171,6 +183,8 @@ class DiagnosticObserver:
                 "symbol": "EURUSD",
                 "hierarchy": asdict(self.hierarchy),
                 "regime_config": asdict(self.session.observer.regimes.config),
+                "source_clock_id": self.source_clock["clock_id"],
+                "time_contract": self.source_clock["contract"],
             }
             self.config_hash = hashlib.sha256(
                 json.dumps(config, sort_keys=True).encode()
@@ -213,6 +227,7 @@ class DiagnosticObserver:
                             "source": "mt5_diagnostics_readonly",
                             "symbol": "EURUSD",
                             "timeframe": "M5",
+                            "clock_id": self.source_clock["clock_id"],
                         },
                     )
             self.ready = True
@@ -240,7 +255,29 @@ class DiagnosticObserver:
             message="Observação somente leitura; candles fechados.",
             error_type=None,
             source_status="ok",
+            source_clock=self.source_clock,
         )
+
+    def adopt_clock(self, clock):
+        changed = (
+            self.source_clock is not None
+            and self.source_clock["clock_id"] != clock["clock_id"]
+        )
+        if self.source_clock is None or changed or self.require_checkpoint_reload:
+            records = self.repository.query(
+                """SELECT payload_json FROM project_records
+                WHERE record_type='diagnostic_observer_checkpoint' AND payload_json::jsonb ->> 'clock_id'=%s
+                ORDER BY recorded_at DESC LIMIT 1""",
+                (clock["clock_id"],),
+            )
+            record = json.loads(records[0]["payload_json"]) if records else None
+            self.last_saved = record["last_candle"] if record else None
+            self.session = None
+            self.ready = False
+            if changed:
+                self.run_id = "observer-" + str(uuid4())
+            self.require_checkpoint_reload = False
+        self.source_clock = clock
 
     def record_start(self, config):
         self.memory.record_artifact(
@@ -258,6 +295,7 @@ class DiagnosticObserver:
                 "config_hash": self.config_hash,
                 "regime_model_version": config["regime_config"]["regime_model_version"],
                 "ALLOW_ORDER_EXECUTION": False,
+                "source_clock": self.source_clock,
             },
         )
 
@@ -307,6 +345,7 @@ class DiagnosticObserver:
                     "cutoff": row["timestamp"],
                     "ingestion_mode": "current" if current else "catch_up",
                     "spread_basis": "current_quote" if current else "bar_history",
+                    "source_clock": self.source_clock,
                 },
             )
             self.memory.record_project_data(
@@ -317,10 +356,11 @@ class DiagnosticObserver:
                     "source": "mt5_diagnostics_readonly",
                     "symbol": "EURUSD",
                     "timeframe": "M5",
+                    "clock_id": self.source_clock["clock_id"],
                 },
             )
             self.memory.record_snapshot(
-                snapshot.as_dict(),
+                {**snapshot.as_dict(), "source_clock": self.source_clock},
                 session=session,
                 regime=snapshot.regime,
                 data_reference="mt5_bridge_readonly",
@@ -333,6 +373,7 @@ class DiagnosticObserver:
                 context={
                     "snapshot_id": snapshot.snapshot_id,
                     "intelligence_context": context,
+                    "source_clock": self.source_clock,
                 },
             )
             self.memory.record_experience(
@@ -357,6 +398,7 @@ class DiagnosticObserver:
                     process_result={
                         "reason_code": reason,
                         "execution_enabled": False,
+                        "source_clock": self.source_clock,
                     },
                     source_data_reference="mt5_bridge_readonly",
                     **context,
@@ -369,6 +411,7 @@ class DiagnosticObserver:
                     "last_candle": row["timestamp"],
                     "run_id": self.run_id,
                     "snapshot_id": snapshot.snapshot_id,
+                    "clock_id": self.source_clock["clock_id"],
                 },
             )
         self.last_saved = row["timestamp"]

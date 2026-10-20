@@ -36,10 +36,10 @@ function populateRuns(runs) {
   state.runs = runs;
   for (const id of ["run", "research-run"]) {
     const select = $(id), old = select.value; select.replaceChildren();
-    const eligible = runs.filter(run => id === "run" || run.partition === "development");
+    const eligible = runs.filter(run => id === "run" || (run.partition === "development" && run.utc_normalized));
     for (const run of eligible) {
       const phase = { development: "Desenvolvimento", validation: "Validação", live: "Ao vivo", unassigned: "Sem partição" }[run.partition] || run.partition;
-      const label = `${phase} · ${run.timeframe} · ${utc(run.created_at)} · ${run.run_id.slice(0, 8)}`;
+      const label = `${phase} · ${run.timeframe} · ${utc(run.created_at)} · ${run.run_id.slice(0, 8)}${run.utc_normalized ? " · UTC" : " · horário legado"}`;
       const option = node("option", label); option.value = run.run_id; select.append(option);
     }
     if (!eligible.length) { const option = node("option", "Nenhuma execução disponível"); option.value = ""; select.append(option); }
@@ -101,7 +101,7 @@ async function load() {
     const [summary, rows] = await Promise.all([api(`audit?${params}`), api(`samples?${params}`)]);
     audit(summary); samples(rows);
     const run = state.runs.find(r => r.run_id === $("run").value);
-    $("sample-note").textContent = `${run?.partition === "live" ? "Observação ao vivo somente leitura." : "Replay histórico; não representa o estado atual do MT5."} Contagens de uma única execução. Repetições do histórico não são somadas.`;
+    $("sample-note").textContent = `${run?.partition === "live" ? "Observação ao vivo somente leitura." : "Replay histórico; não representa o estado atual do MT5."} ${run?.utc_normalized ? "Horários normalizados em UTC." : "Horário legado não validado: não use estes resultados para calibrar sessões ou parâmetros."} Contagens de uma única execução.`;
     $("last-refresh").textContent = `Atualizado ${new Date().toLocaleTimeString("pt-BR")}`;
     error("");
   } catch (e) { error(e.message); } finally { state.loading = false; }

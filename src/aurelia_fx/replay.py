@@ -174,6 +174,7 @@ def run_replay(
         "ALLOW_LIVE_TRADING": False,
         "data_source": dataset.source,
         "data_reference": dataset.reference,
+        "source_clock": dataset.source_clock,
         "strategy_id": STRATEGY_ID,
         "strategy_version": STRATEGY_VERSION,
         "python_version": platform.python_version(),

@@ -6,11 +6,11 @@ import hmac
 import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from mt5_provider import fetch_history
-
 
 HOST = os.environ.get("AURELIA_MT5_BRIDGE_HOST", "192.168.200.1")
 PORT = int(os.environ.get("AURELIA_MT5_BRIDGE_PORT", "8769"))
@@ -63,9 +63,13 @@ class BridgeServer(HTTPServer):
 
 def main() -> None:
     if not TOKEN:
-        raise RuntimeError("Configure AURELIA_MT5_BRIDGE_TOKEN antes de iniciar a ponte.")
+        raise RuntimeError(
+            "Configure AURELIA_MT5_BRIDGE_TOKEN antes de iniciar a ponte."
+        )
     # MT5's local IPC bridge is kept on the server's main thread and serialized.
     server = BridgeServer((HOST, PORT), Handler)
+    pid_path = Path(__file__).resolve().parent / "data/mt5_bridge.pid"
+    pid_path.write_text(str(os.getpid()), encoding="ascii")
     print(f"Ponte MT5 somente leitura em http://{HOST}:{PORT}")
     try:
         server.serve_forever()
@@ -73,6 +77,10 @@ def main() -> None:
         pass
     finally:
         server.server_close()
+        if pid_path.exists() and pid_path.read_text(encoding="ascii").strip() == str(
+            os.getpid()
+        ):
+            pid_path.unlink()
 
 
 if __name__ == "__main__":

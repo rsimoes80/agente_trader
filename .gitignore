@@ -34,3 +34,6 @@ data/references_cache/
 data/database.json
 data/database-access.json
 data/database_backups/
+data/mt5_clock_state.json
+data/mt5_clock_state.json.*.tmp
+data/mt5_bridge.pid
