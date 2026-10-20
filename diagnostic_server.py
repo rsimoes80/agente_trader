@@ -335,6 +335,15 @@ class Handler(BaseHTTPRequestHandler):
                     201, {"ok": True, "review": self.server.app.repo.review(payload)}
                 )
                 return
+            if path == "/api/diagnostics/review-outcomes":
+                self.send(
+                    200,
+                    {
+                        "ok": True,
+                        "outcome": self.server.app.repo.review_outcome(payload),
+                    },
+                )
+                return
             if path == "/api/diagnostics/experiments":
                 self.send(202, {"ok": True, "job": self.server.app.experiment(payload)})
                 return

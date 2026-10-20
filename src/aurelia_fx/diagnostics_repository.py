@@ -1,8 +1,11 @@
 """Bounded diagnostic queries and append-only human annotations."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+
+from .historical.core import utc
+from .human_review import REASONS, VERDICTS, describe_outcome, period_seconds
 
 
 def decode(value):
@@ -150,7 +153,7 @@ class DiagnosticsRepository:
             JOIN market_snapshots s ON d.payload_json::jsonb ->> 'snapshot_id'=s.snapshot_id
             WHERE """
             + where
-            + " GROUP BY 1,2",
+            + " AND r.review ->> 'label' IS NOT NULL GROUP BY 1,2",
             args,
         )
         snapshots = set()
@@ -239,6 +242,25 @@ class DiagnosticsRepository:
             WHERE d.run_id=%s AND d.created_at_utc<=%s ORDER BY d.created_at_utc DESC LIMIT 200""",
             (decision["run_id"], decision["created_at_utc"]),
         )
+        hypothesis_id = decision.get("hypothesis_id")
+        hypothesis = None
+        contract = None
+        if hypothesis_id:
+            for table, target in (
+                ("hypothesis_events", "hypothesis"),
+                ("expectation_events", "contract"),
+            ):
+                events = self.query(
+                    f"SELECT payload_json FROM {table} WHERE "
+                    + "hypothesis_id=%s"
+                    + " AND created_at_utc<=%s AND status='proposed' ORDER BY created_at_utc DESC LIMIT 1",
+                    (hypothesis_id, decision["created_at_utc"]),
+                )
+                if events:
+                    if target == "hypothesis":
+                        hypothesis = decode(events[0]["payload_json"])
+                    else:
+                        contract = decode(events[0]["payload_json"])
         return {
             "decision": decision,
             "snapshot": snapshot,
@@ -247,14 +269,27 @@ class DiagnosticsRepository:
             "reviews": [decode(r["payload_json"]) for r in reviews],
             "chart_cutoff": decision["data_timestamp_utc"],
             "future_candles_included": False,
+            "hypothesis": hypothesis,
+            "expectation": contract,
         }
 
     def review(self, payload):
         label = payload.get("label")
         reviewer = str(payload.get("reviewer", "")).strip()
         note = str(payload.get("note", "")).strip()
+        verdict = payload.get("verdict")
+        reason = payload.get("reason_category")
+        if verdict is not None and (
+            verdict not in VERDICTS or (verdict == "disagree" and reason not in REASONS)
+        ):
+            raise ValueError(
+                "Escolha sua avaliação e, ao discordar, o motivo principal."
+            )
         if (
-            label not in {"TREND", "RANGE", "TRANSITION", "UNKNOWN"}
+            (
+                label not in {"TREND", "RANGE", "TRANSITION", "UNKNOWN"}
+                and not (verdict is not None and label is None)
+            )
             or not 1 <= len(reviewer) <= 80
             or len(note) > 2000
         ):
@@ -264,6 +299,19 @@ class DiagnosticsRepository:
         detail = self.detail(str(payload.get("decision_id", "")))
         snapshot = detail["snapshot"]
         decision = detail["decision"]
+        exposed = (
+            self.query(
+                """SELECT 1 FROM project_records o
+            JOIN project_records r ON r.record_type='human_regime_review'
+            AND r.record_key=o.payload_json::jsonb ->> 'review_id'
+            WHERE o.record_type='human_review_outcome'
+            AND r.payload_json::jsonb ->> 'decision_id'=%s
+            AND lower(trim(r.payload_json::jsonb ->> 'reviewer'))=lower(trim(%s)) LIMIT 1""",
+                (decision["decision_id"], reviewer),
+            )
+            if verdict
+            else []
+        )
         record = {
             "review_id": str(uuid4()),
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
@@ -281,11 +329,123 @@ class DiagnosticsRepository:
             "review_mode": "informed_retrospective",
             "training_authorized": False,
             "changes_classifier": False,
+            "verdict": verdict,
+            "reason_category": reason if reason in REASONS else None,
+            "observation_session": decision.get("observation_session"),
+            "frozen_reading": {
+                "regime": snapshot["regime"],
+                "reason_code": decision["reason_code"],
+                "hypothesis": detail.get("hypothesis"),
+                "expectation": detail.get("expectation"),
+                "evidence_set_id": snapshot.get("evidence_set_id"),
+            },
+            "future_hidden_in_review_ui": verdict is not None,
+            "prior_outcome_access_recorded": bool(exposed),
         }
         self.memory.record_project_data(
             "human_regime_review", record["review_id"], record
         )
         return record
+
+    def review_outcome(self, payload):
+        review_id = str(payload.get("review_id", ""))
+        records = self.query(
+            """SELECT payload_json FROM project_records
+            WHERE record_type='human_regime_review' AND record_key=%s LIMIT 1""",
+            (review_id,),
+        )
+        if not records:
+            raise ValueError("Registre sua avaliação antes de consultar o resultado.")
+        review = decode(records[0]["payload_json"])
+        if review.get("verdict") not in VERDICTS:
+            raise ValueError(
+                "Registre uma avaliação estruturada antes de consultar o resultado."
+            )
+        detail = self.detail(review["decision_id"])
+        decision = detail["decision"]
+        manifest = self.manifest(decision["run_id"])
+        if manifest.get("source_clock", {}).get("contract") != "mt5-utc-v1":
+            raise ValueError(
+                "Horário legado sem validação UTC: comparação posterior bloqueada."
+            )
+        source_key = "dataset_sha256" if manifest.get("dataset_sha256") else "source"
+        source_value = manifest.get("dataset_sha256") or "mt5_diagnostics_readonly"
+        now = datetime.now(timezone.utc)
+        end = utc(decision["data_timestamp_utc"]) + timedelta(
+            seconds=13 * period_seconds(decision["timeframe"])
+        )
+        clock_id = decision.get("source_clock", {}).get("clock_id")
+        partition_guard = ""
+        partition_args = []
+        if manifest.get("dataset_sha256"):
+            # A review must never reveal the next validation/holdout partition.
+            partition_guard = """ AND EXISTS (SELECT 1 FROM decisions future
+                WHERE future.run_id=%s AND future.payload_json::jsonb ->> 'data_timestamp_utc'
+                = project_records.payload_json::jsonb ->> 'timestamp')"""
+            partition_args = [decision["run_id"]]
+        rows = self.query(
+            """SELECT payload_json FROM project_records WHERE record_type='closed_candle'
+            AND payload_json::jsonb ->> '"""
+            + source_key
+            + """'=%s
+            AND payload_json::jsonb ->> 'symbol'=%s AND payload_json::jsonb ->> 'timeframe'=%s
+            AND (payload_json::jsonb ->> 'timestamp')::timestamptz > %s
+            AND (payload_json::jsonb ->> 'timestamp')::timestamptz < %s
+            AND (%s::text IS NULL OR payload_json::jsonb ->> 'clock_id'=%s)"""
+            + partition_guard
+            + " ORDER BY recorded_at DESC LIMIT 500",
+            [
+                source_value,
+                decision["symbol"],
+                decision["timeframe"],
+                utc(decision["data_timestamp_utc"]),
+                end,
+                clock_id,
+                clock_id,
+                *partition_args,
+            ],
+        )
+        candles = [decode(r["payload_json"]) for r in rows]
+        reference = detail["candles"][-1]["close"] if detail["candles"] else None
+        outcome = describe_outcome(
+            decision, candles, reference_close=reference, now=now
+        )
+        outcome.update(
+            outcome_id=str(uuid4()),
+            review_id=review_id,
+            decision_id=decision["decision_id"],
+            evaluated_at=now.isoformat(),
+            observation_session=review.get("observation_session"),
+            hypothesis_evaluation="not_evaluable_without_frozen_contract",
+            expectation_evaluations=[],
+        )
+        contract = review.get("frozen_reading", {}).get("expectation")
+        if contract:
+            events = self.query(
+                """SELECT payload_json,status,created_at_utc FROM expectation_events
+                WHERE expectation_id=%s AND created_at_utc>%s AND created_at_utc<=%s
+                AND status<>'proposed' ORDER BY created_at_utc LIMIT 100""",
+                (
+                    contract["expectation_id"],
+                    decision["created_at_utc"],
+                    min(now, end).isoformat(),
+                ),
+            )
+            outcome["expectation_evaluations"] = [
+                dict(
+                    status=r["status"],
+                    at=r["created_at_utc"],
+                    evaluation=decode(r["payload_json"]),
+                )
+                for r in events
+            ]
+            outcome["hypothesis_evaluation"] = (
+                "recorded_engine_events" if events else "awaiting_engine_evaluation"
+            )
+        self.memory.record_project_data(
+            "human_review_outcome", outcome["outcome_id"], outcome
+        )
+        return outcome
 
     def research_candles(self, run_id):
         run = next((r for r in self.runs() if r["run_id"] == run_id), None)

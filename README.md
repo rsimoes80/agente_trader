@@ -1,5 +1,8 @@
 # Prompt atual: V4
 
+[Revisão humana simples e comportamento posterior](docs/human_review_panel.md):
+parecer estruturado, leitura original e acompanhamento sem treino automático.
+
 [Auditoria da conversa e incrementos de operação](docs/conversation_gap_audit.md):
 sessões de observação, pré-condições, prontidão de aprendizado e backup periódico.
 

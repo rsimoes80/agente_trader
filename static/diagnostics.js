@@ -1,7 +1,11 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
-const state = { csrf: "", runs: [], offset: 0, reason: "", selected: null, detail: null, loading: false, live: null, follow: true, chartBars: [] };
+const state = { csrf: "", runs: [], offset: 0, reason: "", selected: null, detail: null, loading: false, live: null, follow: true, chartBars: [], reviewId: null, outcomeBusy: false };
+const regimeNames = { TREND: "Tendência", RANGE: "Lateralidade", TRANSITION: "Transição", UNKNOWN: "Indefinido" };
+const verdictNames = { agree: "Concordo", disagree: "Discordo", unsure: "Não sei avaliar" };
+const eventNames = { zone_retested: "Retorno à zona registrada", stop_touched: "Toque no nível de invalidação", trigger_closed: "Fechamento confirmando o gatilho", "touch structural stop": "Toque no stop estrutural", expire: "Expiração do prazo", "session changes": "Mudança de sessão", "invalid data": "Dados inválidos", "A later bar retests the frozen zone; a subsequent close crosses the retest extreme.": "Um candle posterior retorna à zona registrada; outro fechamento cruza o extremo desse retorno." };
+const eventText=value=>eventNames[value] || value;
 const colors = { TREND: "#46d6a0", RANGE: "#69aefa", TRANSITION: "#e5ab62", UNKNOWN: "#82919e" };
 const words = { REGIME_UNKNOWN: "O classificador ainda não tem contexto suficiente para escolher um regime.", REGIME_MISMATCH: "A estratégia de tendência não é elegível neste regime. Nenhum setup foi procurado.", TREND_TRANSITION_WAIT: "A estrutura entre timeframes apresenta transição ou enfraquecimento.", TREND_CONTEXT_INSUFFICIENT: "Faltam swings confirmados nos horizontes exigidos.", SESSION_NOT_AUTHORIZED: "A observação está fora das sessões permitidas pela estratégia.", EVIDENCE_INVALIDATED: "Há evidência invalidante, como dados atrasados ou spread inadequado.", OBSERVATION_ONLY_HYPOTHESIS_REQUIRED: "Contexto observado. Faltam hipótese operacional, confirmação, gatilho e risco para considerar uma operação.", TREND_CONFIRMATION_PENDING: "A tendência candidata ainda não cumpriu a confirmação configurada.", EVIDENCE_CONFLICTED: "Há fatos direcionais contrários. O agente preservou o conflito e esperou." };
 Object.assign(words, { HISTORY_BASELINE_REQUIRED: "A análise exige 30 dias de histórico e estatísticas persistidas antes de considerar uma operação.", HISTORY_COVERAGE_INSUFFICIENT: "A cobertura mensal ainda é insuficiente em um dos períodos necessários.", HISTORY_BASELINE_STALE: "As estatísticas históricas estão desatualizadas. O coletor precisa concluir a atualização.", HISTORY_SOURCE_MISMATCH: "O histórico não corresponde ao servidor e relógio da fonte atual.", HISTORY_BASELINE_FROM_FUTURE: "O histórico contém informação posterior ao instante analisado e não pode autorizar esta decisão." });
@@ -109,10 +113,40 @@ async function load() {
 }
 function reviews(rows) {
   $("review-history").replaceChildren();
-  for (const row of rows) $("review-history").append(node("div", `${row.reviewer} · ${row.label} · ${utc(row.reviewed_at)} UTC${row.note ? " — " + row.note : ""}`));
+  // Other reviewers' opinions remain hidden until this reviewer has responded.
+  if (!state.reviewId) return;
+  for (const row of rows) $("review-history").append(node("div", `${row.reviewer} · ${verdictNames[row.verdict] || regimeNames[row.label] || "Revisão anterior"} · ${utc(row.reviewed_at)} UTC${row.note ? " — " + row.note : ""}`));
+}
+function readingSummary(data) {
+  const s=data.snapshot, d=data.decision, h=data.hypothesis, e=data.expectation;
+  const list=$("reading-summary"); list.replaceChildren();
+  const entries=[
+    ["Ativo / período", `${d.symbol} · ${d.timeframe}`],
+    ["Regime", `${regimeNames[s.regime] || s.regime} · contexto ${s.regime_state.timeframe}`],
+    ["Decisão", d.action === "NO_TRADE" ? "Aguardar / não operar" : d.action],
+    ["Hipótese", eventText(h?.prediction || h?.description) || "Sem hipótese operacional registrada neste instante."],
+    ["O que confirma", e?.expected_events?.map(eventText).join("; ") || "Sem critério operacional registrado. A classificação de regime não é uma entrada."],
+    ["O que invalida", e?.invalidation_events?.map(eventText).join("; ") || h?.rejection_criteria?.map(eventText).join("; ") || "Não definido para uma hipótese operacional."],
+  ];
+  for(const [name,value] of entries) list.append(node("dt",name),node("dd",value));
+  const session=d.observation_session;
+  $("review-session").textContent=session ? `Sessão de observação: ${session.session_id.slice(0,8)}. Avaliação vinculada à decisão original.` : "Observação automática fora de uma sessão manual. A revisão continua vinculada à decisão original.";
+}
+function restoreOwnReview() {
+  if(!state.detail)return;
+  const name=$("reviewer").value.trim().toLocaleLowerCase();
+  const own=(state.detail.reviews || []).find(r=>r.verdict && r.reviewer.trim().toLocaleLowerCase()===name);
+  state.reviewId=own?.review_id || null;
+  $("show-outcome").disabled=!own;
+  $("show-outcome").textContent=own ? "Ver comportamento posterior" : "Salvar avaliação para liberar resultado";
+  $("outcome-result").replaceChildren(); reviews(state.detail.reviews || []);
+  $("review-status").textContent=own ? "Você já tem uma avaliação registrada nesta observação. Novas avaliações preservam as anteriores." : "";
 }
 async function select(id) {
   state.selected = id;
+  state.reviewId=null; state.outcomeBusy=false;
+  $("show-outcome").disabled=true; $("show-outcome").textContent="Salvar avaliação para liberar resultado";
+  $("outcome-result").replaceChildren();
   $("detail").hidden=true;$("empty-detail").hidden=false;$("empty-detail").textContent="Carregando a observação…";
   for (const row of $("samples").children) row.classList.toggle("selected", row.dataset.id === id);
   try {
@@ -135,8 +169,11 @@ async function select(id) {
       const li = node("li", item.observation, item.status === "invalidating" ? "invalidating" : item.direction);
       li.append(node("small", `${item.source_component} · ${item.timeframe} · ${item.regime} · ${item.status} · ${item.dependency_group}`)); $("evidence-list").append(li);
     }
-    $("review-status").textContent = ""; $("review-note").value = ""; $("human-label").value = "UNKNOWN";
+    $("review-status").textContent = ""; $("review-note").value = ""; $("human-label").value = "";
+    $("human-verdict").value=""; $("human-reason").value=""; $("reason-field").hidden=true; $("human-reason").required=false;
+    readingSummary(data);
     reviews(data.reviews); draw();
+    restoreOwnReview();
   } catch (e) { error(e.message); }
 }
 function stage(reason) { if (reason.startsWith("EVIDENCE_")) return "evidências"; if (reason.startsWith("TREND_")) return "contexto"; if (reason.startsWith("RISK_")) return "risco"; return "observação"; }
@@ -219,11 +256,51 @@ $("open-live").onclick = () => { if (state.runs.some(r => r.run_id === state.liv
 $("refresh").onclick = refresh;
 $("chart-timeframe").onchange = draw; $("chart-count").onchange = draw;
 $("review-form").oninput = () => { state.follow = false; updateFollow(); };
+$("human-verdict").onchange=()=>{const disagree=$("human-verdict").value==="disagree";$("reason-field").hidden=!disagree;$("human-reason").required=disagree;};
+$("reviewer").onchange=restoreOwnReview;
 $("review-form").onsubmit = async event => {
   event.preventDefault(); if (!state.selected) return;
   const decisionId=state.selected;
   const button = event.submitter; button.disabled = true;
-  try { await api("reviews", { decision_id: decisionId, reviewer: $("reviewer").value, label: $("human-label").value, note: $("review-note").value }); const data = await api(`detail?decision_id=${encodeURIComponent(decisionId)}`); if(state.selected===decisionId){$("review-status").textContent = "Revisão registrada. Modelo preservado.";reviews(data.reviews);} } catch (e) { error(e.message); } finally { button.disabled = false; }
+  try {
+    const result=await api("reviews", { decision_id: decisionId, reviewer: $("reviewer").value, verdict: $("human-verdict").value, reason_category: $("human-reason").value || null, label: $("human-label").value || null, note: $("review-note").value });
+    if(state.selected===decisionId){
+      state.reviewId=result.review.review_id;
+      state.detail.reviews=[result.review,...(state.detail.reviews || [])];
+      $("review-status").textContent="Avaliação salva. Você pode consultar o comportamento posterior.";
+      $("show-outcome").disabled=false; $("show-outcome").textContent="Ver comportamento posterior";
+      $("outcome-result").replaceChildren();
+      reviews(state.detail.reviews); error("");
+    }
+  } catch (e) { error(e.message); } finally { button.disabled = false; }
+};
+$("show-outcome").onclick=async()=>{
+  if(!state.reviewId || state.outcomeBusy)return;
+  const id=state.selected, reviewId=state.reviewId; state.outcomeBusy=true; $("show-outcome").disabled=true;
+  try{
+    const result=await api("review-outcomes",{review_id:reviewId});
+    if(state.selected!==id || state.reviewId!==reviewId)return;
+    const o=result.outcome, box=$("outcome-result"); box.replaceChildren();
+    const status={complete:"Janela completa",pending:"Aguardando candles fechados",incomplete:"Histórico posterior incompleto",data_conflict:"Dados conflitantes: comparação indisponível"};
+    box.append(node("p",`${status[o.status] || o.status} · ${o.closed_bars}/${o.horizon_bars} candles · até ${utc(o.ends_at)} UTC`));
+    if(o.complete && o.price_change!==undefined){
+      box.append(node("p",`Preço de referência: ${o.reference_close.toFixed(5)} → fechamento: ${o.last_close.toFixed(5)}. Variação: ${o.price_change.toFixed(5)}. Máxima: ${o.highest.toFixed(5)} · mínima: ${o.lowest.toFixed(5)}.`));
+    }
+    const names={confirmed:"Confirmada",invalidated:"Invalidada",contradicted:"Contradita",expired:"Expirada",insufficient_data:"Dados insuficientes",partially_confirmed:"Parcialmente confirmada",developing_as_expected:"Desenvolvendo como esperado",monitoring:"Em acompanhamento",weakening:"Enfraquecendo"};
+    if(o.expectation_evaluations.length){
+      box.append(node("p","Avaliações do motor para a hipótese original:"));
+      for(const event of o.expectation_evaluations)box.append(node("p",`${utc(event.at)} UTC · ${names[event.status] || event.status}`));
+    }else box.append(node("p",o.hypothesis_evaluation==="awaiting_engine_evaluation" ? "Existe contrato original, mas ainda não há avaliação do motor nesta janela." : "Sem hipótese com critérios registrados: não é possível declarar confirmação ou invalidação. O movimento acima é apenas descritivo."));
+    box.append(node("p","Sua opinião, a leitura do agente e o comportamento posterior são registros distintos. Nenhum treino ou operação foi autorizado.","hint"));
+    error("");
+  }catch(e){error(e.message);}finally{if(state.selected===id){state.outcomeBusy=false;$("show-outcome").disabled=!state.reviewId;}}
+};
+$("next-review").onclick=()=>{
+  state.follow=false; updateFollow();
+  const rows=Array.from($("samples").children), index=rows.findIndex(row=>row.dataset.id===state.selected);
+  if(index>=0 && index+1<rows.length)select(rows[index+1].dataset.id);
+  else if(!$("older").disabled)$("older").click();
+  else $("review-status").textContent="Fim desta amostra. Ajuste os filtros para revisar outras observações.";
 };
 $("experiment-form").onsubmit = async event => {
   event.preventDefault(); const windows = $("windows").value.split(",").map(x => Number(x.trim()));
