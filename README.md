@@ -1,5 +1,8 @@
 # Prompt atual: V4
 
+[Auditoria da conversa e incrementos de operação](docs/conversation_gap_audit.md):
+sessões de observação, pré-condições, prontidão de aprendizado e backup periódico.
+
 [Histórico mensal antes da análise](docs/historical_context.md): coleta MT5 de 30 dias,
 sete períodos, estatísticas no PostgreSQL e testes de hipóteses com holdout reservado.
 

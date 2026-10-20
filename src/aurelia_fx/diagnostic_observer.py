@@ -33,6 +33,7 @@ class DiagnosticObserver:
     ):
         self.historical_repository = historical_repository
         self.historical_context = None
+        self.session_controller = None
         self.code_version = code_version
         self.memory, self.repository, self.url, self.stop = (
             memory,
@@ -98,6 +99,13 @@ class DiagnosticObserver:
         while not self.stop.is_set():
             lease.execute("SELECT 1")
             try:
+                if (
+                    self.session_controller is not None
+                    and self.status().get("status") == "unavailable"
+                ):
+                    self.session_controller.pause_on_failure(
+                        "SOURCE_OR_DATABASE_RECOVERY_REQUIRES_REVIEW"
+                    )
                 self.poll()
             except Exception as exc:
                 self.update_status(
@@ -111,6 +119,8 @@ class DiagnosticObserver:
                     else None,
                     checked_at=datetime.now(timezone.utc).isoformat(),
                 )
+                if self.session_controller is not None:
+                    self.session_controller.pause_on_failure(type(exc).__name__)
             self.stop.wait(20)
 
     def poll(self):
@@ -149,6 +159,10 @@ class DiagnosticObserver:
         clock = validate_source_clock(data, datetime.now(timezone.utc))
         self.adopt_clock(clock)
         self.historical_at(now)
+        if self.session_controller is not None and self.historical_context.get(
+            "blocker"
+        ):
+            self.session_controller.pause_on_failure(self.historical_context["blocker"])
         seconds = timeframe_seconds("M5")
         if any(
             datetime.fromisoformat(row["timestamp"]) > now + timedelta(seconds=5)
@@ -390,6 +404,12 @@ class DiagnosticObserver:
             created_at=datetime.fromisoformat(snapshot.timestamp_utc),
         )
         session = snapshot.session[0] if snapshot.session else "outside_session"
+        reference = (
+            self.session_controller.observation_reference(snapshot.timestamp_utc)
+            if self.session_controller is not None
+            else None
+        )
+        session_context = {"observation_session": reference} if reference else {}
         with self.memory.transaction():
             self.memory.record_project_data(
                 "diagnostic_chart_window",
@@ -421,6 +441,7 @@ class DiagnosticObserver:
                     **snapshot.as_dict(),
                     "source_clock": self.source_clock,
                     "historical_context": self.historical_context,
+                    **session_context,
                 },
                 session=session,
                 regime=snapshot.regime,
@@ -436,6 +457,7 @@ class DiagnosticObserver:
                     "intelligence_context": context,
                     "source_clock": self.source_clock,
                     "historical_context": self.historical_context,
+                    **session_context,
                 },
             )
             self.memory.record_experience(
@@ -462,6 +484,7 @@ class DiagnosticObserver:
                         "execution_enabled": False,
                         "source_clock": self.source_clock,
                         "historical_context": self.historical_context,
+                        **session_context,
                     },
                     source_data_reference="mt5_bridge_readonly",
                     **context,

@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -23,6 +24,9 @@ from aurelia_fx.diagnostic_observer import DiagnosticObserver  # noqa: E402
 from aurelia_fx.diagnostics_repository import DiagnosticsRepository  # noqa: E402
 from aurelia_fx.forecasting.repository import ForecastRepository  # noqa: E402
 from aurelia_fx.historical.repository import HistoricalRepository  # noqa: E402
+from aurelia_fx.learning_audit import build_report  # noqa: E402
+from aurelia_fx.operator_auth import authorized  # noqa: E402
+from aurelia_fx.platform_control import ObservationController, preflight  # noqa: E402
 from aurelia_fx.regime_research import compare_regime_parameters  # noqa: E402
 from aurelia_fx.storage import open_memory  # noqa: E402
 
@@ -41,6 +45,8 @@ STATIC = {
     "/timestral-panel.js": "timestral-panel.js",
     "/history.css": "history.css",
     "/history-panel.js": "history-panel.js",
+    "/platform.css": "platform.css",
+    "/platform-panel.js": "platform-panel.js",
 }
 
 
@@ -72,6 +78,35 @@ class Application:
             code_version,
             historical_repository=self.history,
         )
+        token_path = ROOT / "data/platform-operator.token"
+        self.operator_token = os.environ.get("AURELIA_OPERATOR_TOKEN") or (
+            token_path.read_text(encoding="ascii").strip()
+            if token_path.exists()
+            else ""
+        )
+        self.controller = ObservationController(self.memory, self.preflight)
+        self.controller.recover()
+        self.observer.session_controller = self.controller
+
+    def preflight(self):
+        observer = self.observer.status()
+        baseline = self.history.latest(
+            clock_id=(observer.get("source_clock") or {}).get("clock_id")
+        )
+        return preflight(
+            observer, baseline, disk_free=shutil.disk_usage(ROOT / "data").free
+        )
+
+    def learning_worker(self):
+        while not self.stop.is_set():
+            try:
+                report = build_report(self.memory)
+                self.memory.record_project_data(
+                    "learning_dataset_audit", report["report_id"], report
+                )
+            except Exception as exc:
+                print("Learning audit unavailable:", type(exc).__name__, flush=True)
+            self.stop.wait(3600)
 
     def experiment(self, payload):
         if not self.research_lock.acquire(blocking=False):
@@ -178,6 +213,19 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/api/diagnostics/platform":
+                reports = app.repo.recent_records("learning_dataset_audit", 1)
+                self.send(
+                    200,
+                    dict(
+                        ok=True,
+                        session=app.controller.status(),
+                        preflight=app.preflight(),
+                        operator_configured=bool(app.operator_token),
+                        learning=reports[0] if reports else None,
+                    ),
+                )
+                return
             if path == "/api/diagnostics/audit":
                 self.send(200, {"ok": True, **app.repo.audit(args)})
                 return
@@ -262,6 +310,26 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("Objeto JSON obrigatório.")
             path = urlparse(self.path).path
+            if path == "/api/diagnostics/platform/command":
+                if not authorized(
+                    self.headers.get("X-Operator-Token", ""),
+                    self.server.app.operator_token,
+                ):
+                    self.send(
+                        403,
+                        dict(
+                            ok=False,
+                            error="Credencial de operador necessária para controlar a sessão.",
+                        ),
+                    )
+                    return
+                response = self.server.app.controller.command(
+                    payload,
+                    self.headers.get("Idempotency-Key", ""),
+                    origin=self.client_address[0],
+                )
+                self.send(200, dict(ok=True, **response))
+                return
             if path == "/api/diagnostics/reviews":
                 self.send(
                     201, {"ok": True, "review": self.server.app.repo.review(payload)}
@@ -292,6 +360,9 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     app.observer.start()
+    threading.Thread(
+        target=app.learning_worker, name="learning-eligibility-audit", daemon=True
+    ).start()
     try:
         server.serve_forever()
     finally:
