@@ -28,7 +28,7 @@ function observer(info) {
   state.live = info.run_id;
   $("observer-dot").className = `dot ${info.status}`;
   $("observer-title").textContent = ({ observing: "Observador ativo · MT5", unavailable: "Fonte ou banco indisponível", stale: "Dados do MT5 atrasados", starting: "Iniciando observador",warming:"Preparando histórico fechado",passive:"Observador já ativo em outra instância" })[info.status] || info.status;
-  $("observer-detail").textContent = info.last_candle ? `Último candle: ${utc(info.last_candle)} UTC · consultado ${utc(info.checked_at)} UTC` : info.message || "Aguardando candles fechados";
+  $("observer-detail").textContent = info.status==='unavailable' ? info.message : info.last_candle ? `Último candle: ${utc(info.last_candle)} UTC · consultado ${utc(info.checked_at)} UTC` : info.message || "Aguardando candles fechados";
   $("open-live").hidden = !info.run_id;
 }
 function populateRuns(runs) {
@@ -69,6 +69,10 @@ function audit(data) {
   for (const [reason, count] of Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 6)) bar($("reason-bars"), reason, count, data.total, "#829fb1", () => { state.reason = reason; state.offset = 0; state.selected = null; load(); });
   if (!data.total) $("reason-bars").append(node("p", "Nenhuma observação corresponde aos filtros.", "hint"));
   $("clear-reason").hidden = !state.reason;
+  $("audit-matrix").replaceChildren();
+  for(const group of data.groups){const row=node('tr');for(const value of [group.regime,`${group.timeframe} / ${group.regime_timeframe}`,group.session,group.reason_code,number(group.count)])row.append(node('td',value));$("audit-matrix").append(row);}
+  const human=data.human_review;
+  $("review-summary").textContent=human?.judgments?`${human.judgments} pareceres em ${human.unique_snapshots} snapshots; ${human.agreements} concordâncias com o modelo. Última revisão por pessoa/snapshot; concordância informada não é acurácia independente.`:'Ainda não há revisões humanas nesta amostra.';
 }
 function samples(data) {
   $("samples").replaceChildren();

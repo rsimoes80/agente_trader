@@ -6,6 +6,7 @@ import threading
 from dataclasses import asdict
 from datetime import datetime, time, timedelta, timezone
 from urllib.request import urlopen
+from urllib.error import HTTPError
 from uuid import uuid4
 
 from .decision_engine import DecisionEngine, IntelligencePolicy
@@ -15,6 +16,12 @@ from .market_intelligence import MarketIntelligenceSession
 from .replay_strategy import STRATEGY_METADATA
 from .sessions import SessionWindow
 from .trend import HierarchyConfig, timeframe_seconds
+
+
+class MarketSourceUnavailable(RuntimeError):
+    def __init__(self, status, message):
+        self.status, self.public_message = status, message
+        super().__init__(message)
 
 
 class DiagnosticObserver:
@@ -88,21 +95,46 @@ class DiagnosticObserver:
                 self.update_status(
                     status="unavailable",
                     error_type=type(exc).__name__,
-                    message="Fonte ou persistência indisponível. Nenhuma observação foi autorizada para operar.",
+                    message=exc.public_message
+                    if isinstance(exc, MarketSourceUnavailable)
+                    else "Fonte ou persistência indisponível. Nenhuma observação foi autorizada para operar.",
+                    source_status=exc.status
+                    if isinstance(exc, MarketSourceUnavailable)
+                    else None,
                     checked_at=datetime.now(timezone.utc).isoformat(),
                 )
             self.stop.wait(20)
 
     def poll(self):
         now = datetime.now(timezone.utc)
-        with urlopen(self.url, timeout=12) as response:
-            raw = response.read(4_000_001)
+        try:
+            with urlopen(self.url, timeout=12) as response:
+                raw = response.read(4_000_001)
+        except HTTPError as exc:
+            body = exc.read(4000).decode("utf-8", errors="replace")
+            if "Falha ao ler histórico" in body:
+                raise MarketSourceUnavailable(
+                    "history_unavailable",
+                    "MT5 conectado, mas sem histórico pela API. Abra EURUSD M5 no terminal e carregue os candles.",
+                ) from None
+            raise MarketSourceUnavailable(
+                "bridge_unavailable",
+                "Ponte MT5 indisponível. Verifique Windows, ponte e terminal conectado.",
+            ) from None
         if len(raw) > 4_000_000:
             raise ValueError("Bridge response too large")
         data = json.loads(raw)
         if not data.get("ok") or data.get("timeframe") != "M5":
             raise ValueError("Invalid bridge data")
         seconds = timeframe_seconds("M5")
+        if any(
+            datetime.fromisoformat(row["timestamp"]) > now + timedelta(seconds=5)
+            for row in data["candles"]
+        ):
+            raise MarketSourceUnavailable(
+                "source_clock_ahead",
+                "O histórico contém horários futuros em relação a UTC. Verifique o fuso da fonte antes de coletar; horários não foram corrigidos automaticamente.",
+            )
         rows = [
             row
             for row in data["candles"]
@@ -207,6 +239,7 @@ class DiagnosticObserver:
             checked_at=now.isoformat(),
             message="Observação somente leitura; candles fechados.",
             error_type=None,
+            source_status="ok",
         )
 
     def record_start(self, config):

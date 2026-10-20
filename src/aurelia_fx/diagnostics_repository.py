@@ -113,11 +113,13 @@ class DiagnosticsRepository:
             """SELECT s.payload_json::jsonb ->> 'regime' AS regime,
             s.payload_json::jsonb -> 'regime_state' ->> 'timeframe' AS regime_timeframe,
             d.payload_json::jsonb ->> 'timeframe' AS timeframe,d.session,d.reason_code,d.action,
+            s.payload_json::jsonb -> 'regime_state' ->> 'classification_status' AS classification_status,
+            s.payload_json::jsonb -> 'regime_state' -> 'missing_data' AS missing_data,
             count(*) AS count FROM decisions d JOIN market_snapshots s
             ON d.payload_json::jsonb ->> 'snapshot_id'=s.snapshot_id WHERE """
             + where
             + """
-            GROUP BY 1,2,3,4,5,6 ORDER BY count(*) DESC""",
+            GROUP BY 1,2,3,4,5,6,7,8 ORDER BY count(*) DESC""",
             args,
         )
         for row in rows:
@@ -129,6 +131,37 @@ class DiagnosticsRepository:
                 r["count"] for r in rows if r["action"] == "HYPOTHETICAL_SIGNAL"
             ),
             "scope": "one_run_no_cross_run_deduplication_needed",
+            "human_review": self.review_summary(where, args),
+        }
+
+    def review_summary(self, where, args):
+        rows = self.query(
+            """WITH latest AS (
+            SELECT DISTINCT ON (lower(trim(payload_json::jsonb ->> 'reviewer')),payload_json::jsonb ->> 'snapshot_id')
+                payload_json::jsonb AS review FROM project_records WHERE record_type='human_regime_review'
+            ORDER BY lower(trim(payload_json::jsonb ->> 'reviewer')),payload_json::jsonb ->> 'snapshot_id',recorded_at DESC)
+            SELECT r.review ->> 'label' AS human_regime,s.payload_json::jsonb ->> 'regime' AS model_regime,
+                count(*) AS count,array_agg(DISTINCT s.snapshot_id) AS snapshot_ids
+            FROM latest r JOIN decisions d ON r.review ->> 'decision_id'=d.decision_id
+            JOIN market_snapshots s ON d.payload_json::jsonb ->> 'snapshot_id'=s.snapshot_id
+            WHERE """
+            + where
+            + " GROUP BY 1,2",
+            args,
+        )
+        snapshots = set()
+        for row in rows:
+            snapshots.update(row.pop("snapshot_ids"))
+        total = sum(row["count"] for row in rows)
+        matches = sum(
+            row["count"] for row in rows if row["human_regime"] == row["model_regime"]
+        )
+        return {
+            "judgments": total,
+            "unique_snapshots": len(snapshots),
+            "agreements": matches,
+            "confusion": rows,
+            "interpretation": "informed_agreement_not_independent_accuracy",
         }
 
     def samples(self, filters, offset=0):

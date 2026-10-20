@@ -65,3 +65,9 @@ O banco precisa estar configurado em `data/database.json` ou `AGENTE_TRADER_DATA
 Senhas não são entregues ao navegador. POSTs exigem nonce da sessão e origem permitida.
 O painel permanece acessível à rede local existente; não adiciona contas de usuário.
 Backup: `bash deploy/vm/backup-postgres.sh`.
+
+## Primeira auditoria
+
+Veja [auditoria inicial e comparação 16/20/24](diagnostic_initial_audit.md). O motivo exibido é o primeiro bloqueio registrado, não uma lista de todos os gates possíveis. A matriz permite separar sessão, execução e contexto. Concordância humana considera a última revisão por pessoa/snapshot e não equivale a acurácia independente.
+
+O observador rejeita horários futuros além de cinco segundos de tolerância de relógio; não corrige automaticamente fuso do broker. Quando a ponte responde mas o SDK não entrega histórico, o painel distingue essa condição de uma ponte desligada.
