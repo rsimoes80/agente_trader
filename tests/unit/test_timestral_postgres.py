@@ -59,6 +59,13 @@ class TimestralPostgresTests(unittest.TestCase):
         migrate(self.connection)
         self.assertTrue(self.repo.installed())
 
+    def test_migration_checksum_detects_drift(self):
+        self.connection.execute(
+            "UPDATE timestral_schema_migrations SET checksum='changed-test-only'"
+        )
+        with self.assertRaisesRegex(RuntimeError, "Checksum"):
+            self.repo.migrate()
+
     def test_prediction_recovery_idempotence_and_immutable(self):
         self.repo.save(self.predictions, {})
         self.repo.save(self.predictions, {})

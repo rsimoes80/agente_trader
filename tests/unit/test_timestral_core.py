@@ -151,3 +151,35 @@ class TimestralCoreTests(unittest.TestCase):
             TimestralConfig(mode="trade")
         with self.assertRaises(ValueError):
             TimestralConfig(timeframe="M1")
+
+    def test_forecasting_modules_have_no_order_gateway(self):
+        import ast
+
+        import aurelia_fx.forecasting as forecasting
+
+        forbidden = {"order_send", "order_check", "send_order", "execute_order"}
+        for path in Path(forecasting.__file__).parent.glob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            calls = {
+                n.func.attr
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            }
+            imports = {
+                n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+            }
+            self.assertFalse(calls & forbidden, path)
+            self.assertNotIn("mt5_provider", imports)
+
+    def test_timestral_holdout_guard_precedes_any_processing(self):
+        from aurelia_fx.temporal_validation import run_temporal_validation
+
+        with self.assertRaisesRegex(ValueError, "holdout"):
+            run_temporal_validation(
+                None,
+                config=None,
+                memory=None,
+                output_dir=Path("unused"),
+                include_holdout=True,
+                forecast_service=object(),
+            )
