@@ -43,7 +43,26 @@ class DecisionEngine:
             return "STRATEGY_REGIME_METADATA_REQUIRED"
         return self.strategy.evaluate(snapshot)["reason"]
 
-    def context_gate(self, snapshot, *, side=None, target=None):
+    def context_gate(
+        self,
+        snapshot,
+        *,
+        side=None,
+        target=None,
+        historical_context=None,
+        require_history=False,
+    ):
+        if require_history:
+            from .historical.core import readiness
+
+            context = historical_context or {}
+            blocker = readiness(
+                context.get("baseline"),
+                as_of=snapshot.timestamp_utc,
+                clock_id=context.get("clock_id"),
+            )
+            if blocker:
+                return blocker
         regime_block = self.regime_gate(snapshot)
         if regime_block:
             return regime_block

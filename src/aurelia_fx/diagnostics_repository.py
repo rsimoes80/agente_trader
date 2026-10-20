@@ -10,6 +10,8 @@ def decode(value):
 
 
 def stage(reason):
+    if reason.startswith("HISTORY_"):
+        return "histórico / estatística"
     if reason.startswith(("REGIME_", "RANGE_", "BREAKOUT_", "TRANSITION_")):
         return "regime"
     if reason.startswith(("INVALID_", "EVIDENCE_INVALIDATED")):

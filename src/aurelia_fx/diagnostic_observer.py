@@ -22,7 +22,17 @@ MarketSourceUnavailable = SourceClockUnavailable
 
 
 class DiagnosticObserver:
-    def __init__(self, memory, repository, url, stop, code_version="unknown"):
+    def __init__(
+        self,
+        memory,
+        repository,
+        url,
+        stop,
+        code_version="unknown",
+        historical_repository=None,
+    ):
+        self.historical_repository = historical_repository
+        self.historical_context = None
         self.code_version = code_version
         self.memory, self.repository, self.url, self.stop = (
             memory,
@@ -186,6 +196,16 @@ class DiagnosticObserver:
                 "source_clock_id": self.source_clock["clock_id"],
                 "time_contract": self.source_clock["contract"],
             }
+            if self.historical_repository is not None:
+                from .historical.core import TIMEFRAMES, VERSION
+
+                config["historical_requirement"] = dict(
+                    version=VERSION,
+                    days=30,
+                    timeframes=TIMEFRAMES,
+                    minimum_coverage=0.95,
+                    max_age_seconds=21600,
+                )
             self.config_hash = hashlib.sha256(
                 json.dumps(config, sort_keys=True).encode()
             ).hexdigest()
@@ -256,6 +276,7 @@ class DiagnosticObserver:
             error_type=None,
             source_status="ok",
             source_clock=self.source_clock,
+            historical_context=self.historical_context,
         )
 
     def adopt_clock(self, clock):
@@ -310,8 +331,32 @@ class DiagnosticObserver:
             else stamp + timedelta(seconds=seconds),
         )
         eligibility = STRATEGY_METADATA.evaluate(snapshot)
+        baseline = (
+            self.historical_repository.latest(
+                as_of=snapshot.timestamp_utc, clock_id=self.source_clock["clock_id"]
+            )
+            if self.historical_repository
+            else None
+        )
+        self.historical_context = {
+            "baseline_id": baseline["baseline_id"] if baseline else None,
+            "days": baseline["days"] if baseline else None,
+            "as_of": baseline["as_of"] if baseline else None,
+            "required": self.historical_repository is not None,
+        }
         reason = (
-            self.policy.context_gate(snapshot) or "OBSERVATION_ONLY_HYPOTHESIS_REQUIRED"
+            self.policy.context_gate(
+                snapshot,
+                historical_context={
+                    "baseline": baseline,
+                    "clock_id": self.source_clock["clock_id"],
+                },
+                require_history=self.historical_repository is not None,
+            )
+            or "OBSERVATION_ONLY_HYPOTHESIS_REQUIRED"
+        )
+        self.historical_context["blocker"] = (
+            reason if reason.startswith("HISTORY_") else None
         )
         context = snapshot.learning_context()
         context.update(
@@ -360,7 +405,11 @@ class DiagnosticObserver:
                 },
             )
             self.memory.record_snapshot(
-                {**snapshot.as_dict(), "source_clock": self.source_clock},
+                {
+                    **snapshot.as_dict(),
+                    "source_clock": self.source_clock,
+                    "historical_context": self.historical_context,
+                },
                 session=session,
                 regime=snapshot.regime,
                 data_reference="mt5_bridge_readonly",
@@ -374,6 +423,7 @@ class DiagnosticObserver:
                     "snapshot_id": snapshot.snapshot_id,
                     "intelligence_context": context,
                     "source_clock": self.source_clock,
+                    "historical_context": self.historical_context,
                 },
             )
             self.memory.record_experience(
@@ -399,6 +449,7 @@ class DiagnosticObserver:
                         "reason_code": reason,
                         "execution_enabled": False,
                         "source_clock": self.source_clock,
+                        "historical_context": self.historical_context,
                     },
                     source_data_reference="mt5_bridge_readonly",
                     **context,

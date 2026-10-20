@@ -4,6 +4,7 @@ vendor/timestral/
 data/models/
 data/timestral.json
 data/timestral.pid
+data/history.pid
 .agents/
 .tools/
 nautilus_trader/

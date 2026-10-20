@@ -79,6 +79,11 @@ def main(argv=None) -> int:
     )
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument(
+        "--postgres-history",
+        action="store_true",
+        help="Mês histórico congelado no PostgreSQL, sem CSV",
+    )
+    inputs.add_argument(
         "--csv",
         type=Path,
         help="UTF-8: timestamp,open,high,low,close,volume,spread_pips",
@@ -142,13 +147,23 @@ def main(argv=None) -> int:
     memory = None
     forecast_adapter = None
     try:
-        path = (
-            capture_mt5(args.timeframe, args.count, ROOT / "data/replay_inputs")
-            if args.capture_mt5
-            else args.csv
-        )
-        source = "mt5_local_closed_bars_utc_v1" if args.capture_mt5 else args.source
-        dataset = load_csv(path, source=source)
+        if args.postgres_history:
+            from aurelia_fx.historical.repository import HistoricalRepository
+
+            if args.db is not None:
+                raise ValueError("O arquivo histórico exige o PostgreSQL oficial.")
+            memory = open_memory()
+            dataset = HistoricalRepository(memory).replay_dataset(
+                timeframe=args.timeframe
+            )
+        else:
+            path = (
+                capture_mt5(args.timeframe, args.count, ROOT / "data/replay_inputs")
+                if args.capture_mt5
+                else args.csv
+            )
+            source = "mt5_local_closed_bars_utc_v1" if args.capture_mt5 else args.source
+            dataset = load_csv(path, source=source)
         try:
             code_version = subprocess.check_output(
                 ["git", "rev-parse", "HEAD"],
@@ -181,7 +196,7 @@ def main(argv=None) -> int:
             slippage_pips=args.slippage_pips,
             max_holding_bars=args.max_holding_bars,
         )
-        memory = open_memory(args.db)
+        memory = memory or open_memory(args.db)
         forecast_service = None
         if args.timestral:
             from dataclasses import replace

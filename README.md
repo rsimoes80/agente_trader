@@ -1,5 +1,8 @@
 # Prompt atual: V4
 
+[Histórico mensal antes da análise](docs/historical_context.md): coleta MT5 de 30 dias,
+sete períodos, estatísticas no PostgreSQL e testes de hipóteses com holdout reservado.
+
 [Timestral: instalação e previsão em observação](docs/timestral.md). Modelo local opcional,
 previsões e avaliações no PostgreSQL, sem influência nas decisões V4.
 

@@ -1,5 +1,8 @@
 # Replay causal do EUR/USD
 
+Fonte PostgreSQL mensal: `python run_replay.py --postgres-history --validate-temporal`.
+Veja [captura, estatísticas e requisitos históricos](historical_context.md).
+
 ## Versão atual V4
 
 A estratégia experimental é `3.0-v4`, com `MarketRegimeEngine 0.1.0-research`. Regime incompatível impede propor setup; `--regime-config arquivo.json` declara parâmetros e hash. Relatórios incluem regime/localização e `regime_performance.json`. Veja [contrato V4](market_regime_v4.md).
