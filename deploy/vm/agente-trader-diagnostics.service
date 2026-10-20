@@ -1,0 +1,22 @@
+[Unit]
+Description=Aurelia FX regime diagnostics and read-only observer
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rafael
+WorkingDirectory=/home/rafael/apps/agente-trader
+ExecStart=/home/rafael/apps/agente-trader/.venv/bin/python -u diagnostic_server.py
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rafael/apps/agente-trader/data
+PrivateTmp=true
+TimeoutStopSec=25
+
+[Install]
+WantedBy=multi-user.target

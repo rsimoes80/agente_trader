@@ -1,5 +1,7 @@
 # Prompt atual: V4
 
+[Painel de diagnóstico de regimes](http://192.168.97.221:8097/diagnostico) · [Operação e revisão humana](docs/diagnostics.md).
+
 [Prompt Mestre V4 consolidado](docs/PROMPT_MESTRE_V4.md) · [Motor de regime e nova referência](docs/market_regime_v4.md).
 Regime e localização precedem a seleção de estratégias; versões V3 permanecem como histórico.
 
