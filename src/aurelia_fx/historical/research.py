@@ -11,7 +11,7 @@ def study(rows, *, baseline_id):
     n = len(rows)
     bounds = (0, int(n * 0.6), int(n * 0.8), n)
     result = dict(
-        version="historical-hypotheses-v1",
+        version="historical-hypotheses-v2",
         baseline_id=baseline_id,
         split="chronological 60/20/20",
         holdout_accessed=False,
@@ -55,14 +55,20 @@ def study(rows, *, baseline_id):
                     continue
                 body = part[index]["close"] - part[index]["open"]
                 move = part[index + horizon]["close"] - part[index]["close"]
-                if body == 0 or move == 0:
+                if body == 0:
                     continue
                 samples.append(
-                    (1 if body > 0 else -1, 1 if move > 0 else -1, move / 0.0001)
+                    (
+                        1 if body > 0 else -1,
+                        1 if move > 0 else -1 if move < 0 else 0,
+                        move / 0.0001,
+                    )
                 )
             if phase == "development" and samples:
                 majority = (
-                    1 if sum(s[1] > 0 for s in samples) >= len(samples) / 2 else -1
+                    1
+                    if sum(s[1] > 0 for s in samples) >= sum(s[1] < 0 for s in samples)
+                    else -1
                 )
             baseline = (
                 sum(s[1] == majority for s in samples) / len(samples)
@@ -81,6 +87,7 @@ def study(rows, *, baseline_id):
                         horizon=horizon,
                         phase=phase,
                         samples=len(samples),
+                        neutral_outcomes=sum(s[1] == 0 for s in samples),
                         directional_accuracy=accuracy,
                         baseline_directional_accuracy=baseline,
                         baseline_direction=majority,

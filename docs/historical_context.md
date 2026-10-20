@@ -1,5 +1,7 @@
 # Premissa de análise: histórico mensal antes de considerar operação
 
+[Resultados reais e validação da entrega](historical_validation.md).
+
 A análise operacional começa por verificar histórico e estatísticas persistidas
 do mesmo ativo, corretora/servidor e contrato UTC da fonte atual. O padrão é
 **30 dias corridos de EURUSD**, nos períodos **M1, M5, M15, M30, H1, H4 e D1**.
@@ -23,7 +25,8 @@ risco continuam necessários. O sistema permanece sem gateway de ordens.
 
 O primeiro comando captura o mês e executa um estudo pequeno de hipóteses.
 `--watch` atualiza a janela a cada 15 minutos; após falhas, tenta novamente em
-60 segundos. A tarefa `AgenteTrader-History` inicia no logon Windows, com
+60 segundos. Com `--study`, registra o estudo ao iniciar e uma vez por dia UTC.
+A tarefa `AgenteTrader-History` inicia no logon Windows, com
 supervisor e lease exclusivo no PostgreSQL. MT5 deve estar aberto e conectado.
 Não são instaladas outras instâncias de banco ou ferramentas de orquestração.
 
@@ -85,6 +88,8 @@ O estudo inicial formula duas hipóteses fixas: continuação ou reversão da di
 do corpo do último candle para 3, 6 e 12 barras M5. Os sinais só usam dados
 fechados; rótulos vêm dos candles posteriores da mesma partição. Amostras de cada
 horizonte não se sobrepõem e janelas atravessando lacunas são rejeitadas.
+Corpos sem direção são excluídos por regra conhecida no instante do sinal;
+resultados futuros neutros permanecem na amostra, evitando seleção retrospectiva.
 
 O protocolo usa 60% desenvolvimento, 20% validação e 20% final reservado. O
 baseline direcional majoritário é calculado no desenvolvimento e congelado para

@@ -148,6 +148,7 @@ class DiagnosticObserver:
             raise ValueError("Invalid bridge data")
         clock = validate_source_clock(data, datetime.now(timezone.utc))
         self.adopt_clock(clock)
+        self.historical_at(now)
         seconds = timeframe_seconds("M5")
         if any(
             datetime.fromisoformat(row["timestamp"]) > now + timedelta(seconds=5)
@@ -320,6 +321,29 @@ class DiagnosticObserver:
             },
         )
 
+    def historical_at(self, as_of):
+        from .historical.core import readiness
+
+        baseline = (
+            self.historical_repository.latest(
+                as_of=as_of, clock_id=self.source_clock["clock_id"]
+            )
+            if self.historical_repository
+            else None
+        )
+        self.historical_context = {
+            "baseline_id": baseline["baseline_id"] if baseline else None,
+            "days": baseline["days"] if baseline else None,
+            "as_of": baseline["as_of"] if baseline else None,
+            "required": self.historical_repository is not None,
+            "blocker": readiness(
+                baseline, as_of=as_of, clock_id=self.source_clock["clock_id"]
+            )
+            if self.historical_repository
+            else None,
+        }
+        return baseline
+
     def save_row(self, row, rows, spread, seconds):
         stamp = datetime.fromisoformat(row["timestamp"])
         current = row is rows[-1]
@@ -331,19 +355,7 @@ class DiagnosticObserver:
             else stamp + timedelta(seconds=seconds),
         )
         eligibility = STRATEGY_METADATA.evaluate(snapshot)
-        baseline = (
-            self.historical_repository.latest(
-                as_of=snapshot.timestamp_utc, clock_id=self.source_clock["clock_id"]
-            )
-            if self.historical_repository
-            else None
-        )
-        self.historical_context = {
-            "baseline_id": baseline["baseline_id"] if baseline else None,
-            "days": baseline["days"] if baseline else None,
-            "as_of": baseline["as_of"] if baseline else None,
-            "required": self.historical_repository is not None,
-        }
+        baseline = self.historical_at(snapshot.timestamp_utc)
         reason = (
             self.policy.context_gate(
                 snapshot,

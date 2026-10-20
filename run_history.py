@@ -26,7 +26,7 @@ def main():
     parser.add_argument("--study", action="store_true")
     args = parser.parse_args()
     full_due = args.full
-    study_due = args.study
+    study_day = None
     stop = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -45,12 +45,13 @@ def main():
                 while not stop.is_set():
                     lease.execute("SELECT 1")
                     try:
+                        current_day = datetime.now(timezone.utc).date().isoformat()
                         baseline = collect(
                             repo,
                             fetch_history,
                             days=args.days,
                             full=full_due,
-                            run_study=study_due,
+                            run_study=args.study and study_day != current_day,
                         )
                         state = dict(
                             status=baseline["status"],
@@ -74,7 +75,7 @@ def main():
                         success = state["status"] == "ready"
                         if success:
                             full_due = False
-                            study_due = False
+                            study_day = current_day
                     except Exception as exc:
                         state = dict(
                             status="unavailable",
