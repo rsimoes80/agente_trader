@@ -86,7 +86,7 @@ class OperationControl:
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{16,128}", key):
             raise ValueError("Identificador de comando inválido. Atualize a página.")
         action = payload.get("action")
-        if action not in {"START", "PAUSE", "RESUME", "STOP"}:
+        if action not in {"START", "PAUSE", "RESUME", "STOP", "APPROVE"}:
             raise ValueError("Comando inválido.")
         if payload.get("mode", "paper") != "paper":
             raise ValueError(
@@ -94,6 +94,8 @@ class OperationControl:
             )
         lot = validate_lot(payload.get("lot")) if action == "START" else None
         request = dict(action=action, lot=lot, mode="paper", actor=actor)
+        if action == "APPROVE":
+            request["report_id"] = str(payload.get("report_id", ""))
         fingerprint = hashlib.sha256(
             json.dumps(request, sort_keys=True).encode()
         ).hexdigest()
@@ -113,6 +115,10 @@ class OperationControl:
                 return cached["response"]
             state = self.latest(c)
             if action == "START":
+                if state.get("position"):
+                    raise ValueError(
+                        "Existe uma posição em acompanhamento. Resolva a sessão atual antes de iniciar outra."
+                    )
                 if state["state"] not in TERMINAL:
                     if state.get("lot") != lot:
                         raise ValueError(
@@ -141,6 +147,22 @@ class OperationControl:
                             position=None,
                         ),
                     )
+            elif action == "APPROVE":
+                from .agent_registry import approve
+
+                approval = approve(c, self.memory, state, request["report_id"], actor)
+                state = self.append(
+                    c,
+                    {
+                        **state,
+                        "sequence": state["sequence"] + 1,
+                        "generation": state.get("generation", 1) + 1,
+                        "desired": "running",
+                        "state": "QUEUED",
+                        "approval_id": approval["approval_id"],
+                        "message": "Versão aprovada para simulação. Verificando os dados antes de iniciar.",
+                    },
+                )
             else:
                 if not state.get("session_id") or state["state"] in TERMINAL:
                     raise ValueError("Não há sessão ativa para este comando.")

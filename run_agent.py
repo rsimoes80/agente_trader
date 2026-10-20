@@ -67,7 +67,22 @@ def main():
                     last_heartbeat = time.monotonic()
                 state = control.status()
                 session_id = state.get("session_id")
-                if session_id and state["desired"] in {"stopped", "paused"}:
+                if session_id and state.get("position"):
+                    from aurelia_fx.agent_live import management_tick
+
+                    try:
+                        management_tick(control, fetch_history, state, worker_id)
+                    except (RuntimeError, ValueError) as exc:
+                        control.publish(
+                            session_id,
+                            expected_desired=state["desired"],
+                            state="WAITING_QUOTE",
+                            stage="analysis",
+                            message="Posição preservada. Aguardando cotação para reconciliar: "
+                            + str(exc)[:160],
+                        )
+                    handled = None
+                elif session_id and state["desired"] in {"stopped", "paused"}:
                     target = "STOPPED" if state["desired"] == "stopped" else "PAUSED"
                     if state["state"] not in {target, "RECOVERY_REQUIRED"}:
                         control.publish(
@@ -87,7 +102,13 @@ def main():
                 ):
                     try:
                         prepare(
-                            control, repository, state, fetch_history, worker_id, stop
+                            control,
+                            repository,
+                            state,
+                            fetch_history,
+                            worker_id,
+                            stop,
+                            lease,
                         )
                     except InterruptedPreparation:
                         pass
@@ -117,7 +138,7 @@ def main():
     return 0
 
 
-def prepare(control, repository, state, fetch, worker_id, stop):
+def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     session_id = state["session_id"]
     generation = state["generation"]
     capture_days = 30
@@ -220,6 +241,40 @@ def prepare(control, repository, state, fetch, worker_id, stop):
         raise ValueError(
             "Ative o Timestral com uma revisao imutavel dos pesos antes de treinar."
         )
+    from aurelia_fx.agent_registry import approved_version
+
+    version = approved_version(
+        repository.memory,
+        lot=state["lot"],
+        clock_id=baseline["clock_id"],
+        configuration=config.fingerprint,
+    )
+    if version:
+        check()
+        publish(
+            training={
+                **version["report"],
+                "status": "approved",
+                "active_version": version["model"]["model_id"],
+            },
+            approval_id=version["approval"]["approval_id"],
+            history=history,
+            symbol_contract=contract,
+        )
+        from aurelia_fx.agent_live import run_paper
+
+        run_paper(
+            control,
+            repository,
+            control.status(),
+            version,
+            fetch,
+            config,
+            worker_id,
+            stop,
+            lease,
+        )
+        return
     adapter = TimestralAdapter(config)
     report = None
     try:
@@ -245,6 +300,10 @@ def prepare(control, repository, state, fetch, worker_id, stop):
                     final_accessed=False,
                     validation=None,
                     final=None,
+                    reason=None,
+                    message=None,
+                    walk_forward=None,
+                    operational_validation_samples=None,
                     research_history_days=capture_days,
                 ),
             )

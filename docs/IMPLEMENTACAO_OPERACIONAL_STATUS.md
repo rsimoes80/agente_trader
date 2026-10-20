@@ -32,6 +32,13 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
   condicionado. Não promove modelo automaticamente.
 - Risco e simulador aceitam unidades fixas correspondentes ao lote escolhido;
   bloqueiam excesso de risco em vez de redimensionar silenciosamente.
+- Registro de aprovação explícita e reaproveitamento de modelo compatível,
+  condicionado ao relatório persistido e a todos os critérios de validação.
+- Executor simulado com bid/ask observado, risco, prazo, pausa/parada,
+  conta persistente entre sessões e recuperação de posição. Contrato e limites
+  documentados em [simulação operacional](agent_live_simulation.md).
+- Interface com previsão identificada/expirada por fonte, níveis da posição,
+  resumo de resultados e progresso de pesquisa separado da captura mensal.
 
 ## Evidências reais e decisões de pesquisa
 
@@ -70,6 +77,19 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
    recentes do produto e os limites numéricos do protocolo.
 9. A regressão posterior passou em **169 testes** com PostgreSQL e modelo real
    habilitados. A nova ampliação automática ainda precisa de execução integral.
+10. A primeira regressão após aprovação/executor passou em **184 testes**, com
+    PostgreSQL e inferência real habilitados. Foram acrescentados depois testes
+    do Handler HTTP e do ciclo completo do coordenador; nova regressão pendente.
+    Dois testes Chrome passaram em desktop/celular. A prévia somente leitura
+    também exibiu o estado real do treinamento e cotações MT5, sem erro JavaScript
+    nem rolagem horizontal em 390 px. A inspeção visual encontrou textos novos
+    com acentuação incorreta; foram corrigidos e o grupo de navegador passou
+    novamente, incluindo uma asserção de texto em português.
+11. A regressão final desta etapa executou **188 testes: 186 passaram e dois
+    testes de navegador foram ignorados nesse ambiente**. Os dois de navegador
+    passaram separadamente no ambiente Playwright/Chrome. PostgreSQL e modelo
+    real estavam habilitados na regressão; todos os oito testes do registro,
+    HTTP e coordenador simulado passaram. Isso não aprova um modelo de mercado.
 
 ## Regras que permanecem
 
@@ -93,15 +113,15 @@ não declaração de conclusão. A tela principal nova ainda não foi publicada.
 2. Testar as fronteiras temporais, benchmark independente, seleção de limiar,
    bloqueio de final e resultados dos relatórios. A última implementação ainda
    precisa de verificação integral com dados reais e regressão final.
-3. Implementar registro e aprovação explícita da versão candidata para simulação,
-   reutilização de versão compatível e exposição dessa aprovação na interface.
-4. Implementar simulação ao vivo com cotações observadas, gestão de posição,
-   persistência/recuperação, perda de fonte, parada e limites de risco. Não usar
-   fills retroativos de abertura de candle como se fossem execuções ao vivo.
+3. Conferir a aprovação e a simulação com uma versão que efetivamente cumpra
+   os critérios de mercado. Aprovação, executor e reutilização já têm testes
+   isolados; esses testes não demonstram vantagem financeira da estratégia.
+4. Repetir regressão integral após as últimas mudanças e conferir a execução
+   atual da pesquisa. Não usar fills retroativos na simulação ao vivo.
 5. Implementar/validar adaptador demo, conta demo verificada, envio/retcodes,
    stops, reconciliação e prevenção de duplicatas; conta real continua bloqueada.
-6. Acrescentar resumo de resultados e previsão ao gráfico principal, revisão
-   de usabilidade desktop/celular e mensagem objetiva para cada bloqueio.
+6. Conferir novamente previsão, níveis e resumo após publicação, com o serviço
+   Windows atualizado; a revisão local desktop/celular já passou.
 7. Instalar o serviço Windows do agente, publicar backend/arquivos na VM,
    trocar o índice Nginx para a tela principal nova e verificar o fluxo completo.
 8. Atualizar contratos/documentação operacional e executar auditoria de conclusão
