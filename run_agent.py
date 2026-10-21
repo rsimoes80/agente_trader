@@ -69,7 +69,11 @@ def main():
                 return 0
             pid_path.write_text(str(os.getpid()), encoding="ascii")
             initial = control.status()
-            if initial.get("session_id") and initial["state"] not in TERMINAL | {
+            autonomous = initial.get("execution_profile","autonomous_paper") in {"autonomous_paper","autonomous_demo"}
+            if initial.get("session_id") and autonomous and initial["desired"] == "running" and initial["state"] != "STOPPED":
+                control.publish(initial["session_id"],state="QUEUED",execution_profile=initial.get('execution_profile','autonomous_paper'),
+                                message="Retomada automática: reconciliando a sessão e a memória do agente.")
+            elif initial.get("session_id") and not autonomous and initial["state"] not in TERMINAL | {
                 "QUEUED"
             }:
                 control.publish(
@@ -86,7 +90,7 @@ def main():
                     last_heartbeat = time.monotonic()
                 state = control.status()
                 session_id = state.get("session_id")
-                if session_id and state.get("position"):
+                if session_id and (state.get("position") or state.get('pending_execution')):
                     from aurelia_fx.agent_live import management_tick
 
                     try:
@@ -281,6 +285,36 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         raise ValueError(
             "Ative o Timestral com uma revisao imutavel dos pesos antes de treinar."
         )
+    if state.get("execution_profile", "autonomous_paper") in {"autonomous_paper","autonomous_demo"}:
+        from aurelia_fx.autonomous_lab import AutonomousLab
+        from aurelia_fx.agent_live import run_paper
+        mode=state.get('mode','paper')
+        policy=AutonomousLab(config.fingerprint,execution_mode=mode)
+        if mode=='demo':
+            from aurelia_fx.demo_terminal import demo_terminal
+            from aurelia_fx.agent_model import fingerprint
+            with demo_terminal(clock_id=history['clock_id']) as terminal:
+                terminal.check_account()
+                authorization=dict(scope='autonomous_demo_research',real_orders=False,
+                    account_id=terminal.account_id,session_id=session_id,lot=state['lot'],
+                    clock_id=history['clock_id'],protocol_id=policy.protocol_id)
+                authorization['authorization_id']=fingerprint(authorization)
+            old=state.get('demo_authorization')
+            if old and old!=authorization:
+                raise ValueError('A conta demo ou a fonte mudou; autorização anterior preservada.')
+            repository.memory.record_project_data('agent_demo_authorization',authorization['authorization_id'],authorization)
+            publish(demo_authorization=authorization)
+        publish(
+            state="ANALYSIS_WARMUP",stage="analysis",
+            training=dict(status="autonomous_research",active_version=None,
+                          samples=None,partitions=None,validation=None,final=None,
+                          candidate_version=None,report_id=None,final_accessed=False,
+                          protocol_id=policy.protocol_id,reason=None,message="Pesquisa simulada autônoma: hipóteses são selecionadas, executadas e revistas pelo agente. Não há aprovação manual por hipótese."),
+            message="Preparando o laboratório autônomo e a memória histórica do ativo.",
+        )
+        run_paper(control,repository,control.status(),None,fetch,config,worker_id,stop,lease,
+                  research_policy=policy)
+        return
     from aurelia_fx.agent_registry import approved_version
 
     version = approved_version(

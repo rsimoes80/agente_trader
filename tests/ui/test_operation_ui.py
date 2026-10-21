@@ -55,20 +55,15 @@ class OperationBrowserTests(unittest.TestCase):
         else:
             route.fulfill(status=404, body="fixture")
 
-    def test_login_then_start_uses_selected_lot_and_backend_state(self):
+    def test_start_needs_no_credential_and_uses_selected_lot(self):
         self.page.goto("http://127.0.0.1:37771/")
         self.page.locator("#state-title").filter(has_text="Agente parado").wait_for()
         self.page.locator("#lot").fill("0.02")
-        self.page.locator("#start").click()
-        self.assertTrue(self.page.locator("#access-form").is_visible())
-        self.assertEqual(self.commands, [])
-        self.page.locator("#password").fill("synthetic-fixture-only")
-        self.page.locator("#access-form button").click()
-        self.page.wait_for_function("document.getElementById('access-toggle').textContent==='Sair'")
-        self.assertEqual(self.page.locator("#password").input_value(), "")
+        self.assertEqual(self.page.locator("#access-form").count(),0)
+        self.assertEqual(self.page.locator("#password").count(),0)
         self.page.locator("#start").click()
         self.page.wait_for_function("document.getElementById('state-title').textContent==='Início solicitado'")
-        self.assertEqual(self.commands, [dict(action="START", mode="paper", lot="0.02")])
+        self.assertEqual(self.commands, [dict(action="START", mode="demo", lot="0.02")])
         self.assertTrue(self.page.locator("#lot").is_disabled())
         self.state.update(state="WAITING_SOURCE", desired="running", message="Aguardando MT5; nova tentativa automática.")
         self.page.wait_for_function("document.getElementById('state-title').textContent==='Aguardando conexão com o MT5'")
@@ -103,3 +98,17 @@ class OperationBrowserTests(unittest.TestCase):
         self.page.wait_for_timeout(5100)
         self.assertIn("antiga", self.page.locator("#forecast-note").inner_text())
         self.assertEqual(self.errors, [])
+
+    def test_autonomous_cycle_shows_learning_without_login_or_manual_approval(self):
+        self.state.update(state="ANALYZING",desired="running",execution_profile="autonomous_paper",
+            training=dict(status="autonomous_research"),
+            autonomy=dict(historical_samples=20,hypotheses=[dict(name="Hipótese de teste",n=1,wins=0,losses=1,net_pnl=-2)],
+                          last_result=dict(net_pnl=-2)))
+        self.page.goto("http://127.0.0.1:37771/")
+        self.page.locator("#autonomous-learning").wait_for()
+        self.assertIn("20",self.page.locator("#autonomy-info").inner_text())
+        self.assertIn("Hipótese de teste",self.page.locator("#hypotheses-table").inner_text())
+        self.assertIn("outra hipótese",self.page.locator("#last-learning").inner_text())
+        self.assertFalse(self.page.locator("#approve").is_visible())
+        self.assertEqual(self.page.locator("#password").count(),0)
+        self.assertEqual(self.errors,[])

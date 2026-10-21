@@ -22,6 +22,7 @@ TRANSITIONS = {
     "UNCERTAIN": {"CONFIRMED", "PARTIAL", "UNPROTECTED"},
     "PARTIAL": {"CONFIRMED", "PARTIAL", "UNCERTAIN", "UNPROTECTED"},
     "UNPROTECTED": {"CONFIRMED", "CLOSED"},
+    "CONFIRMED": {"UNPROTECTED", "PARTIAL", "CLOSED"},
 }
 OWNER_FIELDS = ("account_id", "approval_id", "model_id", "session_id", "clock_id")
 
@@ -73,7 +74,7 @@ class IntentScope:
             raise ValueError("Journal demo inconsistente; execução bloqueada.")
         return value
 
-    def pending(self, account_id):
+    def for_account(self, account_id):
         self._check()
         rows = self.connection.execute("""SELECT payload_json,payload_sha256 FROM (
             SELECT DISTINCT ON (record_key) record_key,payload_json,payload_sha256,recorded_at
@@ -85,9 +86,11 @@ class IntentScope:
             data = json.loads(row["payload_json"])
             if self.journal.memory._encode(data)[1] != row["payload_sha256"]:
                 raise ValueError("Journal demo inconsistente; execução bloqueada.")
-            if data["status"] in PENDING:
-                result.append(data)
+            result.append(data)
         return result
+
+    def pending(self, account_id):
+        return [data for data in self.for_account(account_id) if data["status"] in PENDING]
 
     def _append(self, value):
         self._check()

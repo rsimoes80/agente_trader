@@ -67,7 +67,7 @@ class OperationControl:
         state = {
             **state,
             "updated_at": datetime.now(timezone.utc).isoformat(),
-            "orders_enabled": False,
+            "orders_enabled": state.get("mode")=="demo" and bool(state.get("demo_authorization")),
         }
         text, digest = self.memory._encode(state)
         connection.execute(
@@ -103,12 +103,13 @@ class OperationControl:
         action = payload.get("action")
         if action not in {"START", "PAUSE", "RESUME", "STOP", "APPROVE"}:
             raise ValueError("Comando inválido.")
-        if payload.get("mode", "paper") != "paper":
+        mode=payload.get("mode", "paper")
+        if mode not in {"paper","demo"}:
             raise ValueError(
                 "Esta versão permite apenas simulação. Demo e conta real não estão habilitadas."
             )
         lot = validate_lot(payload.get("lot")) if action == "START" else None
-        request = dict(action=action, lot=lot, mode="paper", actor=actor)
+        request = dict(action=action, lot=lot, mode=mode, actor=actor)
         if action == "APPROVE":
             request["report_id"] = str(payload.get("report_id", ""))
         fingerprint = hashlib.sha256(
@@ -130,12 +131,23 @@ class OperationControl:
                 return cached["response"]
             state = self.latest(c)
             if action == "START":
-                if state.get("position"):
+                unresolved=c.execute("""SELECT 1 FROM (
+                    SELECT DISTINCT ON (record_key) record_key,payload_json::jsonb AS p
+                    FROM project_records WHERE record_type='agent_demo_intent'
+                    ORDER BY record_key,(payload_json::jsonb ->> 'sequence')::bigint DESC
+                    ) latest WHERE NOT (p #> '{request,broker}' ? 'position')
+                    AND (p->>'status' NOT IN ('CLOSED','REJECTED','CANCELLED')
+                    OR (p->>'status'='CLOSED' AND NOT EXISTS (
+                        SELECT 1 FROM project_records applied WHERE applied.record_type='agent_demo_applied'
+                        AND applied.record_key=latest.record_key||':closed'))) LIMIT 1""").fetchone()
+                if unresolved:
+                    raise ValueError('Há uma execução demo pendente de reconciliação. Retome a sessão existente.')
+                if state.get("position") or state.get("pending_execution"):
                     raise ValueError(
                         "Existe uma posição em acompanhamento. Resolva a sessão atual antes de iniciar outra."
                     )
                 if state["state"] not in TERMINAL:
-                    if state.get("lot") != lot:
+                    if state.get("lot") != lot or state.get('mode','paper')!=mode:
                         raise ValueError(
                             "Encerre a sessão atual antes de alterar o lote."
                         )
@@ -148,7 +160,8 @@ class OperationControl:
                             desired="running",
                             sequence=1,
                             generation=1,
-                            mode="paper",
+                            mode=mode,
+                            execution_profile="autonomous_"+mode,
                             lot=lot,
                             symbol="EURUSD",
                             timeframe="M5",

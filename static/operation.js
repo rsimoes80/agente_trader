@@ -1,8 +1,8 @@
 "use strict";
 (() => {
   const $=id=>document.getElementById(id);
-  const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",PREPARING_EXPERIENCES:"Identificando hipóteses de pesquisa",FORECASTING:"Gerando previsões históricas",REPLAYING:"Simulando oportunidades históricas",TRAINING:"Treinamento em andamento",VALIDATING:"Validando a versão candidata",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação simulada em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",RECOVERY_REQUIRED:"Retomada exige revisão",ERROR:"Não foi possível iniciar",INSUFFICIENT_DATA:"Histórico insuficiente",TRAINING_UNAVAILABLE:"Histórico pronto · treinamento pendente",TRAINING_BLOCKED:"Treinamento concluído · operação bloqueada",AWAITING_APPROVAL:"Versão candidata aguarda aprovação"};
-  let current=null, csrf="", authenticated=false, busy=false, pending=null, chartData=null, polling=false;
+  const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",PREPARING_EXPERIENCES:"Identificando hipóteses de pesquisa",FORECASTING:"Gerando previsões históricas",REPLAYING:"Simulando oportunidades históricas",TRAINING:"Treinamento em andamento",VALIDATING:"Validando a versão candidata",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",RECOVERY_REQUIRED:"Retomada exige revisão",ERROR:"Não foi possível iniciar",INSUFFICIENT_DATA:"Histórico insuficiente",TRAINING_UNAVAILABLE:"Histórico pronto · treinamento pendente",TRAINING_BLOCKED:"Treinamento concluído · operação bloqueada",AWAITING_APPROVAL:"Versão candidata aguarda aprovação"};
+  let current=null, csrf="", busy=false, pending=null, chartData=null, polling=false;
   labels.CHECKING_MODEL="Verificando Timestral";
   labels.LOADING_RESEARCH_HISTORY="Preparando dados para o treino";
   labels.ANALYSIS_WARMUP="Preparando o contexto ao vivo";
@@ -18,8 +18,7 @@
   }
   function error(message){$("error").textContent=message;$("error").hidden=!message;}
   function render(data){
-    current=data.state;authenticated=data.authenticated;csrf=data.csrf;
-    $("access-toggle").textContent=authenticated?"Sair":"Entrar";
+    current=data.state;csrf=data.csrf;
     $("state-title").textContent=labels[current.state] || current.state;
     $("state-message").textContent=current.message;
     $("worker-label").textContent=data.worker.available?"Serviço Windows disponível":"Serviço Windows sem comunicação recente";
@@ -28,6 +27,9 @@
     $("stop").disabled=busy || terminal || current.desired==="stopped";
     $("resume").hidden=current.desired!=="paused";$("resume").disabled=busy;
     $("lot").disabled=!terminal || busy;
+    $("execution-mode").disabled=!terminal || busy;
+    if(!terminal)$("execution-mode").value=current.mode || "paper";
+    $("account-basis").textContent=current.mode==="demo"?"Resultados confirmados pelo MT5 Demo, com comissão e swap. Saldo e equidade são os da corretora.":"Simulador local: preenchimentos estimados por cotações observadas; não são negócios enviados ao MT5.";
     if(!terminal && current.lot)$("lot").value=current.lot;
     if(current.symbol_contract){$("lot").min=current.symbol_contract.volume_min;$("lot").max=current.symbol_contract.volume_max;$("lot").step=current.symbol_contract.volume_step;}
     const stages=["connection","history","training","validation","analysis"],index=stages.indexOf(current.stage);
@@ -35,17 +37,28 @@
     const history=current.history;
     $("history-info").textContent=history?`Histórico: ${date(history.start)} a ${date(history.end)} UTC · ${Object.values(history.bars).reduce((a,b)=>a+b,0).toLocaleString("pt-BR")} candles nos períodos exigidos.`:"O histórico será verificado ao iniciar.";
     const training=current.training;
-    $("approve").hidden=current.state!=="AWAITING_APPROVAL";
+    const autonomous=["autonomous_paper","autonomous_demo"].includes(current.execution_profile) || training?.status==="autonomous_research";
+    $("autonomous-learning").hidden=!autonomous;
+    $("hypotheses-table").replaceChildren();
+    $("autonomy-info").textContent=autonomous?`Memória histórica inicial: ${current.autonomy?.historical_samples ?? "preparando"} experiências de desenvolvimento. Novos resultados são gravados automaticamente por hipótese e contexto.`:"";
+    if(current.autonomy){
+      const table=document.createElement("table"),head=document.createElement("tr");
+      for(const title of ["Hipótese","Resultados avaliados","Ganhos","Perdas","Resultado (USD)"]){const th=document.createElement("th");th.textContent=title;head.append(th);}table.append(head);
+      for(const row of current.autonomy.hypotheses || []){const tr=document.createElement("tr");for(const value of [row.name,row.n,row.wins,row.losses,number(row.net_pnl)]){const td=document.createElement("td");td.textContent=value;tr.append(td);}table.append(tr);}$("hypotheses-table").append(table);
+    }
+    const reward=current.autonomy?.last_result;
+    $("last-learning").textContent=reward?`Último resultado usado na pesquisa: ${number(reward.net_pnl)} USD. ${reward.net_pnl>0?"Evidência favorável registrada neste contexto.":"A próxima seleção priorizará outra hipótese elegível."}`:"Aguardando o primeiro resultado observado. Ganhos e perdas atualizam evidências; um único resultado não comprova uma estratégia.";
+    $("approve").hidden=true;
     $("approve").disabled=busy || current.state!=="AWAITING_APPROVAL";
-    $("approval-note").hidden=current.state!=="AWAITING_APPROVAL";
-    $("model-version").textContent=training?.active_version || "Nenhuma versão aprovada";
-    $("samples").textContent=training?.samples===null || training?.samples===undefined?"Ainda não calculadas":training.samples.toLocaleString("pt-BR");
-    $("training-state").textContent=({not_implemented:"Treinamento integrado em implementação",running:"Em treinamento",preparing_examples:"Identificando hipóteses",forecasting:"Gerando previsões Timestral",replaying:"Simulando oportunidades",validating:"Em validação",validated_pending_approval:"Versão candidata aguarda aprovação",approved:"Versão validada",rejected:"Versão reprovada",insufficient_samples:"Amostra insuficiente"})[training?.status] || "Aguardando preparação";
+    $("approval-note").hidden=true;
+    $("model-version").textContent=autonomous?"Seleção autônoma por contexto":training?.active_version || "Nenhuma versão aprovada";
+    $("samples").textContent=autonomous?(current.autonomy?.historical_samples ?? "Preparando memória"):training?.samples===null || training?.samples===undefined?"Ainda não calculadas":training.samples.toLocaleString("pt-BR");
+    $("training-state").textContent=({autonomous_research:"Pesquisa aut\u00f4noma ativa",not_implemented:"Treinamento integrado em implementação",running:"Em treinamento",preparing_examples:"Identificando hipóteses",forecasting:"Gerando previsões Timestral",replaying:"Simulando oportunidades",validating:"Em validação",validated_pending_approval:"Versão candidata aguarda aprovação",approved:"Versão validada",rejected:"Versão reprovada",insufficient_samples:"Amostra insuficiente"})[training?.status] || "Aguardando preparação";
     $("training-progress").textContent=training?.processed_bars!==undefined && ["preparing_examples","forecasting","replaying"].includes(training.status)?`Arquivo de pesquisa: ${training.research_history_days || "—"} dias, incluindo 30 dias de aquecimento. ${number(training.processed_bars)} de ${number(training.total_bars)} candles percorridos; ${number(training.candidates)} hipóteses identificadas. Hipóteses ainda não equivalem a operações encerradas ou amostras aprovadas.`:training?.training_period?`Pesquisa: ${date(training.training_period.start)} a ${date(training.training_period.end)} UTC. ${training.operational_validation_samples!==undefined && training.operational_validation_samples!==null?`${training.operational_validation_samples} oportunidades elegíveis na validação; mínimo de 20 operações para avaliar o resultado.`:""}`:"";
     const reasons={INSUFFICIENT_DEVELOPMENT_OR_VALIDATION_SAMPLES:"Ainda faltam experiências completas nos períodos de desenvolvimento ou validação.",INSUFFICIENT_DEVELOPMENT_SAMPLES_OR_CLASSES:"O treino exige mais operações encerradas e exemplos de ganhos e perdas.",INSUFFICIENT_CALIBRATION_CLASSES:"Faltam ganhos e perdas no período separado para calibrar o modelo.",INSUFFICIENT_WALK_FORWARD_SAMPLES:"A amostra ainda não permite repetir o ajuste e a avaliação em janelas posteriores.",INSUFFICIENT_OPERATIONAL_VALIDATION_SAMPLES:"O modelo foi pesquisado, mas faltam oportunidades operacionalmente elegíveis no período de validação.",NO_VALIDATED_INCREMENTAL_ADVANTAGE:"O modelo não demonstrou melhoria suficiente na validação após custos.",INSUFFICIENT_FINAL_SAMPLES:"Ainda faltam exemplos no período final reservado.",FINAL_EVALUATION_REJECTED:"A versão não cumpriu os critérios no teste final.",PAPER_VERSION_REQUIRES_EXPLICIT_APPROVAL:"A versão é candidata à simulação. Ela ainda não foi aprovada pelo operador."};
     $("training-detail").textContent=(training?.candidate_version?"Filtro candidato ajustado. ":"")+(training?.message || reasons[training?.reason] || "A disponibilidade de histórico ou previsões isoladas não significa que o treinamento integrado foi concluído.");
     const previous=data.last_training_report;
-    $("last-research").textContent=previous && previous.report_id!==training?.report_id?`Última pesquisa concluída: ${previous.training_period?.days || "—"} dias de pesquisa, além de 30 dias de aquecimento; ${previous.samples} experiências encerradas. ${previous.candidate_version?"O filtro foi ajustado, mas ainda não foi aprovado.":"O ajuste ainda não pôde ser concluído."} ${typeof previous.operational_validation_samples==="number"?`${previous.operational_validation_samples} oportunidades operacionalmente elegíveis na validação; mínimo de 20 operações. `:""}${reasons[previous.reason] || ""} O processamento atual usa a janela indicada acima.`:"";
+    $("last-research").textContent=!autonomous && previous && previous.report_id!==training?.report_id?`Última pesquisa concluída: ${previous.training_period?.days || "—"} dias de pesquisa, além de 30 dias de aquecimento; ${previous.samples} experiências encerradas. ${previous.candidate_version?"O filtro foi ajustado, mas ainda não foi aprovado.":"O ajuste ainda não pôde ser concluído."} ${typeof previous.operational_validation_samples==="number"?`${previous.operational_validation_samples} oportunidades operacionalmente elegíveis na validação; mínimo de 20 operações. `:""}${reasons[previous.reason] || ""} O processamento atual usa a janela indicada acima.`:"";
     $("training-metrics").replaceChildren();
     if(training?.partitions){
       const counts=document.createElement("p");counts.textContent=`Experiências: ${training.partitions.development} em desenvolvimento, ${training.partitions.validation} em validação e ${training.partitions.final} no período final. ${training.partitions.purged} excluídas por cruzar os limites temporais.`;$("training-metrics").append(counts);
@@ -60,8 +73,9 @@
     const decision=current.last_decision;
     $("decision-action").textContent=decision?({BUY:"Comprar",SELL:"Vender",WAIT:"Aguardar",NO_TRADE:"Aguardar"}[decision.action] || decision.action):"Nenhuma decisão operacional";
     $("decision-reason").textContent=decisionReason(decision?.reason) || "O agente precisa concluir a preparação e ter uma versão validada.";
+    if(autonomous && !decision)$("decision-reason").textContent="Preparando contexto ou aguardando um gatilho para testar uma hipótese automaticamente.";
     for(const [id,key] of [["entry","entry"],["stop-price","stop"],["target","target"],["risk","risk"]])$(id).textContent=number(decision?.[key]);
-    $("position").textContent=current.position?`${current.position.side==="long"?"Compra":"Venda"} · lote ${current.position.lot} · entrada ${number(current.position.entry)} · ${date(current.position.entry_at)} UTC`:"Nenhuma posição simulada registrada nesta sessão.";
+    $("position").textContent=current.position?`${current.position.side==="long"?"Compra":"Venda"} · lote ${current.position.lot} · entrada ${number(current.position.entry)} · ${date(current.position.entry_at)} UTC`:"Nenhuma posição registrada nesta sessão.";
     $("pnl-today").textContent=number(current.account?.realized_today);
     $("pnl-open").textContent=number(current.account?.unrealized_pnl);
     $("closed-trades").textContent=current.account?.closed_trades ?? "—";
@@ -73,17 +87,14 @@
   async function refresh(){if(polling)return;polling=true;try{render(await api(""));}catch(e){error(e.message);}finally{polling=false;}}
   async function command(action){
     if(busy)return;
-    if(!authenticated){$("access-form").hidden=false;$("password").focus();$("access-message").textContent="Entre e depois clique novamente no comando desejado.";return;}
     busy=true;
-    const payload={action,mode:"paper",...(action==="START"?{lot:$("lot").value}:{}),...(action==="APPROVE"?{report_id:current.training.report_id}:{})},signature=JSON.stringify(payload);
+    const payload={action,mode:action==="START"?$("execution-mode").value:(current.mode || "paper"),...(action==="START"?{lot:$("lot").value}:{}),...(action==="APPROVE"?{report_id:current.training.report_id}:{})},signature=JSON.stringify(payload);
     if(!pending || pending.signature!==signature)pending={signature,key:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,"0")).join("")};
     for(const id of ["start","pause","resume","stop"])$(id).disabled=true;
     try{await api("/command",payload,pending.key);pending=null;error("");}catch(e){error(e.message);}finally{busy=false;await refresh();}
   }
   for(const [id,action] of [["start","START"],["pause","PAUSE"],["resume","RESUME"],["stop","STOP"]])$(id).onclick=()=>command(action);
   $("approve").onclick=()=>command("APPROVE");
-  $("access-toggle").onclick=async()=>{if(authenticated){try{await api("/logout",{});await refresh();}catch(e){error(e.message);}return;}$("access-form").hidden=!$("access-form").hidden;if(!$("access-form").hidden)$("password").focus();};
-  $("access-form").onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{await api("/login",{password:$("password").value});$("password").value="";$("access-form").hidden=true;error("");await refresh();}catch(e){$("access-message").textContent=e.message;}finally{button.disabled=false;}};
   async function quote(){try{const response=await fetch("/api/mt5/chart?timeframe=M5&count=120",{cache:"no-store"}),data=await response.json();if(!response.ok || !data.ok)throw new Error(data.error || "Cotação indisponível.");chartData=data;$("quote").textContent=`Compra (ask): ${number(data.quote?.ask)} · Venda (bid): ${number(data.quote?.bid)}`;$("chart-time").textContent=`${date(data.quote?.time)} UTC`;$("chart-message").textContent="Preço do MT5. O último candle ainda pode estar em formação.";draw();}catch(e){$("chart-message").textContent=e.message;}}
   function draw(){
     const canvas=$("chart"),box=canvas.getBoundingClientRect(),ratio=window.devicePixelRatio || 1,ctx=canvas.getContext("2d");canvas.width=box.width*ratio;canvas.height=box.height*ratio;ctx.scale(ratio,ratio);ctx.fillStyle="#0b151c";ctx.fillRect(0,0,box.width,box.height);

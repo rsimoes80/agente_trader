@@ -63,6 +63,6 @@ class AgentSourceRetryTests(unittest.TestCase):
             self.assertEqual(run_agent.main(),0)
             self.assertFalse((root/"data/agent.pid").exists())
         self.assertEqual(attempts,["fixture-session","fixture-session"])
-        self.assertEqual(transitions,["WAITING_SOURCE","QUEUED","TRAINING_BLOCKED"])
+        self.assertEqual(transitions,["QUEUED","WAITING_SOURCE","QUEUED","TRAINING_BLOCKED"])
         self.assertEqual(state["desired"],"running")
         memory.close.assert_called_once()

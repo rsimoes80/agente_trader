@@ -232,10 +232,8 @@ class Handler(BaseHTTPRequestHandler):
                         state=state,
                         last_training_report=app.operation.latest_training_report(state),
                         worker=app.operation.worker_status(),
-                        authenticated=app.operator_sessions.authenticated(
-                            self.headers.get("Cookie")
-                        ),
-                        access_configured=bool(app.operator_token),
+                        authenticated=True,
+                        access_mode="single_user",
                     ),
                 )
                 return
@@ -347,18 +345,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, dict(ok=True), cookie=cookie)
                 return
             if path == "/api/diagnostics/agent/command":
-                if not self.server.app.operator_sessions.authenticated(
-                    self.headers.get("Cookie")
-                ):
-                    self.send(
-                        403,
-                        dict(
-                            ok=False, error="Entre no projeto para controlar o agente."
-                        ),
-                    )
-                    return
                 result = self.server.app.operation.command(
-                    payload, self.headers.get("Idempotency-Key", ""), actor="operator"
+                    payload, self.headers.get("Idempotency-Key", ""), actor="local_owner"
                 )
                 self.send(200, dict(ok=True, state=result))
                 return

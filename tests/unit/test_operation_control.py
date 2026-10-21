@@ -101,11 +101,12 @@ class OperationPostgresTests(unittest.TestCase):
         self.command("STOP")
         self.assertIsNone(self.control.publish(first["session_id"], state="TRAINING"))
 
-    def test_paper_only_and_persisted_command_audit(self):
-        for mode in ("live", "demo"):
+    def test_demo_allowed_real_rejected_and_persisted_command_audit(self):
+        for mode in ("live", "real"):
             with self.assertRaises(ValueError):
                 self.command("START", lot="0.01", mode=mode)
-        first = self.command("START", lot="0.01")
+        first = self.command("START", lot="0.01",mode="demo")
+        self.assertEqual(first['execution_profile'],'autonomous_demo')
         self.assertFalse(first["orders_enabled"])
         record = self.c.execute(
             "SELECT payload_json FROM project_records WHERE record_type='agent_operation_command'"

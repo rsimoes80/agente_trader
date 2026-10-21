@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from .agent_model import predict
+from .autonomous_lab import AutonomousLab
 from .agent_forecast_view import forecast_view
 from .agent_paper import PaperAccount, observed_quote
 from .agent_research import SESSIONS, cached_forecast, intelligence_session
@@ -42,11 +43,11 @@ def claim(control, session_id, worker_id):
     return True
 
 
-def project_account(control):
+def project_account(control, account_key='EURUSD:USD'):
     with control.memory.pool.connection() as c:
         row = c.execute("""SELECT payload_json FROM project_records
-            WHERE record_type='agent_paper_account' AND record_key='EURUSD:USD'
-            ORDER BY recorded_at DESC LIMIT 1""").fetchone()
+            WHERE record_type='agent_paper_account' AND record_key=%s
+            ORDER BY recorded_at DESC LIMIT 1""",(account_key,)).fetchone()
     return json.loads(row["payload_json"]) if row else None
 
 
@@ -59,7 +60,8 @@ def commit(control, account, worker_id, *, generation=None, **view):
             or state.get("execution_owner") != worker_id
         ):
             return False
-        if any(e["status"] == "opened" for e in account.events) and (
+        native=account.data.get('execution_mode')=='demo'
+        if not native and any(e["status"] == "opened" for e in account.events) and (
             state["desired"] != "running" or state.get("generation") != generation
         ):
             return False
@@ -67,8 +69,8 @@ def commit(control, account, worker_id, *, generation=None, **view):
             text, digest = control.memory._encode(event)
             c.execute(
                 """INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256)
-                VALUES('agent_paper_event',%s,%s,%s) ON CONFLICT DO NOTHING""",
-                (event["event_id"], text, digest),
+                VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                ('agent_demo_event' if native else 'agent_paper_event',event["event_id"], text, digest),
             )
         data = account.snapshot()
         text, digest = control.memory._encode(data)
@@ -80,15 +82,26 @@ def commit(control, account, worker_id, *, generation=None, **view):
         desired = state["desired"]
         c.execute(
             """INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256,recorded_at)
-            VALUES('agent_paper_account','EURUSD:USD',%s,%s,clock_timestamp()) ON CONFLICT DO NOTHING""",
-            (text, digest),
+            VALUES('agent_paper_account',%s,%s,%s,clock_timestamp()) ON CONFLICT DO NOTHING""",
+            (data.get('account_key','EURUSD:USD'),text, digest),
         )
+        if native:
+            for key in account.applied:
+                applied,hashed=control.memory._encode(dict(key=key,session_id=data['session_id']))
+                c.execute("""INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256)
+                    VALUES('agent_demo_applied',%s,%s,%s) ON CONFLICT DO NOTHING""",(key,applied,hashed))
         target = "POSITION_OPEN" if data["position"] else "ANALYZING"
         message = (
             "Posição simulada em acompanhamento."
             if data["position"]
             else "Analisando candles fechados e aguardando uma oportunidade válida."
         )
+        if data.get("research_mode"):
+            message = "Experimento simulado em acompanhamento; o resultado atualizará a memória deste contexto." if data["position"] else "Pesquisa autônoma ativa: analisando o mercado e selecionando o próximo experimento."
+        if native:
+            message='Operação no MT5 Demo em acompanhamento.' if data['position'] else 'Analisando o mercado para a próxima hipótese na conta demo.'
+            if data.get('pending_execution'):message='Reconciliando uma execução demo; novas entradas bloqueadas para evitar duplicação.'
+            elif not data.get('trading_enabled'):message='MT5 Demo conectado. Ative AlgoTrading no terminal para permitir os envios automáticos.'
         if desired == "stopped":
             target = "STOP_REQUESTED" if data["position"] else "STOPPED"
             message = (
@@ -113,16 +126,20 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 "stage": "analysis",
                 "message": view.get("message", message),
                 "position": data["position"],
+                "pending_execution":data.get('pending_execution',False),
                 "account": account.summary(),
+                "autonomy": AutonomousLab("",execution_mode='demo' if native else 'paper').summary(data["lab_state"])
+                    if data.get("research_mode") else None,
             },
         )
     account.events.clear()
+    if native:account.applied.clear()
     return True
 
 
 def management_tick(control, fetch, state, worker_id):
     saved = checkpoint(control, state["session_id"])
-    if not saved or not saved.get("position"):
+    if not saved or not (saved.get("position") or saved.get('pending_execution')):
         if state.get("position"):
             raise ValueError(
                 "Checkpoint da posição ausente. A posição não será descartada."
@@ -130,13 +147,14 @@ def management_tick(control, fetch, state, worker_id):
         return False
     if not claim(control, state["session_id"], worker_id):
         return True
-    account = PaperAccount(
+    account = make_account(control,state,saved=saved) if saved.get('execution_mode')=='demo' else PaperAccount(
         state["session_id"],
         state["lot"],
         state["symbol_contract"],
         saved["model_id"],
         saved["clock_id"],
         checkpoint=saved,
+        research_mode=saved.get("research_mode",False),
     )
     data = fetch("EURUSD", "M5", 100, include_current=True)
     quote = observed_quote(data, clock_id=saved["clock_id"])
@@ -145,7 +163,7 @@ def management_tick(control, fetch, state, worker_id):
         quote, force_close="OPERATOR_STOP" if current["desired"] == "stopped" else None
     )
     commit(control, account, worker_id)
-    if not account.data["position"] and current["desired"] == "running":
+    if not account.data["position"] and not account.data.get('pending_execution') and current["desired"] == "running":
         control.publish(
             state["session_id"],
             expected_generation=current["generation"],
@@ -153,28 +171,51 @@ def management_tick(control, fetch, state, worker_id):
             state="QUEUED",
             message="Posição reconciliada. Verificando a versão para continuar a análise.",
         )
-    return bool(account.data["position"])
+    return bool(account.data["position"] or account.data.get('pending_execution'))
+
+
+def make_account(control,state,*,saved=None):
+    from .agent_demo import NativeDemoAccount
+    from .demo_gateway import DemoGateway
+    from .demo_terminal import demo_terminal
+    auth=(saved or {}).get('authorization') or state['demo_authorization']
+    gateway=DemoGateway(control,auth,demo_terminal)
+    return NativeDemoAccount(gateway,state['symbol_contract'],checkpoint=saved,
+                             previous_account=None if saved else project_account(control,'DEMO:'+auth['account_id']))
 
 
 def run_paper(
-    control, repository, state, version, fetch, config, worker_id, stop, lease
+    control, repository, state, version, fetch, config, worker_id, stop, lease,
+    *, research_policy=None,
 ):
     session_id = state["session_id"]
     saved = checkpoint(control, session_id)
-    account = PaperAccount(
+    account = make_account(control,state,saved=saved) if state.get('mode')=='demo' else PaperAccount(
         session_id,
         state["lot"],
         state["symbol_contract"],
-        version["model"]["model_id"],
-        version["approval"]["clock_id"],
+        research_policy.protocol_id if research_policy else version["model"]["model_id"],
+        state["history"]["clock_id"] if research_policy else version["approval"]["clock_id"],
         checkpoint=saved,
         previous_account=project_account(control) if not saved else None,
+        research_mode=bool(research_policy),
     )
     if not claim(control, session_id, worker_id):
         return
     session = intelligence_session()
-    model = version["model"]
-    threshold = version["report"]["threshold"]
+    model = version["model"] if version else None
+    threshold = version["report"]["threshold"] if version else None
+    if research_policy and (account.data["lab_state"].get("protocol_id") != research_policy.protocol_id
+                            or not account.data["lab_state"].get("seed_complete")):
+        account.data["lab_state"] = research_policy.seed(control.memory,
+            clock_id=account.data["clock_id"],configuration=config.fingerprint,
+            as_of=datetime.now(timezone.utc))
+    if research_policy:
+        control.publish(session_id,expected_generation=state.get("generation"),
+                        autonomy=research_policy.summary(account.data["lab_state"]))
+    if state.get('mode')=='demo':
+        account.sync()
+        commit(control,account,worker_id)
     now = datetime.now(timezone.utc)
     rows = repository.candles(
         clock_id=account.data["clock_id"],
@@ -190,7 +231,7 @@ def run_paper(
             if current.get("session_id") != session_id or stop.is_set():
                 return
             control.heartbeat(worker_id)
-            if account.data["position"] and time.monotonic() - last_management >= 2:
+            if (account.data["position"] or account.data.get('pending_execution')) and time.monotonic() - last_management >= 2:
                 data = fetch("EURUSD", "M5", 100, include_current=True)
                 account.mark(
                     observed_quote(data, clock_id=account.data["clock_id"]),
@@ -200,7 +241,7 @@ def run_paper(
                 )
                 commit(control, account, worker_id)
                 last_management = time.monotonic()
-            if current["desired"] != "running" and not account.data["position"]:
+            if current["desired"] != "running" and not account.data["position"] and not account.data.get('pending_execution'):
                 commit(control, account, worker_id)
                 return
             control.publish(
@@ -218,6 +259,7 @@ def run_paper(
     adapter = TimestralAdapter(config)
     sessions = SessionEngine(SESSIONS)
     last_persist = 0
+    last_history_refresh = 0
     try:
         while not stop.is_set():
             lease.execute("SELECT 1")
@@ -236,7 +278,7 @@ def run_paper(
                 )
                 if current["desired"] != "running":
                     commit(control, account, worker_id)
-                    if not account.data["position"]:
+                    if not account.data["position"] and not account.data.get('pending_execution'):
                         return
                     stop.wait(3)
                     continue
@@ -246,7 +288,12 @@ def run_paper(
                     as_of=datetime.now(timezone.utc),
                     clock_id=account.data["clock_id"],
                 )
-                expired = datetime.now(timezone.utc) >= utc(
+                if research_policy and history_block and time.monotonic()-last_history_refresh >= 60:
+                    from .historical.collector import collect
+                    last_history_refresh=time.monotonic()
+                    baseline=collect(repository,fetch,days=30,full=False)
+                    history_block=readiness(baseline,as_of=datetime.now(timezone.utc),clock_id=account.data["clock_id"])
+                expired = not research_policy and datetime.now(timezone.utc) >= utc(
                     version["approval"]["valid_until"]
                 )
                 closed = closed_rows(
@@ -274,6 +321,7 @@ def run_paper(
                         snapshot,
                         session.history,
                         daily_history=session.aggregator.history["D1"],
+                        **({"research":True} if research_policy else {}),
                     )
                     age = (
                         utc(quote["at"])
@@ -308,7 +356,8 @@ def run_paper(
                             control.memory, context, config, adapter
                         )
                         features = attach_forecast(setup, output)
-                        probability = predict(model, features)
+                        hypothesis = research_policy.select(features,setup["snapshot"],account.data["lab_state"]) if research_policy else None
+                        probability = None if research_policy else predict(model, features)
                         decision.update(
                             probability=probability,
                             threshold=threshold,
@@ -317,8 +366,9 @@ def run_paper(
                                 configuration=config.fingerprint,
                                 generated_at=datetime.now(timezone.utc),
                             ),
+                            hypothesis=hypothesis,
                         )
-                        if probability >= threshold:
+                        if research_policy or probability >= threshold:
                             fresh = control.status()
                             fresh_data = fetch(
                                 "EURUSD", "M5", 100, include_current=True
@@ -347,6 +397,7 @@ def run_paper(
                                     active_sessions=sessions.identify(
                                         utc(fresh_quote["at"])
                                     ).active_sessions,
+                                    **({"hypothesis":hypothesis} if research_policy else {}),
                                 )
                                 decision.update(
                                     at=fresh_quote["observed_at"],
@@ -357,7 +408,7 @@ def run_paper(
                                     else "SELL"
                                     if outcome["approved"]
                                     else "WAIT",
-                                    reason="Modelo, contexto e risco aprovaram a entrada simulada."
+                                    reason=("Hipótese de pesquisa selecionada automaticamente; risco aceitou a entrada simulada." if research_policy else "Modelo, contexto e risco aprovaram a entrada simulada.")
                                     if outcome["approved"]
                                     else ", ".join(outcome["reasons"]),
                                     entry=account.data["position"]["entry"]
@@ -376,13 +427,16 @@ def run_paper(
                                     generation=current["generation"],
                                     last_decision=decision,
                                 ):
+                                    if account.data.get('execution_mode')=='demo':
+                                        raise RuntimeError('A reconciliação demo requer recuperação do proprietário da sessão.')
                                     account = PaperAccount(
                                         session_id,
                                         state["lot"],
                                         state["symbol_contract"],
-                                        model["model_id"],
-                                        version["approval"]["clock_id"],
+                                        account.data["model_id"],
+                                        account.data["clock_id"],
                                         checkpoint=before,
+                                        research_mode=bool(research_policy),
                                     )
                                     account.events = before_events
                                     continue

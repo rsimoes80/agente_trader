@@ -51,6 +51,7 @@ class PaperAccount:
         *,
         checkpoint=None,
         previous_account=None,
+        research_mode=False,
     ):
         if (
             contract.get("currency_profit") != "USD"
@@ -117,6 +118,13 @@ class PaperAccount:
             ):
                 self.data[key] = copy.deepcopy(previous_account[key])
         self.events = []
+        if checkpoint and bool(checkpoint.get("research_mode",False)) != research_mode:
+            raise ValueError("O modo de pesquisa não corresponde ao checkpoint.")
+        self.data["research_mode"] = research_mode
+        if "lab_state" not in self.data:
+            self.data["lab_state"] = copy.deepcopy((previous_account or {}).get("lab_state",{}))
+        if research_mode:
+            self.data["lab_state"].setdefault("protocol_id",model_id)
 
     def snapshot(self):
         return copy.deepcopy(self.data)
@@ -124,7 +132,7 @@ class PaperAccount:
     def event(self, kind, at, **fields):
         event = dict(
             session_id=self.data["session_id"],
-            mode="paper",
+            mode="paper_research" if self.data["research_mode"] else "paper",
             status=kind,
             at=at,
             model_id=self.data["model_id"],
@@ -199,19 +207,31 @@ class PaperAccount:
                     commission=commission,
                     result_in_r=net / p["initial_risk"],
                     learning_eligible=False,
+                    research_reward_eligible=bool(self.data["research_mode"] and not p["coverage_uncertain"]),
+                    reward_scope="observed_paper_experiment" if self.data["research_mode"] else None,
                     label_scope="paper_quote_sampling_not_verified_tick_path",
                     execution_basis="observed_quote_not_guaranteed_broker_fill",
                 )
+                if self.data["research_mode"]:
+                    from .autonomous_lab import learn
+                    learn(self.data["lab_state"],p,net,net/p["initial_risk"])
                 self.data["position"] = None
         self.data["last_quote"] = dict(quote)
         self.data["peak"] = max(self.data["peak"], self.equity(quote))
 
-    def open(self, setup, features, probability, quote, *, active_sessions):
+    def open(self, setup, features, probability, quote, *, active_sessions, hypothesis=None):
         if self.data["position"]:
             raise ValueError("Já existe posição simulada.")
-        if not setup.get("production_eligible"):
+        if self.data["research_mode"] and not hypothesis:
+            raise ValueError("Experimento sem hipótese identificada.")
+        if self.data["research_mode"]:
+            from .autonomous_lab import HYPOTHESES
+            if hypothesis.get("protocol_id") != self.data["model_id"] or hypothesis.get("id") not in dict(HYPOTHESES) or not hypothesis.get("context"):
+                raise ValueError("Hipótese incompatível com o protocolo de pesquisa.")
+        if not self.data["research_mode"] and not setup.get("production_eligible"):
             return dict(approved=False, reasons=["CONTEXT_NOT_OPERATIONALLY_ELIGIBLE"])
-        if not math.isfinite(probability) or not 0 <= probability <= 1:
+        if ((probability is None and not self.data["research_mode"])
+            or (probability is not None and (not math.isfinite(probability) or not 0 <= probability <= 1))):
             raise ValueError("Probabilidade inválida.")
         self.mark(quote)
         original = setup["candidate"]
@@ -273,6 +293,7 @@ class PaperAccount:
             probability=probability,
             features=features,
             coverage_uncertain=False,
+            hypothesis=copy.deepcopy(hypothesis),
         )
         self.data["daily_entries"] += 1
         self.event(
@@ -300,4 +321,5 @@ class PaperAccount:
             uncertain_trades=self.data["uncertain_trades"],
             currency="USD",
             mode="paper",
+            research_mode=self.data["research_mode"],
         )

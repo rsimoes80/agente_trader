@@ -155,6 +155,27 @@ class AgentRegistryTests(unittest.TestCase):
         self.record("agent_training_report","unrelated-report",dict(run_id="other-run",lot="0.01"))
         self.assertEqual(self.control.latest_training_report(self.control.status()),report)
 
+    def test_autonomous_seed_excludes_validation_and_final_labels(self):
+        from aurelia_fx.autonomous_lab import AutonomousLab
+        from aurelia_fx.agent_strategy import SPEC
+        now=datetime.now(timezone.utc)
+        features=dict(h1_direction_known=1,forecast_3_atr=0.2,forecast_6_atr=0.1)
+        ids=[]
+        for label,exit_at in (("development",now-timedelta(days=3)),("validation",now-timedelta(hours=12))):
+            ids.append(label)
+            self.record("agent_training_sample",label,dict(sample_id=label,features=features,
+                snapshot=dict(regime="TRANSITION",session=["london"]),exit_at=exit_at.isoformat(),
+                net_pnl=5,result_in_r=2))
+        manifest=dict(strategy=SPEC,model_configuration="fixture",clock_id="clock",
+                      as_of=(now-timedelta(hours=1)).isoformat(),training_days=335,
+                      boundaries=[(now-timedelta(days=1)).isoformat()])
+        self.record("agent_training_dataset","run",dict(run_id="run",manifest=manifest,sample_ids=ids))
+        lab=AutonomousLab("fixture")
+        seed=lab.seed(self.memory,clock_id="clock",configuration="fixture",as_of=now)
+        self.assertEqual(seed["historical_samples"],1)
+        self.assertEqual(seed["seed_scope"],"development_only_overlapping_counterfactuals")
+        self.assertEqual(lab.seed(self.memory,clock_id="other",configuration="fixture",as_of=now)["historical_samples"],0)
+
     def test_paper_state_checkpoint_and_events_commit_together_and_owner_is_fenced(
         self,
     ):
@@ -239,7 +260,7 @@ class AgentRegistryTests(unittest.TestCase):
         self.assertFalse(commit(self.control, account, "worker", generation=1))
         self.assertIsNone(checkpoint(self.control, self.state["session_id"]))
 
-    def test_actual_http_handler_requires_cookie_and_csrf_before_commands(self):
+    def test_single_user_http_commands_need_no_credential_but_require_csrf(self):
         import threading
         import urllib.error
         import urllib.request
@@ -261,7 +282,8 @@ class AgentRegistryTests(unittest.TestCase):
         base = f"http://127.0.0.1:{server.server_port}/api/diagnostics/agent"
         client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
         initial = json.load(client.open(base))
-        self.assertFalse(initial["authenticated"])
+        self.assertTrue(initial["authenticated"])
+        self.assertEqual(initial["access_mode"],"single_user")
 
         def post(path, payload, csrf=initial["csrf"]):
             req = urllib.request.Request(base+path, json.dumps(payload).encode(),
@@ -269,21 +291,20 @@ class AgentRegistryTests(unittest.TestCase):
                              "Origin":"http://127.0.0.1:8770", "Idempotency-Key":uuid4().hex})
             return json.load(client.open(req))
 
-        with self.assertRaises(urllib.error.HTTPError) as denied:
-            post("/command", dict(action="PAUSE"))
-        self.assertEqual(denied.exception.code, 403)
-        denied.exception.close()
-        post("/login", dict(password="fixture-access"))
-        self.assertTrue(json.load(client.open(base))["authenticated"])
         with self.assertRaises(urllib.error.HTTPError) as csrf:
             post("/command", dict(action="PAUSE"), csrf="wrong")
         self.assertEqual(csrf.exception.code, 403)
         csrf.exception.close()
         self.assertEqual(post("/command", dict(action="PAUSE"))["state"]["desired"], "paused")
-        post("/logout", {})
-        self.assertFalse(json.load(client.open(base))["authenticated"])
+        self.assertTrue(json.load(client.open(base))["authenticated"])
 
     def test_paper_loop_opens_once_manages_and_persists_actual_observed_exit(self):
+        self.check_loop()
+
+    def test_autonomous_loop_executes_and_learns_without_validated_model(self):
+        self.check_loop(research=True)
+
+    def check_loop(self, research=False):
         from contextlib import ExitStack
         from aurelia_fx.agent_live import run_paper
         from aurelia_fx.domain import Candidate
@@ -291,7 +312,9 @@ class AgentRegistryTests(unittest.TestCase):
         fixture.start = datetime.now(timezone.utc)-timedelta(seconds=10)
         fixture.setup.update(signal_at=fixture.start.isoformat(), candidate=Candidate(
             "long", 1.1, 1.098, 1.105, fixture.start+timedelta(minutes=5), ("fixture",)))
-        self.control.publish(self.state["session_id"], symbol_contract=fixture.contract)
+        fixture.setup["snapshot"]["regime"]="UNKNOWN"
+        fixture.setup["production_eligible"]=not research
+        self.control.publish(self.state["session_id"], symbol_contract=fixture.contract,history=dict(clock_id="clock"))
         state = self.control.status()
         candle_at = fixture.start-timedelta(minutes=5)
         row = dict(timestamp=candle_at.isoformat(), spread_pips=1)
@@ -303,6 +326,8 @@ class AgentRegistryTests(unittest.TestCase):
         version = dict(model=dict(model_id="fixture-model"), report=dict(threshold=0.55),
                        approval=dict(clock_id="clock",valid_until=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()))
         config = SimpleNamespace(fingerprint="fixture-config")
+        from aurelia_fx.autonomous_lab import AutonomousLab
+        policy=AutonomousLab(config.fingerprint) if research else None
 
         class StopAfterTwoCycles:
             count = 0
@@ -322,13 +347,13 @@ class AgentRegistryTests(unittest.TestCase):
                 "intelligence_session":lambda:session, "readiness":lambda *a,**k:None,
                 "closed_rows":lambda *a,**k:[row], "propose_pullback":lambda *a,**k:(fixture.setup,None),
                 "prepare":lambda *a,**k:context, "cached_forecast":lambda *a:("cache",dict(quantiles=[[1.09,1.1,1.11]]*12)),
-                "attach_forecast":lambda *a:{}, "predict":lambda *a:0.8, "SessionEngine":Sessions,
+                "attach_forecast":lambda *a:dict(h1_direction_known=0,forecast_3_atr=0.1,forecast_6_atr=0.2), "predict":lambda *a:0.8, "SessionEngine":Sessions,
             }.items():
                 patches.enter_context(patch("aurelia_fx.agent_live."+name, value))
             patches.enter_context(patch("aurelia_fx.agent_live.observed_quote", side_effect=quotes))
             adapter = patches.enter_context(patch("aurelia_fx.agent_live.TimestralAdapter"))
-            run_paper(self.control, repo, state, version, lambda *a,**k:dict(candles=[row]),
-                      config, "worker", StopAfterTwoCycles(), self.c)
+            run_paper(self.control, repo, state, None if research else version, lambda *a,**k:dict(candles=[row]),
+                      config, "worker", StopAfterTwoCycles(), self.c,research_policy=policy)
             adapter.return_value.close.assert_called_once()
         stored = checkpoint(self.control,self.state["session_id"])
         self.assertIsNone(stored["position"])
@@ -337,3 +362,6 @@ class AgentRegistryTests(unittest.TestCase):
         self.assertAlmostEqual(stored["balance"], 10004.89)
         events = self.c.execute("SELECT payload_json FROM project_records WHERE record_type='agent_paper_event'").fetchall()
         self.assertEqual(sorted(json.loads(e["payload_json"])["status"] for e in events),["closed","decision","opened"])
+        if research:
+            self.assertEqual(sum(r["wins"] for r in self.control.status()["autonomy"]["hypotheses"]),1)
+            self.assertTrue(stored["research_mode"])
