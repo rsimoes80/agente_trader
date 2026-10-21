@@ -23,6 +23,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Do not log quote payloads or authorization headers.
+        if urlparse(self.path).path=='/health':return
         print(f"{self.address_string()} {self.command} {urlparse(self.path).path}")
 
     def _send(self, status: int, payload: dict[str, Any]) -> None:
@@ -33,7 +34,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
-        self.wfile.write(body)
+        try:self.wfile.write(body)
+        except (BrokenPipeError,ConnectionResetError):pass
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -53,12 +55,17 @@ class Handler(BaseHTTPRequestHandler):
             count = max(100, min(2_000, int(query.get("count", ["600"])[0])))
             result = fetch_history("EUR/USD", timeframe, count, include_current=True)
             self._send(200, {"ok": True, **result})
-        except (RuntimeError, ValueError) as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             self._send(503, {"ok": False, "error": str(exc)})
 
 
 class BridgeServer(HTTPServer):
     allow_reuse_address = True
+
+    def get_request(self):
+        connection,address=super().get_request()
+        connection.settimeout(10)
+        return connection,address
 
 
 def main() -> None:

@@ -3,6 +3,12 @@
   const $=id=>document.getElementById(id);
   const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",PREPARING_EXPERIENCES:"Identificando hipóteses de pesquisa",FORECASTING:"Gerando previsões históricas",REPLAYING:"Simulando oportunidades históricas",TRAINING:"Treinamento em andamento",VALIDATING:"Validando a versão candidata",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",RECOVERY_REQUIRED:"Retomada exige revisão",ERROR:"Não foi possível iniciar",INSUFFICIENT_DATA:"Histórico insuficiente",TRAINING_UNAVAILABLE:"Histórico pronto · treinamento pendente",TRAINING_BLOCKED:"Treinamento concluído · operação bloqueada",AWAITING_APPROVAL:"Versão candidata aguarda aprovação"};
   let current=null, csrf="", busy=false, pending=null, chartData=null, polling=false;
+  let quotePending=false,chartStale=true;
+  const chartCacheKey="aurelia-eurusd-m5-chart-v1";
+  function cacheChart(data){try{localStorage.setItem(chartCacheKey,JSON.stringify({saved_at:Date.now(),data:{candles:data.candles.slice(-120),quote:data.quote,source_clock:data.source_clock}}));}catch{}}
+  function restoreChart(){try{const cached=JSON.parse(localStorage.getItem(chartCacheKey));if(cached && Date.now()-cached.saved_at>=0 && Date.now()-cached.saved_at<7*86400000 && validChart(cached.data)){chartData=cached.data;showQuote();$("chart-message").textContent="Último gráfico salvo, desatualizado. Aguardando conexão para atualizar.";draw();}}catch{}}
+  function validChart(data){return Array.isArray(data?.candles) && data.candles.length>0 && data.candles.every(row=>[row.open,row.high,row.low,row.close].every(p=>Number.isFinite(p)&&p>0)&&Number.isFinite(Date.parse(row.timestamp))) && Number.isFinite(data.quote?.bid) && Number.isFinite(data.quote?.ask) && Number.isFinite(Date.parse(data.quote?.time));}
+  function showQuote(){if(!chartData)return;$("quote").textContent=`${chartStale?"Última cotação (desatualizada) · ":""}Compra (ask): ${number(chartData.quote.ask)} · Venda (bid): ${number(chartData.quote.bid)}`;$("chart-time").textContent=`${date(chartData.quote.time)} UTC`;}
   labels.CHECKING_MODEL="Verificando Timestral";
   labels.LOADING_RESEARCH_HISTORY="Preparando dados para o treino";
   labels.ANALYSIS_WARMUP="Preparando o contexto ao vivo";
@@ -14,8 +20,9 @@
   const date=value=>value?new Date(value).toLocaleString("pt-BR",{timeZone:"UTC",hour12:false}):"—";
   const number=value=>typeof value==="number"?value.toLocaleString("pt-BR",{maximumFractionDigits:5}):"—";
   async function api(path,payload,key){
-    const response=await fetch(`/api/diagnostics/agent${path}`,{cache:"no-store",...(payload?{method:"POST",headers:{"Content-Type":"application/json","X-Diagnostics-CSRF":csrf,...(key?{"Idempotency-Key":key}:{})},body:JSON.stringify(payload)}:{})});
-    const result=await response.json(); if(!response.ok || !result.ok)throw new Error(result.error || "Não foi possível consultar o agente."); return result;
+    const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),12000);
+    try{const response=await fetch(`/api/diagnostics/agent${path}`,{signal:controller.signal,cache:"no-store",...(payload?{method:"POST",headers:{"Content-Type":"application/json","X-Diagnostics-CSRF":csrf,...(key?{"Idempotency-Key":key}:{})},body:JSON.stringify(payload)}:{})});
+    const result=await response.json(); if(!response.ok || !result.ok)throw new Error(result.error || "Não foi possível consultar o agente."); return result;}finally{clearTimeout(deadline);}
   }
   function error(message){$("error").textContent=message;$("error").hidden=!message;}
   function render(data){
@@ -100,15 +107,21 @@
   }
   for(const [id,action] of [["start","START"],["pause","PAUSE"],["resume","RESUME"],["stop","STOP"]])$(id).onclick=()=>command(action);
   $("approve").onclick=()=>command("APPROVE");
-  async function quote(){try{const response=await fetch("/api/mt5/chart?timeframe=M5&count=120",{cache:"no-store"}),data=await response.json();if(!response.ok || !data.ok)throw new Error(data.error || "Cotação indisponível.");chartData=data;$("quote").textContent=`Compra (ask): ${number(data.quote?.ask)} · Venda (bid): ${number(data.quote?.bid)}`;$("chart-time").textContent=`${date(data.quote?.time)} UTC`;$("chart-message").textContent="Preço do MT5. O último candle ainda pode estar em formação.";draw();}catch(e){$("chart-message").textContent=e.message;}}
+  async function quote(){
+    if(quotePending)return;quotePending=true;
+    const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),12000);
+    try{const response=await fetch("/api/mt5/chart?timeframe=M5&count=120",{cache:"no-store",signal:controller.signal}),data=await response.json();if(!response.ok || !data.ok || !validChart(data))throw new Error("Cotação indisponível.");chartData=data;chartStale=Math.abs(Date.now()-Date.parse(data.quote.time))>60000;cacheChart(data);showQuote();$("chart-message").textContent=chartStale?"Última cotação disponível no MT5, sem tick recente. Aguardando atualização.":"Preço do MT5. O último candle ainda pode estar em formação.";draw();}
+    catch{chartStale=true;showQuote();$("chart-message").textContent="Ponte de dados indisponível; reconectando automaticamente."+(chartData?" Último gráfico preservado e desatualizado; não é cotação em tempo real.":"");draw();}
+    finally{clearTimeout(deadline);quotePending=false;}
+  }
   function draw(){
     const canvas=$("chart"),box=canvas.getBoundingClientRect(),ratio=window.devicePixelRatio || 1,ctx=canvas.getContext("2d");canvas.width=box.width*ratio;canvas.height=box.height*ratio;ctx.scale(ratio,ratio);ctx.fillStyle="#0b151c";ctx.fillRect(0,0,box.width,box.height);
     const rows=chartData?.candles?.slice(-100);if(!rows?.length)return;
     const forecast=current?.last_decision?.forecast, now=Date.now();
-    const usable=forecast && forecast.symbol==="EURUSD" && forecast.timeframe==="M5" && forecast.clock_id===chartData.source_clock?.clock_id && now>=Date.parse(forecast.reference_at) && now<Date.parse(forecast.valid_until) && Math.abs(now-Date.parse(chartData.quote?.time))<60000 && forecast.points?.length===12;
+    const usable=!chartStale && forecast && forecast.symbol==="EURUSD" && forecast.timeframe==="M5" && forecast.clock_id===chartData.source_clock?.clock_id && now>=Date.parse(forecast.reference_at) && now<Date.parse(forecast.valid_until) && Math.abs(now-Date.parse(chartData.quote?.time))<60000 && forecast.points?.length===12;
     const points=usable?[{at:forecast.reference_at,low:forecast.reference_price,median:forecast.reference_price,high:forecast.reference_price},...forecast.points]:[];
     $("forecast-note").textContent=usable?`Timestral · estimativa avaliada nesta oportunidade · referência ${date(forecast.reference_at)} UTC · faixa Q10–Q90 nominal, sem garantia de cobertura.`:forecast?"A previsão da última oportunidade está antiga ou pertence a outra fonte. Aguardando nova avaliação.":"A previsão aparece quando uma oportunidade técnica é avaliada pelo modelo. Ainda não há previsão operacional atual.";
-    const position=current?.position, levels=position && current.history?.clock_id===chartData.source_clock?.clock_id?[position.entry,position.stop,position.target]:[];
+    const position=current?.position, levels=!chartStale && position && current.history?.clock_id===chartData.source_clock?.clock_id?[position.entry,position.stop,position.target]:[];
     let low=Math.min(...rows.map(c=>c.low),...points.map(p=>p.low),...levels),high=Math.max(...rows.map(c=>c.high),...points.map(p=>p.high),...levels);const pad=(high-low || .0001)*.1;low-=pad;high+=pad;
     const right=box.width-65,bottom=box.height-22,step=(right-10)/(rows.length+(usable?12:0)),y=p=>bottom-(p-low)*(bottom-14)/(high-low);ctx.font="10px system-ui";
     for(let i=0;i<=4;i++){const price=low+(high-low)*i/4;ctx.strokeStyle="#233440";ctx.beginPath();ctx.moveTo(10,y(price));ctx.lineTo(right,y(price));ctx.stroke();ctx.fillStyle="#9bb0bf";ctx.fillText(price.toFixed(5),right+5,y(price)+3);}
@@ -120,5 +133,6 @@
     if(levels.length){ctx.save();ctx.setLineDash([4,4]);for(const [label,price,color] of [["Entrada",position.entry,"#9bb0bf"],["Stop",position.stop,"#ec778e"],["Alvo",position.target,"#49d6a4"]]){ctx.strokeStyle=ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(10,y(price));ctx.lineTo(right,y(price));ctx.stroke();ctx.fillText(label,14,y(price)-4);}ctx.restore();}
 
   }
-  new ResizeObserver(draw).observe($("chart"));refresh();quote();setInterval(refresh,5000);setInterval(quote,10000);
+  new ResizeObserver(draw).observe($("chart"));restoreChart();refresh();quote();setInterval(refresh,5000);setInterval(quote,10000);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){refresh();quote();}});
 })();

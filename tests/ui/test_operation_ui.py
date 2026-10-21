@@ -20,6 +20,7 @@ class OperationBrowserTests(unittest.TestCase):
             executable_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe", headless=True)
         self.addCleanup(self.browser.close)
         self.page = self.browser.new_page()
+        self.addCleanup(self.page.unroute_all,behavior='ignoreErrors')
         self.errors = []
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.commands = []
@@ -29,6 +30,9 @@ class OperationBrowserTests(unittest.TestCase):
                           lot="0.01", updated_at=self.now.isoformat(), session_id="browser-fixture", training=None)
         self.authenticated = False
         self.last_report = None
+        self.chart_online=True
+        self.chart_hang=False
+        self.held_routes=[]
         self.page.route("**/*", self.route)
 
     def route(self, route):
@@ -44,6 +48,12 @@ class OperationBrowserTests(unittest.TestCase):
                                     last_training_report=self.last_report,
                                     csrf="browser-fixture-csrf", worker=dict(available=True)))
         elif path == "/api/mt5/chart":
+            if self.chart_hang:
+                self.held_routes.append(route)
+                return
+            if not self.chart_online:
+                route.fulfill(status=503,json=dict(ok=False,error='fixture bridge offline'))
+                return
             rows = [dict(timestamp=(self.clock - timedelta(minutes=5*i)).isoformat(),
                          open=1.1, high=1.101, low=1.099, close=1.1005) for i in range(119, -1, -1)]
             route.fulfill(json=dict(ok=True, candles=rows, source_clock=dict(clock_id="browser-clock"),
@@ -70,6 +80,36 @@ class OperationBrowserTests(unittest.TestCase):
         self.assertTrue(self.page.locator("#pause").is_enabled())
         self.assertTrue(self.page.locator("#stop").is_enabled())
         self.assertEqual(self.errors, [])
+
+    def test_chart_survives_bridge_failure_reload_and_recovers_automatically(self):
+        self.page.goto('http://127.0.0.1:37771/')
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('Preço do MT5')")
+        self.chart_online=False
+        self.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('reconectando')")
+        self.assertIn('desatualizada',self.page.locator('#quote').inner_text())
+        self.page.reload()
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('preservado')")
+        self.assertTrue(self.page.evaluate("""() => {const c=document.getElementById('chart');const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;for(let i=0;i<p.length;i+=4){if(p[i]===73 && p[i+1]===214 && p[i+2]===164)return true;}return false;}"""))
+        self.chart_online=True
+        self.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('Preço do MT5')")
+        self.assertNotIn('desatualizada',self.page.locator('#quote').inner_text())
+        self.assertEqual(self.errors,[])
+
+    def test_chart_request_timeout_does_not_block_future_refresh(self):
+        self.page.goto('http://127.0.0.1:37771/')
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('Preço do MT5')")
+        self.page.evaluate("const normalTimeout=window.setTimeout.bind(window);window.setTimeout=(fn,delay,...args)=>normalTimeout(fn,delay===12000?150:delay,...args)")
+        self.chart_hang=True
+        self.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('reconectando')")
+        self.chart_hang=False
+        for route in self.held_routes:route.abort()
+        self.held_routes.clear()
+        self.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.wait_for_function("document.getElementById('chart-message').textContent.includes('Preço do MT5')")
+        self.assertEqual(self.errors,[])
 
     def test_mobile_forecast_expiry_source_identity_and_position_levels(self):
         self.page.set_viewport_size(dict(width=390, height=844))
