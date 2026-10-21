@@ -278,14 +278,13 @@ class OperationControl:
 
     def worker_status(self):
         with self.memory.pool.connection() as c:
-            row = c.execute("""SELECT payload_json FROM project_records
+            row = c.execute("""SELECT payload_json,
+                EXTRACT(EPOCH FROM (clock_timestamp()-recorded_at)) AS heartbeat_age_seconds
+                FROM project_records
                 WHERE record_type='agent_worker_heartbeat' ORDER BY recorded_at DESC LIMIT 1""").fetchone()
         data = json.loads(row["payload_json"]) if row else None
-        age = (
-            (
-                datetime.now(timezone.utc) - datetime.fromisoformat(data["at"])
-            ).total_seconds()
-            if data
-            else None
-        )
-        return dict(available=age is not None and 0 <= age < 180, heartbeat=data)
+        # Liveness is measured on receipt by the database, on one clock. A host
+        # clock difference must not hide a worker that is actively checking in.
+        age = float(row['heartbeat_age_seconds']) if row and row['heartbeat_age_seconds'] is not None else None
+        return dict(available=age is not None and 0 <= age < 180, heartbeat=data,
+                    heartbeat_age_seconds=age,age_basis='postgres_received_at')

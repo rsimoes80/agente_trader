@@ -42,6 +42,18 @@ class OperationInputTests(unittest.TestCase):
     os.environ.get("TIMESTRAL_TEST_POSTGRES") == "1", "PostgreSQL integration opt-in"
 )
 class OperationPostgresTests(unittest.TestCase):
+    def test_worker_liveness_uses_database_receipt_not_windows_clock(self):
+        from datetime import datetime,timezone,timedelta
+        data=dict(worker_id='fixture',at=(datetime.now(timezone.utc)+timedelta(seconds=71)).isoformat())
+        encoded,digest=ExperienceMemory._encode(data)
+        self.c.execute("""INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256,recorded_at)
+            VALUES('agent_worker_heartbeat','fixture',%s,%s,clock_timestamp())""",(encoded,digest))
+        status=self.control.worker_status()
+        self.assertTrue(status['available'])
+        self.assertEqual(status['age_basis'],'postgres_received_at')
+        self.c.execute("UPDATE project_records SET recorded_at=clock_timestamp()-interval '4 minutes'")
+        self.assertFalse(self.control.worker_status()['available'])
+
     def setUp(self):
         import psycopg
         from psycopg import sql
