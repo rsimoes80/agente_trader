@@ -1,8 +1,6 @@
-# Execução demo — protocolo em implementação
+# Execução demo — protocolo durável
 
-Ramo isolado: `feat/mt5-demo-execution`. A aplicação publicada continua em
-simulação e com o candidato de mercado bloqueado. Este documento e o journal
-não constituem um executor pronto nem habilitam ordens MT5.
+Atualizado em 21/10/2026. O adaptador nativo e a conta demo foram integrados ao ciclo autônomo. O pedido posterior do usuário autoriza pesquisa em conta demo sem aprovação por hipótese. Consulte [o fluxo atual](CICLO_AUTONOMO_DEMO.md). Conta real permanece bloqueada.
 
 ## Parte implementada: intenções duráveis
 
@@ -66,21 +64,21 @@ navegador separados por ambiente, sem falhas. Os dois testes de navegador da
 interface publicada passaram separadamente. Após a verificação, a base de
 produção tinha zero intenções demo e nenhum schema temporário desses testes.
 
-## Ainda necessário antes de habilitar demo
+## Integração atual
 
-- Adaptador Windows com conta **DEMO** conferida a cada operação, identidade
-  fixa da conta/terminal, fonte/UTC e cotações recentes. Conta real deve falhar
-  antes de qualquer tentativa de envio.
-- Autorização própria `demo_only`, vinculada ao modelo efetivamente validado.
-  A aprovação existente `paper_only` não pode ser reutilizada como autorização
-  demo. Os identificadores no journal são metadados; não fazem essa verificação.
-- Validação de lote, saldo/equidade real, moeda, margens, stops e custos;
-  persistência de risco diário/peak entre sessões e exclusão de exposição alheia.
-- Construção de pedidos executáveis, `order_check`, seleção correta de política
-  de preenchimento, `order_send` e interpretação dos retornos.
-- Reconciliação por identidade do projeto, tickets, ordens, posições e negócios;
-  preenchimentos parciais, proteção SL/TP efetiva e saídas de emergência.
-- Integração dos comandos, reinício, pausa/parada, interface e testes de falhas.
+`demo_terminal.py` verifica conta DEMO, identidade e relógio.
+`demo_gateway.py` faz verificação de risco, order_check, envio durável e
+reconciliação. `agent_demo.py` aplica os resultados da corretora à memória
+uma vez por intenção, junto ao checkpoint no PostgreSQL.
+
+A autorização atual tem escopo `autonomous_demo_research`, identifica sessão,
+conta, lote, protocolo e fonte e define `real_orders=False`. Não é uma aprovação
+de modelo validado. O campo legado `approval_id` do journal referencia essa
+autorização específica; nunca reutiliza aprovação paper.
+
+A regressão da integração executou 236 testes sem falhas, com três testes
+de navegador separados e também aprovados. Os testes nativos usam SDK falso:
+não constituem confirmação de preenchimento real de uma ordem demo.
 
 Referências oficiais do contrato MT5:
 [order_send](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py),

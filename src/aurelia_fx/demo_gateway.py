@@ -125,7 +125,8 @@ class DemoGateway:
             return scope.transition(client_id,"UNCERTAIN",evidence=dict(error_type=type(exc).__name__))
         if result is None:return scope.transition(client_id,"UNCERTAIN",evidence=dict(reason="EMPTY_SDK_RESULT"))
         evidence=dict(result=result_view(result))
-        rejected={getattr(sdk,"TRADE_RETCODE_"+name,None) for name in NON_EXECUTION}
+        rejected={value for name in NON_EXECUTION
+                  if (value:=getattr(sdk,"TRADE_RETCODE_"+name,None)) is not None}
         if result.retcode in rejected:
             return scope.transition(client_id,"REJECTED",evidence=evidence)
         return scope.transition(client_id,"UNCERTAIN",evidence=evidence)
@@ -138,6 +139,8 @@ class DemoGateway:
         if "position" in request:
             present=[p for p in positions if p.ticket==request["position"] and p.magic==MAGIC]
             own_order=[o for o in orders if o.magic==MAGIC and marker in o.comment]
+            if own_order:
+                return scope.transition(intent['client_id'],'PARTIAL',evidence=dict(reason='CLOSE_ORDER_STILL_ACTIVE'))
             if not present and not own_order:
                 if intent["status"] in {"SENDING","UNCERTAIN","PARTIAL"}:
                     return scope.transition(intent["client_id"],"CONFIRMED",evidence=dict(closed_ticket=request["position"]))

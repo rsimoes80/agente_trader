@@ -1,5 +1,7 @@
 # Aurelia FX — plano integrado de operação e treinamento
 
+> Atualização de escopo em 21/10/2026: o usuário pediu ciclo autônomo em conta demo, sem aprovação por hipótese. O fluxo vigente está em [CICLO_AUTONOMO_DEMO.md](CICLO_AUTONOMO_DEMO.md). As etapas de promoção manual descritas abaixo pertencem ao plano anterior e não são pré-requisito da pesquisa demo atual.
+
 Data: 20/10/2026. **Plano de readequação aprovado, em implementação**, baseado na inspeção do código
 e da documentação. Este plano não habilita ordens nem declara treino concluído.
 As fases abaixo são a sequência proposta de entregas, não funcionalidades já

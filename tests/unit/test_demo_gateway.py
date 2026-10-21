@@ -64,6 +64,38 @@ class GatewayTests(DemoIntentTests):
             self.assertEqual(again['status'],'UNCERTAIN')
             self.assertEqual(len(self.sent),1)
 
+    def test_missing_native_stop_is_marked_unprotected(self):
+        gateway=self.gateway()
+        with gateway.journal.locked() as scope:
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            self.positions=[N(ticket=900,identifier=800,magic=MAGIC,symbol='EURUSD',
+                              comment='AFX:'+self.client[:20],sl=0,tp=1.12)]
+            result=gateway.resolve(self.terminal,scope,intent)
+            self.assertEqual(result['status'],'UNPROTECTED')
+            self.assertEqual(result['evidence']['position_tickets'],[900])
+
+    def test_active_close_order_stays_pending_without_duplicate_close(self):
+        gateway=self.gateway()
+        with gateway.journal.locked() as scope:
+            request={**self.broker_request(),'position':900}
+            intent=gateway.send(self.terminal,scope,self.client,request,{})
+            self.orders=[N(magic=MAGIC,comment='AFX:'+self.client[:20])]
+            self.positions=[]
+            result=gateway.resolve(self.terminal,scope,intent)
+            self.assertEqual(result['status'],'PARTIAL')
+            self.assertEqual(scope.pending('fixture-account')[0]['status'],'PARTIAL')
+            self.assertEqual(len(self.sent),1)
+
+    def test_foreign_deal_in_same_position_is_not_automatically_closed(self):
+        gateway=self.gateway()
+        with gateway.journal.locked() as scope:
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            self.positions=[N(ticket=900,identifier=800,magic=MAGIC,symbol='EURUSD',
+                              comment='AFX:'+self.client[:20],sl=1.09,tp=1.12)]
+            self.deals=[N(ticket=201,position_id=800,magic=999,symbol='EURUSD',volume=.01)]
+            with self.assertRaises(ValueError):gateway.resolve(self.terminal,scope,intent)
+            self.assertEqual(len(self.sent),1)
+
     def test_pause_before_linearized_send_cancels_without_sdk_order(self):
         gateway=self.gateway()
         with self.pool.connection() as c:
