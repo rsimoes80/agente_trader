@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from unittest.mock import patch
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +18,25 @@ SUMMER = datetime(2026, 10, 20, 12, 2, tzinfo=timezone.utc)
 
 
 class MT5ClockTests(unittest.TestCase):
+    def test_transient_windows_replace_lock_is_retried(self):
+        actual=os.replace
+        calls=[]
+        def replace(source,target):
+            calls.append(1)
+            if len(calls)<3:raise PermissionError('sharing violation')
+            actual(source,target)
+        with patch('aurelia_fx.mt5_clock.os.replace',side_effect=replace),patch('aurelia_fx.mt5_clock.time.sleep'):
+            self.clock._save('fixture',{'mode':'utc'})
+        self.assertEqual(len(calls),3)
+        self.assertEqual(self.clock._load()['fixture']['mode'],'utc')
+
+    def test_persistent_lock_preserves_cache_and_is_recoverable(self):
+        self.clock._save('fixture',{'mode':'utc'})
+        with patch('aurelia_fx.mt5_clock.os.replace',side_effect=PermissionError('locked')),patch('aurelia_fx.mt5_clock.time.sleep'):
+            with self.assertRaises(ClockUnavailable):self.clock._save('fixture',{'mode':'broker_wall'})
+        self.assertEqual(self.clock._load()['fixture']['mode'],'utc')
+        self.assertEqual(list(self.path.parent.glob('*.tmp')),[])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

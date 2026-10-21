@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -89,10 +90,23 @@ class MT5Clock:
                 json.dumps({"contract": CONTRACT, "sources": sources}, sort_keys=True),
                 encoding="utf-8",
             )
-            os.replace(tmp, self.path)
+            # Windows sharing locks (including sync/antivirus readers) can briefly
+            # deny atomic replacement. Preserve the old file and retry boundedly.
+            for attempt in range(8):
+                try:
+                    os.replace(tmp, self.path)
+                    break
+                except PermissionError:
+                    if attempt==7:
+                        raise ClockUnavailable('Arquivo do relógio temporariamente ocupado; nova tentativa automática.') from None
+                    time.sleep(min(.02*2**attempt,.2))
+        except OSError as exc:
+            raise ClockUnavailable('Não foi possível persistir a validação do relógio; nova tentativa automática.') from exc
         finally:
-            if tmp.exists():
-                tmp.unlink()
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     @staticmethod
     def convert(epoch, mode):
