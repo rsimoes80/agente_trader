@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from aurelia_fx.experience_memory import ExperienceMemory
 from aurelia_fx.operation_control import OperationControl, validate_lot
-from aurelia_fx.operator_session import OperatorSessions
 from aurelia_fx.storage import database_url
 
 
@@ -19,23 +18,7 @@ class OperationInputTests(unittest.TestCase):
             with self.subTest(lot=invalid), self.assertRaises(ValueError):
                 validate_lot(invalid, contract)
 
-    def test_login_cookie_is_http_only_and_revoked_on_logout(self):
-        sessions = OperatorSessions("fixture-secret")
-        with self.assertRaises(ValueError):
-            sessions.login("wrong", "test")
-        cookie = sessions.login("fixture-secret", "test")
-        self.assertIn("HttpOnly", cookie)
-        self.assertIn("SameSite=Strict", cookie)
-        self.assertTrue(sessions.authenticated(cookie))
-        sessions.logout(cookie)
-        self.assertFalse(sessions.authenticated(cookie))
 
-    def test_empty_configuration_fails_closed_and_login_is_rate_limited(self):
-        sessions = OperatorSessions("")
-        for _ in range(11):
-            with self.assertRaises(ValueError):
-                sessions.login("", "test")
-        self.assertFalse(sessions.authenticated(""))
 
 
 @unittest.skipUnless(

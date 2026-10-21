@@ -59,22 +59,6 @@ class HistoricalContextTests(unittest.TestCase):
         self.assertTrue(all(r["samples"] > 30 for r in validation))
         self.assertTrue(all(r["directional_accuracy"] == 0 for r in validation))
 
-    def test_observer_reads_baseline_before_decision_on_startup(self):
-        from aurelia_fx.diagnostic_observer import DiagnosticObserver
-
-        observer = object.__new__(DiagnosticObserver)
-        observer.source_clock = {"clock_id": "test-clock"}
-        observer.historical_repository = MagicMock()
-        observer.historical_repository.latest.return_value = None
-        self.assertIsNone(observer.historical_at(NOW))
-        self.assertEqual(
-            observer.historical_context["blocker"], "HISTORY_BASELINE_REQUIRED"
-        )
-        data = baseline()
-        data["baseline_id"] = "test-baseline"
-        observer.historical_repository.latest.return_value = data
-        self.assertEqual(observer.historical_at(NOW)["baseline_id"], "test-baseline")
-        self.assertIsNone(observer.historical_context["blocker"])
 
     def test_collector_fetches_all_periods_and_checks_host_clock(self):
         from unittest.mock import patch

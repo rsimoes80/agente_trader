@@ -28,8 +28,6 @@ class OperationBrowserTests(unittest.TestCase):
         self.clock = self.now.replace(second=0, microsecond=0) - timedelta(minutes=self.now.minute % 5)
         self.state = dict(state="STOPPED", desired="stopped", stage="connection", message="Escolha o lote e inicie.",
                           lot="0.01", updated_at=self.now.isoformat(), session_id="browser-fixture", training=None)
-        self.authenticated = False
-        self.last_report = None
         self.chart_online=True
         self.chart_hang=False
         self.held_routes=[]
@@ -38,15 +36,17 @@ class OperationBrowserTests(unittest.TestCase):
     def route(self, route):
         path = urlparse(route.request.url).path
         if path.startswith("/api/diagnostics/agent"):
-            if path.endswith("/login"):
-                self.authenticated = True
-            elif path.endswith("/command"):
+            if path.endswith("/command"):
                 self.commands.append(route.request.post_data_json)
                 self.assertEqual(route.request.headers["x-diagnostics-csrf"], "browser-fixture-csrf")
                 self.state.update(state="QUEUED", desired="running", lot=self.commands[-1].get("lot", "0.01"))
-            route.fulfill(json=dict(ok=True, state=self.state, authenticated=self.authenticated,
-                                    last_training_report=self.last_report,
+            route.fulfill(json=dict(ok=True, state=self.state,
                                     csrf="browser-fixture-csrf", worker=dict(available=True)))
+        elif path == '/api/diagnostics/decisions':
+            route.fulfill(json=dict(ok=True,session_id=self.state['session_id'],decisions=[dict(
+                event_id='actual-worker-fixture',status='decision',clock_id='browser-clock',
+                decision=dict(at=self.now.isoformat(),action='WAIT',reason='WAITING_PULLBACK_TRIGGER'),
+                technical_snapshot=dict(regime='RANGE',session=['london']),candles=[])]))
         elif path == "/api/mt5/chart":
             if self.chart_hang:
                 self.held_routes.append(route)
@@ -58,8 +58,8 @@ class OperationBrowserTests(unittest.TestCase):
                          open=1.1, high=1.101, low=1.099, close=1.1005) for i in range(119, -1, -1)]
             route.fulfill(json=dict(ok=True, candles=rows, source_clock=dict(clock_id="browser-clock"),
                                     quote=dict(bid=1.1005, ask=1.1006, time=self.now.isoformat())))
-        elif path in ("/", "/operation.css", "/operation.js"):
-            filename = "operation.html" if path == "/" else path[1:]
+        elif path in ("/", "/operation.css", "/operation.js",'/diagnostico','/diagnostics.js','/diagnostics.css'):
+            filename = "operation.html" if path == "/" else 'diagnostics.html' if path=='/diagnostico' else path[1:]
             mime = {".html":"text/html", ".js":"application/javascript", ".css":"text/css"}[Path(filename).suffix]
             route.fulfill(body=(ROOT / "static" / filename).read_text(encoding="utf-8"), content_type=mime)
         else:
@@ -80,6 +80,16 @@ class OperationBrowserTests(unittest.TestCase):
         self.assertTrue(self.page.locator("#pause").is_enabled())
         self.assertTrue(self.page.locator("#stop").is_enabled())
         self.assertEqual(self.errors, [])
+
+    def test_diagnostics_shows_actual_decisions_without_manual_session_controls(self):
+        self.page.goto('http://127.0.0.1:37771/diagnostico')
+        self.page.wait_for_function("document.querySelectorAll('#decisions tr').length===1")
+        self.assertIn('RANGE',self.page.locator('#decisions').inner_text())
+        self.assertIn('pullback',self.page.locator('#decisions').inner_text())
+        self.assertEqual(self.page.locator('#platform-panel').count(),0)
+        self.assertEqual(self.page.locator('#review-form').count(),0)
+        self.assertEqual(self.page.locator('input[type=password]').count(),0)
+        self.assertEqual(self.errors,[])
 
     def test_chart_survives_bridge_failure_reload_and_recovers_automatically(self):
         self.page.goto('http://127.0.0.1:37771/')
@@ -113,9 +123,6 @@ class OperationBrowserTests(unittest.TestCase):
 
     def test_mobile_forecast_expiry_source_identity_and_position_levels(self):
         self.page.set_viewport_size(dict(width=390, height=844))
-        self.last_report=dict(report_id="fixture-report",samples=120,candidate_version="fixture-model",
-                              training_period=dict(days=180),operational_validation_samples=0,
-                              reason="INSUFFICIENT_OPERATIONAL_VALIDATION_SAMPLES")
         forecast=dict(symbol="EURUSD", timeframe="M5", clock_id="browser-clock", reference_at=self.clock.isoformat(),
                       valid_until=(self.clock+timedelta(minutes=5)).isoformat(), reference_price=1.1005,
                       points=[dict(at=(self.clock+timedelta(minutes=5*(i+1))).isoformat(),low=1.099,median=1.101,high=1.102) for i in range(12)])
@@ -125,8 +132,6 @@ class OperationBrowserTests(unittest.TestCase):
         self.page.goto("http://127.0.0.1:37771/")
         self.page.wait_for_function("document.getElementById('forecast-note').textContent.includes('estimativa avaliada')")
         self.assertIn("Compra", self.page.locator("#position").inner_text())
-        self.assertIn("120 experiências encerradas",self.page.locator("#last-research").inner_text())
-        self.assertIn("0 oportunidades",self.page.locator("#last-research").inner_text())
         self.assertFalse(self.page.evaluate("document.documentElement.scrollWidth > innerWidth"))
         self.page.evaluate("window.dispatchEvent(new Event('resize'))")
         forecast["clock_id"]="other-clock"
@@ -149,6 +154,6 @@ class OperationBrowserTests(unittest.TestCase):
         self.assertIn("20",self.page.locator("#autonomy-info").inner_text())
         self.assertIn("Hipótese de teste",self.page.locator("#hypotheses-table").inner_text())
         self.assertIn("outra hipótese",self.page.locator("#last-learning").inner_text())
-        self.assertFalse(self.page.locator("#approve").is_visible())
+        self.assertEqual(self.page.locator("#approve").count(),0)
         self.assertEqual(self.page.locator("#password").count(),0)
         self.assertEqual(self.errors,[])

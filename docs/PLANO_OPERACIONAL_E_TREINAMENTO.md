@@ -1,3 +1,5 @@
+> Documento histórico: descreve uma etapa anterior. Para o fluxo ativo, consulte o [README](../README.md) e a [revisão do escopo](REDUCAO_DO_ESCOPO.md). Controles manuais e o painel local antigo foram retirados.
+
 # Aurelia FX — plano integrado de operação e treinamento
 
 > Atualização de escopo em 21/10/2026: o usuário pediu ciclo autônomo em conta demo, sem aprovação por hipótese. O fluxo vigente está em [CICLO_AUTONOMO_DEMO.md](CICLO_AUTONOMO_DEMO.md). As etapas de promoção manual descritas abaixo pertencem ao plano anterior e não são pré-requisito da pesquisa demo atual.

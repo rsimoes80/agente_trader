@@ -481,6 +481,9 @@ def run_paper(
                         decision["at"],
                         decision=decision,
                         snapshot_id=snapshot.snapshot_id,
+                        technical_snapshot=snapshot.as_dict(),
+                        candles=closed[-100:],
+                        clock_id=account.data['clock_id'],
                     )
                 if account.events or decision or time.monotonic() - last_persist >= 10:
                     view = dict(last_decision=decision) if decision else {}

@@ -1,3 +1,5 @@
+> Documento histórico: descreve uma etapa anterior. Para o fluxo ativo, consulte o [README](../README.md) e a [revisão do escopo](REDUCAO_DO_ESCOPO.md). Controles manuais e o painel local antigo foram retirados.
+
 # Auditoria inicial do diagnóstico — 20/10/2026
 
 > Auditoria histórica anterior ao contrato UTC validado. Reavaliar horários de sessão e parâmetros com nova captura normalizada; estes resultados são preservados como registro histórico.

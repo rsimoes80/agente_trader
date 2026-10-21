@@ -1,3 +1,5 @@
+> Documento histórico: descreve uma etapa anterior. Para o fluxo ativo, consulte o [README](../README.md) e a [revisão do escopo](REDUCAO_DO_ESCOPO.md). Controles manuais e o painel local antigo foram retirados.
+
 # Runbook inicial
 
 ## Banco compartilhado atual

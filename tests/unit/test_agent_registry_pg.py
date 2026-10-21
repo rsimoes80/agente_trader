@@ -13,7 +13,6 @@ from unittest.mock import patch
 from aurelia_fx.agent_live import checkpoint, claim, commit, management_tick
 from aurelia_fx.agent_model import PROTOCOL, fingerprint, fit_model
 from aurelia_fx.agent_paper import PaperAccount
-from aurelia_fx.agent_registry import approved_version
 from aurelia_fx.agent_strategy import SPEC_HASH
 from aurelia_fx.experience_memory import ExperienceMemory
 from aurelia_fx.operation_control import OperationControl
@@ -27,6 +26,21 @@ from . import test_agent_paper as paper_fixtures
     os.environ.get("TIMESTRAL_TEST_POSTGRES") == "1", "PostgreSQL opt-in"
 )
 class AgentRegistryTests(unittest.TestCase):
+    def test_diagnostics_uses_actual_session_events_and_checks_integrity(self):
+        from aurelia_fx.agent_diagnostics import decisions
+        event=dict(event_id='fixture',session_id=self.state['session_id'],status='decision',
+                   decision=dict(action='WAIT',reason='WAITING_PULLBACK_TRIGGER'),
+                   technical_snapshot=dict(regime='RANGE'),candles=[])
+        self.record('agent_demo_event','fixture',event)
+        self.record('agent_demo_event','other-session',{**event,'session_id':'other-session'})
+        self.record('manual_observation','unused',event)
+        self.assertEqual(decisions(self.memory,self.state['session_id']),[event])
+        self.c.execute("UPDATE project_records SET payload_sha256='invalid' WHERE record_key='fixture'")
+        with self.assertRaises(ValueError):decisions(self.memory,self.state['session_id'])
+
+    def test_retired_approval_command_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.control.command(dict(action='APPROVE'),uuid4().hex,actor='fixture')
     def setUp(self):
         import psycopg
         from psycopg import sql
@@ -59,101 +73,9 @@ class AgentRegistryTests(unittest.TestCase):
             (kind, key, text, digest),
         )
 
-    def validated_report(self):
-        model = fit_model(fixtures())
-        self.record("agent_model_candidate", model["model_id"], model)
-        result = dict(
-            closed_trades=30,
-            net_pnl=100,
-            expectancy=100 / 30,
-            profit_factor=1.5,
-            max_close_equity_drawdown_pct=1,
-            censored_trades=0,
-            unresolved_position=False,
-        )
-        report = dict(
-            status="validated_pending_approval",
-            spec_hash=SPEC_HASH,
-            protocol=copy.deepcopy(PROTOCOL),
-            final_accessed=True,
-            threshold=0.55,
-            walk_forward=[{}, {}],
-            partitions=dict(development=200, validation=50, final=50),
-            validation=dict(
-                thresholds=[dict(threshold=0.55, result=result)],
-                probability=dict(brier_improvement=0.1),
-            ),
-            final=dict(
-                combined=result,
-                technical=dict(net_pnl=50),
-                timestral=dict(net_pnl=40),
-                probability=dict(brier_improvement=0.1),
-            ),
-            training_period=dict(end=datetime.now(timezone.utc).isoformat()),
-            candidate_version=model["model_id"],
-            lot="0.01",
-            clock_id="synthetic-clock",
-            model_configuration="fixture-config",
-        )
-        report["report_id"] = fingerprint(report)
-        self.record("agent_training_report", report["report_id"], report)
-        self.control.publish(
-            self.state["session_id"],
-            state="AWAITING_APPROVAL",
-            history=dict(clock_id="synthetic-clock"),
-            training=report,
-        )
-        return report
 
-    def test_approval_is_explicit_idempotent_and_bound_to_exact_model(self):
-        report = self.validated_report()
-        self.assertIsNone(
-            approved_version(
-                self.memory,
-                lot="0.01",
-                clock_id="synthetic-clock",
-                configuration="fixture-config",
-            )
-        )
-        request = dict(action="APPROVE", report_id=report["report_id"])
-        key = uuid4().hex
-        result = self.control.command(request, key, actor="synthetic-test")
-        self.assertEqual(result["state"], "QUEUED")
-        self.assertEqual(
-            result, self.control.command(request, key, actor="synthetic-test")
-        )
-        loaded = approved_version(
-            self.memory,
-            lot="0.01",
-            clock_id="synthetic-clock",
-            configuration="fixture-config",
-        )
-        self.assertEqual(loaded["model"]["model_id"], report["candidate_version"])
-        self.assertIsNone(
-            approved_version(
-                self.memory,
-                lot="0.02",
-                clock_id="synthetic-clock",
-                configuration="fixture-config",
-            )
-        )
 
-    def test_rejected_or_mismatched_report_cannot_be_approved(self):
-        self.validated_report()
-        with self.assertRaises(ValueError):
-            self.control.command(
-                dict(action="APPROVE", report_id="wrong"),
-                uuid4().hex,
-                actor="synthetic-test",
-            )
 
-    def test_previous_report_must_belong_to_a_run_of_the_current_session(self):
-        report = dict(run_id="fixture-run",report_id="fixture-report",lot="0.01")
-        self.record("agent_training_report","fixture-report",report)
-        self.assertIsNone(self.control.latest_training_report(self.control.status()))
-        self.control.publish(self.state["session_id"],training=dict(run_id="fixture-run"))
-        self.record("agent_training_report","unrelated-report",dict(run_id="other-run",lot="0.01"))
-        self.assertEqual(self.control.latest_training_report(self.control.status()),report)
 
     def test_autonomous_seed_excludes_validation_and_final_labels(self):
         from aurelia_fx.autonomous_lab import AutonomousLab
@@ -267,14 +189,12 @@ class AgentRegistryTests(unittest.TestCase):
         from http.server import ThreadingHTTPServer
         from http.cookiejar import CookieJar
         import diagnostic_server
-        from aurelia_fx.operator_session import OperatorSessions
 
         class QuietHandler(diagnostic_server.Handler):
             def log_message(self, *args): pass
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
-        server.app = SimpleNamespace(operation=self.control, operator_token="fixture-access",
-                                     operator_sessions=OperatorSessions("fixture-access"))
+        server.app = SimpleNamespace(operation=self.control)
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(thread.join, 3)
@@ -284,6 +204,11 @@ class AgentRegistryTests(unittest.TestCase):
         initial = json.load(client.open(base))
         self.assertTrue(initial["authenticated"])
         self.assertEqual(initial["access_mode"],"single_user")
+        for path in ('/api/diagnostics/platform','/api/diagnostics/platform/command','/api/diagnostics/agent/login','/api/diagnostics/agent/logout'):
+            with self.assertRaises(urllib.error.HTTPError) as retired:
+                client.open(base.split('/api/')[0]+path)
+            self.assertEqual(retired.exception.code,404)
+            retired.exception.close()
 
         def post(path, payload, csrf=initial["csrf"]):
             req = urllib.request.Request(base+path, json.dumps(payload).encode(),
@@ -321,7 +246,7 @@ class AgentRegistryTests(unittest.TestCase):
         context = [SimpleNamespace(timestamp=candle_at, close=1.1)]
         session = SimpleNamespace(last=None, history=context,
             aggregator=SimpleNamespace(history={"D1":[]}),
-            update=lambda *a, **k: SimpleNamespace(snapshot_id="fixture-snapshot"))
+            update=lambda *a, **k: SimpleNamespace(snapshot_id="fixture-snapshot",as_dict=lambda:fixture.setup["snapshot"]))
         repo = SimpleNamespace(candles=lambda **k: [], latest=lambda **k: {})
         version = dict(model=dict(model_id="fixture-model"), report=dict(threshold=0.55),
                        approval=dict(clock_id="clock",valid_until=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()))

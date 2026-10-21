@@ -202,7 +202,6 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
 
     session_id = state["session_id"]
     generation = state["generation"]
-    capture_days = 30
 
     def publish(**changes):
         result = control.publish(session_id, expected_generation=generation, **changes)
@@ -224,11 +223,9 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     def capture(symbol, timeframe, count, *, include_current=False):
         check()
         publish(
-            state="LOADING_HISTORY"
-            if capture_days == 30
-            else "LOADING_RESEARCH_HISTORY",
-            stage="history" if capture_days == 30 else "training",
-            message=f"Atualizando {capture_days} dias de {symbol} em {timeframe}. Os dados válidos existentes serão reutilizados.",
+            state="LOADING_HISTORY",
+            stage="history",
+            message=f"Atualizando 30 dias de {symbol} em {timeframe}. Os dados válidos existentes serão reutilizados.",
             current_timeframe=timeframe,
         )
         return fetch(symbol, timeframe, count, include_current=include_current)
@@ -283,7 +280,7 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         )
     if source["source_clock"].get("profile") != "thinkmarkets-ny-close-v1":
         raise ValueError(
-            "Configure e valide o calendário desta corretora antes do treinamento integrado."
+            "Configure e valide o calendário desta corretora antes da análise."
         )
     publish(
         state="LOADING_HISTORY",
@@ -292,176 +289,42 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         symbol_contract=contract,
         message="Os 30 dias estão preparados. Capturando mais 30 dias anteriores para aquecer a análise sem usar informações futuras.",
     )
-    from aurelia_fx.agent_history import collect_training_history
-    from aurelia_fx.agent_model import PROTOCOL
-    from aurelia_fx.agent_research import build_samples
-    from aurelia_fx.agent_validation import validate
-    from aurelia_fx.forecasting.adapter import TimestralAdapter
     from aurelia_fx.forecasting.config import load_config
 
     config = load_config()
     if not config.enabled or config.revision == "main":
         raise ValueError(
-            "Ative o Timestral com uma revisao imutavel dos pesos antes de treinar."
+            "Ative o Timestral com uma revisão imutável dos pesos antes de analisar."
         )
-    if state.get("execution_profile", "autonomous_paper") in {"autonomous_paper","autonomous_demo"}:
-        from aurelia_fx.autonomous_lab import AutonomousLab
-        from aurelia_fx.agent_live import run_paper
-        mode=state.get('mode','paper')
-        policy=AutonomousLab(config.fingerprint,execution_mode=mode)
-        if mode=='demo':
-            from aurelia_fx.demo_terminal import demo_terminal
-            from aurelia_fx.agent_model import fingerprint
-            with demo_terminal(clock_id=history['clock_id']) as terminal:
-                terminal.check_account()
-                authorization=dict(scope='autonomous_demo_research',real_orders=False,
-                    account_id=terminal.account_id,session_id=session_id,lot=state['lot'],
-                    clock_id=history['clock_id'],protocol_id=policy.protocol_id)
-                authorization['authorization_id']=fingerprint(authorization)
-            old=state.get('demo_authorization')
-            if old and old!=authorization:
-                raise ValueError('A conta demo ou a fonte mudou; autorização anterior preservada.')
-            repository.memory.record_project_data('agent_demo_authorization',authorization['authorization_id'],authorization)
-            publish(demo_authorization=authorization)
-        publish(
-            state="ANALYSIS_WARMUP",stage="analysis",
-            training=dict(status="autonomous_research",active_version=None,
-                          samples=None,partitions=None,validation=None,final=None,
-                          candidate_version=None,report_id=None,final_accessed=False,
-                          protocol_id=policy.protocol_id,reason=None,message="Pesquisa simulada autônoma: hipóteses são selecionadas, executadas e revistas pelo agente. Não há aprovação manual por hipótese."),
-            message="Preparando o laboratório autônomo e a memória histórica do ativo.",
-        )
-        run_paper(control,repository,control.status(),None,fetch,config,worker_id,stop,lease,
-                  research_policy=policy)
-        return
-    from aurelia_fx.agent_registry import approved_version
-
-    version = approved_version(
-        repository.memory,
-        lot=state["lot"],
-        clock_id=baseline["clock_id"],
-        configuration=config.fingerprint,
-    )
-    if version:
-        check()
-        publish(
-            training={
-                **version["report"],
-                "status": "approved",
-                "active_version": version["model"]["model_id"],
-            },
-            approval_id=version["approval"]["approval_id"],
-            history=history,
-            symbol_contract=contract,
-        )
-        from aurelia_fx.agent_live import run_paper
-
-        run_paper(
-            control,
-            repository,
-            control.status(),
-            version,
-            fetch,
-            config,
-            worker_id,
-            stop,
-            lease,
-        )
-        return
-    adapter = TimestralAdapter(config)
-    report = None
-    try:
-        publish(
-            state="CHECKING_MODEL",
-            stage="training",
-            message="Verificando o Timestral local antes da pesquisa historica.",
-        )
-        adapter.warmup()
-        for capture_days in PROTOCOL["research_history_days"]:
-            check()
-            publish(
-                state="LOADING_RESEARCH_HISTORY",
-                stage="training",
-                history=history,
-                message=f"Preparando {capture_days - 30} dias de pesquisa M5 e 30 dias anteriores de aquecimento.",
-                training=dict(
-                    status="preparing_examples",
-                    samples=None,
-                    candidate_version=None,
-                    report_id=None,
-                    partitions=None,
-                    final_accessed=False,
-                    validation=None,
-                    final=None,
-                    reason=None,
-                    message=None,
-                    walk_forward=None,
-                    operational_validation_samples=None,
-                    research_history_days=capture_days,
-                ),
-            )
-            warmup = collect_training_history(
-                repository,
-                capture,
-                days=capture_days,
-                expected_clock_id=baseline["clock_id"],
-            )
-            check()
-            if warmup["status"] != "ready":
-                if report is not None:
-                    report = {**report, "history_extension_unavailable": capture_days}
-                    break
-                publish(
-                    state="INSUFFICIENT_DATA",
-                    stage="history",
-                    history=history,
-                    message="O historico recente foi preparado, mas o arquivo anterior M5 ainda nao tem cobertura suficiente. Carregue mais historico no MT5.",
-                )
-                return
-            frozen, rows = repository.frozen_candles(
-                warmup, record_type="agent_training_history"
-            )
-            dataset, partitions, candles = build_samples(
-                repository.memory,
-                rows,
-                baseline=frozen,
-                lot=state["lot"],
-                contract=contract,
-                forecast_config=config,
-                adapter=adapter,
-                progress=publish,
-                check=check,
-            )
-            report = validate(
-                repository.memory,
-                dataset,
-                partitions,
-                candles,
-                lot=state["lot"],
-                contract=contract,
-                progress=publish,
-                check=check,
-            )
-            if report["status"] != "insufficient_samples":
-                break
-    finally:
-        adapter.close()
-    check()
-    message = {
-        "insufficient_samples": "A simulação histórica terminou, mas ainda não há amostra suficiente para validar o modelo.",
-        "rejected": "O modelo candidato não passou na validação. A operação permanece bloqueada.",
-        "validated_pending_approval": "A versão candidata passou nos critérios para simulação. Revise o relatório antes de aprová-la.",
-    }[report["status"]]
+    from aurelia_fx.autonomous_lab import AutonomousLab
+    from aurelia_fx.agent_live import run_paper
+    mode=state.get('mode','paper')
+    policy=AutonomousLab(config.fingerprint,execution_mode=mode)
+    if mode=='demo':
+        from aurelia_fx.demo_terminal import demo_terminal
+        from aurelia_fx.agent_model import fingerprint
+        with demo_terminal(clock_id=history['clock_id']) as terminal:
+            terminal.check_account()
+            authorization=dict(scope='autonomous_demo_research',real_orders=False,
+                account_id=terminal.account_id,session_id=session_id,lot=state['lot'],
+                clock_id=history['clock_id'],protocol_id=policy.protocol_id)
+            authorization['authorization_id']=fingerprint(authorization)
+        old=state.get('demo_authorization')
+        if old and old!=authorization:
+            raise ValueError('A conta demo ou a fonte mudou; autorização anterior preservada.')
+        repository.memory.record_project_data('agent_demo_authorization',authorization['authorization_id'],authorization)
+        publish(demo_authorization=authorization)
     publish(
-        state="AWAITING_APPROVAL"
-        if report["status"] == "validated_pending_approval"
-        else "TRAINING_BLOCKED",
-        stage="validation",
-        history=history,
-        symbol_contract=contract,
-        training=report,
-        message=message,
+        state="ANALYSIS_WARMUP",stage="analysis",
+        training=dict(status="autonomous_research",active_version=None,
+                      samples=None,partitions=None,validation=None,final=None,
+                      candidate_version=None,report_id=None,final_accessed=False,
+                      protocol_id=policy.protocol_id,reason=None,message="Pesquisa simulada autônoma: hipóteses são selecionadas, executadas e revistas pelo agente. Não há aprovação manual por hipótese."),
+        message="Preparando o laboratório autônomo e a memória histórica do ativo.",
     )
+    run_paper(control,repository,control.status(),None,fetch,config,worker_id,stop,lease,
+              research_policy=policy)
+    return
 
 
 if __name__ == "__main__":

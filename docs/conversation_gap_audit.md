@@ -1,3 +1,5 @@
+> Documento histórico: descreve uma etapa anterior. Para o fluxo ativo, consulte o [README](../README.md) e a [revisão do escopo](REDUCAO_DO_ESCOPO.md). Controles manuais e o painel local antigo foram retirados.
+
 # Auditoria da conversa anexada — 20/10/2026
 
 A proposta anexada foi comparada com o código, e não adotada como nova

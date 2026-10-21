@@ -92,11 +92,14 @@ def main():
                     )
                 with memory.pool.connection() as c:
                     row = c.execute(
-                        """SELECT payload_json::jsonb ->> 'regime' AS regime FROM market_snapshots
-                        WHERE symbol='EURUSD' AND timeframe='M5' AND created_at_utc<=%s
-                        AND payload_json::jsonb -> 'source_clock' ->> 'clock_id'=%s
-                        ORDER BY created_at_utc DESC LIMIT 1""",
-                        (now.isoformat(), clock["clock_id"]),
+                        """SELECT payload_json::jsonb #>> '{technical_snapshot,regime}' AS regime
+                        FROM project_records WHERE record_type IN ('agent_demo_event','agent_paper_event')
+                        AND payload_json::jsonb->>'status'='decision'
+                        AND payload_json::jsonb->>'clock_id'=%s
+                        AND (payload_json::jsonb #>> '{decision,candle}')::timestamptz<=%s
+                        AND (payload_json::jsonb #>> '{decision,candle}')::timestamptz>=%s
+                        ORDER BY recorded_at DESC LIMIT 1""",
+                        (clock["clock_id"],now,now-timedelta(minutes=10)),
                     ).fetchone()
                 result = service.observe(
                     closed,

@@ -1,7 +1,7 @@
 "use strict";
 (() => {
   const $=id=>document.getElementById(id);
-  const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",PREPARING_EXPERIENCES:"Identificando hipóteses de pesquisa",FORECASTING:"Gerando previsões históricas",REPLAYING:"Simulando oportunidades históricas",TRAINING:"Treinamento em andamento",VALIDATING:"Validando a versão candidata",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",RECOVERY_REQUIRED:"Retomada exige revisão",ERROR:"Não foi possível iniciar",INSUFFICIENT_DATA:"Histórico insuficiente",TRAINING_UNAVAILABLE:"Histórico pronto · treinamento pendente",TRAINING_BLOCKED:"Treinamento concluído · operação bloqueada",AWAITING_APPROVAL:"Versão candidata aguarda aprovação"};
+  const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",ERROR:"Aguardando recuperação",INSUFFICIENT_DATA:"Histórico insuficiente"};
   let current=null, csrf="", busy=false, pending=null, chartData=null, polling=false;
   let quotePending=false,chartStale=true;
   const chartCacheKey="aurelia-eurusd-m5-chart-v1";
@@ -9,13 +9,11 @@
   function restoreChart(){try{const cached=JSON.parse(localStorage.getItem(chartCacheKey));if(cached && Date.now()-cached.saved_at>=0 && Date.now()-cached.saved_at<7*86400000 && validChart(cached.data)){chartData=cached.data;showQuote();$("chart-message").textContent="Último gráfico salvo, desatualizado. Aguardando conexão para atualizar.";draw();}}catch{}}
   function validChart(data){return Array.isArray(data?.candles) && data.candles.length>0 && data.candles.every(row=>[row.open,row.high,row.low,row.close].every(p=>Number.isFinite(p)&&p>0)&&Number.isFinite(Date.parse(row.timestamp))) && Number.isFinite(data.quote?.bid) && Number.isFinite(data.quote?.ask) && Number.isFinite(Date.parse(data.quote?.time));}
   function showQuote(){if(!chartData)return;$("quote").textContent=`${chartStale?"Última cotação (desatualizada) · ":""}Compra (ask): ${number(chartData.quote.ask)} · Venda (bid): ${number(chartData.quote.bid)}`;$("chart-time").textContent=`${date(chartData.quote.time)} UTC`;}
-  labels.CHECKING_MODEL="Verificando Timestral";
-  labels.LOADING_RESEARCH_HISTORY="Preparando dados para o treino";
   labels.ANALYSIS_WARMUP="Preparando o contexto ao vivo";
   labels.WAITING_QUOTE="Aguardando fonte válida";
   labels.WAITING_SOURCE="Aguardando conexão com o MT5";
   labels.RECOVERING="Reconectando o agente";
-  const reasonsDecision={INSUFFICIENT_CONTEXT:"Falta contexto para avaliar esta oportunidade.",DAILY_CONTEXT_INSUFFICIENT:"O contexto diário ainda está em preparação.",REGIME_UNKNOWN:"O regime ainda está indefinido.",REGIME_RANGE:"O mercado está lateral; este setup de tendência não é elegível.",REGIME_TRANSITION:"O regime está em transição; o agente aguarda clareza.",OUTSIDE_SESSION:"Fora das sessões permitidas para novas entradas.",CONTEXT_TREND_UNRESOLVED:"A direção do contexto ainda não foi confirmada.",INVALIDATING_EVIDENCE:"Há evidência que invalida a oportunidade.",NONCONTIGUOUS_TRIGGER:"Faltam candles contíguos para confirmar o gatilho.",SPREAD_UNAVAILABLE_OR_HIGH:"Spread indisponível ou acima do limite.",VOLATILITY_UNAVAILABLE:"Ainda não foi possível medir a volatilidade.",WAITING_PULLBACK_TRIGGER:"Aguardando correção e fechamento que confirme o gatilho.",STOP_TOO_NARROW:"A distância do stop é insuficiente para a volatilidade e os custos.",HISTORY_NOT_READY:"O histórico mensal precisa ser atualizado antes de abrir operações.",MODEL_APPROVAL_EXPIRED:"A aprovação do modelo expirou. Encerre e inicie para preparar uma nova versão.",SIGNAL_TOO_OLD:"A oportunidade já passou; o agente aguardará um novo candle.",POSITION_ALREADY_OPEN:"Uma posição já está sendo acompanhada.",PRICE_MOVED_OUTSIDE_FROZEN_LEVELS:"O preço mudou e invalidou os níveis da proposta.",FIXED_LOT_EXCEEDS_RISK_BUDGET:"O lote escolhido excede o limite de risco para este stop.",NET_RISK_REWARD_TOO_LOW:"A relação retorno/risco após custos ficou abaixo do mínimo.",DAILY_TRADE_LIMIT:"Limite diário de operações atingido.",DAILY_LOSS_LIMIT:"Limite diário de perda atingido.",DRAWDOWN_LIMIT:"Limite de queda da conta simulada atingido.",SPREAD_LIMIT:"Spread acima do limite.",SESSION_NOT_AUTHORIZED:"A sessão atual não permite novas entradas."};
+  const reasonsDecision={INSUFFICIENT_CONTEXT:"Falta contexto para avaliar esta oportunidade.",DAILY_CONTEXT_INSUFFICIENT:"O contexto diário ainda está em preparação.",REGIME_UNKNOWN:"O regime ainda está indefinido.",REGIME_RANGE:"O mercado está lateral; este setup de tendência não é elegível.",REGIME_TRANSITION:"O regime está em transição; o agente aguarda clareza.",OUTSIDE_SESSION:"Fora das sessões permitidas para novas entradas.",CONTEXT_TREND_UNRESOLVED:"A direção do contexto ainda não foi confirmada.",INVALIDATING_EVIDENCE:"Há evidência que invalida a oportunidade.",NONCONTIGUOUS_TRIGGER:"Faltam candles contíguos para confirmar o gatilho.",SPREAD_UNAVAILABLE_OR_HIGH:"Spread indisponível ou acima do limite.",VOLATILITY_UNAVAILABLE:"Ainda não foi possível medir a volatilidade.",WAITING_PULLBACK_TRIGGER:"Aguardando correção e fechamento que confirme o gatilho.",STOP_TOO_NARROW:"A distância do stop é insuficiente para a volatilidade e os custos.",HISTORY_NOT_READY:"O histórico mensal precisa ser atualizado antes de abrir operações.",SIGNAL_TOO_OLD:"A oportunidade já passou; o agente aguardará um novo candle.",POSITION_ALREADY_OPEN:"Uma posição já está sendo acompanhada.",PRICE_MOVED_OUTSIDE_FROZEN_LEVELS:"O preço mudou e invalidou os níveis da proposta.",FIXED_LOT_EXCEEDS_RISK_BUDGET:"O lote escolhido excede o limite de risco para este stop.",NET_RISK_REWARD_TOO_LOW:"A relação retorno/risco após custos ficou abaixo do mínimo.",DAILY_TRADE_LIMIT:"Limite diário de operações atingido.",DAILY_LOSS_LIMIT:"Limite diário de perda atingido.",DRAWDOWN_LIMIT:"Limite de queda da conta simulada atingido.",SPREAD_LIMIT:"Spread acima do limite.",SESSION_NOT_AUTHORIZED:"A sessão atual não permite novas entradas."};
   const decisionReason=value=>String(value || "").split(", ").map(code=>reasonsDecision[code] || code).join(" ");
   const date=value=>value?new Date(value).toLocaleString("pt-BR",{timeZone:"UTC",hour12:false}):"—";
   const number=value=>typeof value==="number"?value.toLocaleString("pt-BR",{maximumFractionDigits:5}):"—";
@@ -44,7 +42,7 @@
     $("account-basis").textContent=current.mode==="demo"?"Resultados confirmados pelo MT5 Demo, com comissão e swap. Saldo e equidade são os da corretora.":"Simulador local: preenchimentos estimados por cotações observadas; não são negócios enviados ao MT5.";
     if(!terminal && current.lot)$("lot").value=current.lot;
     if(current.symbol_contract){$("lot").min=current.symbol_contract.volume_min;$("lot").max=current.symbol_contract.volume_max;$("lot").step=current.symbol_contract.volume_step;}
-    const stages=["connection","history","training","validation","analysis"],index=stages.indexOf(current.stage);
+    const stages=["connection","history","analysis"],index=stages.indexOf(current.stage);
     for(const step of $("steps").children){const i=stages.indexOf(step.dataset.stage);step.classList.toggle("current",i===index);step.classList.toggle("done",index>=0 && i<index);}
     const history=current.history;
     $("history-info").textContent=history?`Histórico: ${date(history.start)} a ${date(history.end)} UTC · ${Object.values(history.bars).reduce((a,b)=>a+b,0).toLocaleString("pt-BR")} candles nos períodos exigidos.`:"O histórico será verificado ao iniciar.";
@@ -60,38 +58,19 @@
     }
     const reward=current.autonomy?.last_result;
     $("last-learning").textContent=reward?`Último resultado usado na pesquisa: ${number(reward.net_pnl)} USD. ${reward.net_pnl>0?"Evidência favorável registrada neste contexto.":"A próxima seleção priorizará outra hipótese elegível."}`:"Aguardando o primeiro resultado observado. Ganhos e perdas atualizam evidências; um único resultado não comprova uma estratégia.";
-    $("approve").hidden=true;
-    $("approve").disabled=busy || current.state!=="AWAITING_APPROVAL";
-    $("approval-note").hidden=true;
-    $("model-version").textContent=autonomous?"Seleção autônoma por contexto":training?.active_version || "Nenhuma versão aprovada";
-    $("samples").textContent=autonomous?(current.autonomy?.historical_samples ?? "Preparando memória"):training?.samples===null || training?.samples===undefined?"Ainda não calculadas":training.samples.toLocaleString("pt-BR");
-    $("training-state").textContent=({autonomous_research:"Pesquisa aut\u00f4noma ativa",not_implemented:"Treinamento integrado em implementação",running:"Em treinamento",preparing_examples:"Identificando hipóteses",forecasting:"Gerando previsões Timestral",replaying:"Simulando oportunidades",validating:"Em validação",validated_pending_approval:"Versão candidata aguarda aprovação",approved:"Versão validada",rejected:"Versão reprovada",insufficient_samples:"Amostra insuficiente"})[training?.status] || "Aguardando preparação";
-    $("training-progress").textContent=training?.processed_bars!==undefined && ["preparing_examples","forecasting","replaying"].includes(training.status)?`Arquivo de pesquisa: ${training.research_history_days || "—"} dias, incluindo 30 dias de aquecimento. ${number(training.processed_bars)} de ${number(training.total_bars)} candles percorridos; ${number(training.candidates)} hipóteses identificadas. Hipóteses ainda não equivalem a operações encerradas ou amostras aprovadas.`:training?.training_period?`Pesquisa: ${date(training.training_period.start)} a ${date(training.training_period.end)} UTC. ${training.operational_validation_samples!==undefined && training.operational_validation_samples!==null?`${training.operational_validation_samples} oportunidades elegíveis na validação; mínimo de 20 operações para avaliar o resultado.`:""}`:"";
-    const reasons={INSUFFICIENT_DEVELOPMENT_OR_VALIDATION_SAMPLES:"Ainda faltam experiências completas nos períodos de desenvolvimento ou validação.",INSUFFICIENT_DEVELOPMENT_SAMPLES_OR_CLASSES:"O treino exige mais operações encerradas e exemplos de ganhos e perdas.",INSUFFICIENT_CALIBRATION_CLASSES:"Faltam ganhos e perdas no período separado para calibrar o modelo.",INSUFFICIENT_WALK_FORWARD_SAMPLES:"A amostra ainda não permite repetir o ajuste e a avaliação em janelas posteriores.",INSUFFICIENT_OPERATIONAL_VALIDATION_SAMPLES:"O modelo foi pesquisado, mas faltam oportunidades operacionalmente elegíveis no período de validação.",NO_VALIDATED_INCREMENTAL_ADVANTAGE:"O modelo não demonstrou melhoria suficiente na validação após custos.",INSUFFICIENT_FINAL_SAMPLES:"Ainda faltam exemplos no período final reservado.",FINAL_EVALUATION_REJECTED:"A versão não cumpriu os critérios no teste final.",PAPER_VERSION_REQUIRES_EXPLICIT_APPROVAL:"A versão é candidata à simulação. Ela ainda não foi aprovada pelo operador."};
-    $("training-detail").textContent=(training?.candidate_version?"Filtro candidato ajustado. ":"")+(training?.message || reasons[training?.reason] || "A disponibilidade de histórico ou previsões isoladas não significa que o treinamento integrado foi concluído.");
-    const previous=data.last_training_report;
-    $("last-research").textContent=!autonomous && previous && previous.report_id!==training?.report_id?`Última pesquisa concluída: ${previous.training_period?.days || "—"} dias de pesquisa, além de 30 dias de aquecimento; ${previous.samples} experiências encerradas. ${previous.candidate_version?"O filtro foi ajustado, mas ainda não foi aprovado.":"O ajuste ainda não pôde ser concluído."} ${typeof previous.operational_validation_samples==="number"?`${previous.operational_validation_samples} oportunidades operacionalmente elegíveis na validação; mínimo de 20 operações. `:""}${reasons[previous.reason] || ""} O processamento atual usa a janela indicada acima.`:"";
-    $("training-metrics").replaceChildren();
-    if(training?.partitions){
-      const counts=document.createElement("p");counts.textContent=`Experiências: ${training.partitions.development} em desenvolvimento, ${training.partitions.validation} em validação e ${training.partitions.final} no período final. ${training.partitions.purged} excluídas por cruzar os limites temporais.`;$("training-metrics").append(counts);
-      const reserved=document.createElement("p");reserved.className="muted";reserved.textContent=training.final_accessed?"O teste final foi consultado para esta versão; novos ajustes precisam de uma nova avaliação independente.":"O resultado do teste final permanece reservado.";$("training-metrics").append(reserved);
-    }
-    const comparison=training?.final;
-    if(comparison){
-      const table=document.createElement("table"),head=document.createElement("tr");
-      for(const title of ["Teste final","Operações","Resultado líquido (USD)","Maior queda (%)"]){const th=document.createElement("th");th.textContent=title;head.append(th);}const thead=document.createElement("thead");thead.append(head);table.append(thead);
-      const body=document.createElement("tbody");for(const [key,label] of [["technical","Técnico"],["timestral","Filtro Timestral"],["combined","Modelo conjunto"]]){const result=comparison[key];if(!result)continue;const row=document.createElement("tr");for(const value of [label,result.closed_trades,number(result.net_pnl),number(result.max_close_equity_drawdown_pct)]){const td=document.createElement("td");td.textContent=value;row.append(td);}body.append(row);}table.append(body);$("training-metrics").append(table);
-    }
+    $("model-version").textContent="Seleção autônoma por contexto";
+    $("samples").textContent=current.autonomy?.historical_samples ?? "Preparando memória";
+    $("training-state").textContent=training?.status==="autonomous_research"?"Pesquisa autônoma ativa":"Aguardando preparação";
+    $("training-detail").textContent="A memória combina experiências históricas de desenvolvimento com resultados novos da sessão. Isso não altera os pesos do Timestral nem comprova lucratividade.";
     const decision=current.last_decision;
     $("decision-action").textContent=decision?({BUY:"Comprar",SELL:"Vender",WAIT:"Aguardar",NO_TRADE:"Aguardar"}[decision.action] || decision.action):"Nenhuma decisão operacional";
-    $("decision-reason").textContent=decisionReason(decision?.reason) || "O agente precisa concluir a preparação e ter uma versão validada.";
+    $("decision-reason").textContent=decisionReason(decision?.reason) || "Escolha o lote e inicie o agente para preparar o contexto.";
     if(autonomous && !decision)$("decision-reason").textContent="Preparando contexto ou aguardando um gatilho para testar uma hipótese automaticamente.";
     for(const [id,key] of [["entry","entry"],["stop-price","stop"],["target","target"],["risk","risk"]])$(id).textContent=number(decision?.[key]);
     $("position").textContent=current.position?`${current.position.side==="long"?"Compra":"Venda"} · lote ${current.position.lot} · entrada ${number(current.position.entry)} · ${date(current.position.entry_at)} UTC`:"Nenhuma posição registrada nesta sessão.";
     $("pnl-today").textContent=number(current.account?.realized_today);
     $("pnl-open").textContent=number(current.account?.unrealized_pnl);
     $("closed-trades").textContent=current.account?.closed_trades ?? "—";
-    $("decision-score").textContent=typeof decision?.probability==="number"?`Estimativa do modelo para resultado positivo: ${(100*decision.probability).toFixed(1)}% · limiar exigido: ${(100*decision.threshold).toFixed(1)}%. Não é garantia de acerto.`:"";
     $("decision-time").textContent=decision?`Decisão: ${date(decision.at)} UTC · candle de referência: ${date(decision.candle)} UTC`:"";
     draw();
     $("updated").textContent=`Estado registrado: ${date(current.updated_at)} UTC`;
@@ -100,13 +79,12 @@
   async function command(action){
     if(busy)return;
     busy=true;
-    const payload={action,mode:action==="START"?$("execution-mode").value:(current.mode || "paper"),...(action==="START"?{lot:$("lot").value}:{}),...(action==="APPROVE"?{report_id:current.training.report_id}:{})},signature=JSON.stringify(payload);
+    const payload={action,mode:action==="START"?$("execution-mode").value:(current.mode || "paper"),...(action==="START"?{lot:$("lot").value}:{})},signature=JSON.stringify(payload);
     if(!pending || pending.signature!==signature)pending={signature,key:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,"0")).join("")};
     for(const id of ["start","pause","resume","stop"])$(id).disabled=true;
     try{await api("/command",payload,pending.key);pending=null;error("");}catch(e){error(e.message);}finally{busy=false;await refresh();}
   }
   for(const [id,action] of [["start","START"],["pause","PAUSE"],["resume","RESUME"],["stop","STOP"]])$(id).onclick=()=>command(action);
-  $("approve").onclick=()=>command("APPROVE");
   async function quote(){
     if(quotePending)return;quotePending=true;
     const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),12000);

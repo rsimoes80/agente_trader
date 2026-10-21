@@ -1,3 +1,5 @@
+> Documento histórico: descreve uma etapa anterior. Para o fluxo ativo, consulte o [README](../README.md) e a [revisão do escopo](REDUCAO_DO_ESCOPO.md). Controles manuais e o painel local antigo foram retirados.
+
 # Implementação do plano operacional — em andamento
 
 Objetivo integral: executar o [plano aprovado](PLANO_OPERACIONAL_E_TREINAMENTO.md),

@@ -84,26 +84,12 @@ class OperationControl:
         with self.memory.pool.connection() as c:
             return self.latest(c)
 
-    def latest_training_report(self, state):
-        if not state.get("session_id"):
-            return None
-        with self.memory.pool.connection() as c:
-            row = c.execute("""SELECT report.payload_json FROM project_records report
-                WHERE report.record_type='agent_training_report'
-                AND report.payload_json::jsonb ->> 'lot'=%s
-                AND EXISTS (SELECT 1 FROM project_records event
-                    WHERE event.record_type='agent_operation_state'
-                    AND event.payload_json::jsonb ->> 'session_id'=%s
-                    AND event.payload_json::jsonb #>> '{training,run_id}' = report.payload_json::jsonb ->> 'run_id')
-                ORDER BY report.recorded_at DESC LIMIT 1""",
-                (state["lot"],state["session_id"])).fetchone()
-        return json.loads(row["payload_json"]) if row else None
 
     def command(self, payload, key, *, actor):
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{16,128}", key):
             raise ValueError("Identificador de comando inválido. Atualize a página.")
         action = payload.get("action")
-        if action not in {"START", "PAUSE", "RESUME", "STOP", "APPROVE"}:
+        if action not in {"START", "PAUSE", "RESUME", "STOP"}:
             raise ValueError("Comando inválido.")
         mode=payload.get("mode", "paper")
         if mode not in {"paper","demo"}:
@@ -112,8 +98,6 @@ class OperationControl:
             )
         lot = validate_lot(payload.get("lot")) if action == "START" else None
         request = dict(action=action, lot=lot, mode=mode, actor=actor)
-        if action == "APPROVE":
-            request["report_id"] = str(payload.get("report_id", ""))
         fingerprint = hashlib.sha256(
             json.dumps(request, sort_keys=True).encode()
         ).hexdigest()
@@ -177,22 +161,6 @@ class OperationControl:
                             position=None,
                         ),
                     )
-            elif action == "APPROVE":
-                from .agent_registry import approve
-
-                approval = approve(c, self.memory, state, request["report_id"], actor)
-                state = self.append(
-                    c,
-                    {
-                        **state,
-                        "sequence": state["sequence"] + 1,
-                        "generation": state.get("generation", 1) + 1,
-                        "desired": "running",
-                        "state": "QUEUED",
-                        "approval_id": approval["approval_id"],
-                        "message": "Versão aprovada para simulação. Verificando os dados antes de iniciar.",
-                    },
-                )
             else:
                 if not state.get("session_id") or state["state"] in TERMINAL:
                     raise ValueError("Não há sessão ativa para este comando.")
