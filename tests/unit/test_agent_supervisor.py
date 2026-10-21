@@ -3,15 +3,36 @@ import unittest
 import subprocess
 import sys
 import time
+import socket
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from run_agent_supervisor import ProgressClock,supervise_once
+from run_agent_supervisor import ProgressClock,supervise_once,reap_verified_orphan,ROOT
 from run_agent import recovery_changes,retry_due,autonomous_session
 from datetime import datetime,timedelta,timezone
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_orphan_recovery_requires_stale_receipt_and_exact_process_identity(self):
+        heartbeat=dict(pid=123,host=socket.gethostname(),process_created_at=123.5)
+        worker=Mock()
+        worker.create_time.return_value=123.5
+        worker.cwd.return_value=str(ROOT)
+        worker.cmdline.return_value=[sys.executable,str(ROOT/'run_agent.py')]
+        worker.children.return_value=[]
+        factory=Mock(return_value=worker)
+        self.assertFalse(reap_verified_orphan(heartbeat,599,600,process_factory=factory))
+        factory.assert_not_called()
+        self.assertFalse(reap_verified_orphan({**heartbeat,'host':'other-host'},700,600,process_factory=factory))
+        self.assertFalse(reap_verified_orphan({**heartbeat,'process_created_at':124},700,600,process_factory=factory))
+        worker.kill.assert_not_called()
+        worker.cmdline.return_value=[sys.executable,'unrelated_project.py']
+        self.assertFalse(reap_verified_orphan(heartbeat,700,600,process_factory=factory))
+        worker.kill.assert_not_called()
+        worker.cmdline.return_value=[sys.executable,str(ROOT/'run_agent.py')]
+        self.assertTrue(reap_verified_orphan(heartbeat,700,600,process_factory=factory))
+        worker.kill.assert_called_once()
+
     def test_real_unresponsive_fixture_process_is_terminated(self):
         created=[]
         def popen(_args,**kwargs):

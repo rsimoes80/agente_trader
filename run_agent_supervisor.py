@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import json
+import socket
 from pathlib import Path
 import subprocess
 import sys
@@ -55,6 +57,41 @@ def kill_owned_tree(process):
     process.wait(timeout=15)
 
 
+def reap_verified_orphan(heartbeat,age,limit,*,process_factory=None):
+    """An interrupted supervisor may leave a worker holding the database lease."""
+    if age is None or age<limit or heartbeat.get('host')!=socket.gethostname():return False
+    if not heartbeat.get('pid') or not heartbeat.get('process_created_at'):return False
+    import psutil
+    try:
+        worker=(process_factory or psutil.Process)(int(heartbeat['pid']))
+        if worker.create_time()!=heartbeat['process_created_at']:return False
+        if Path(worker.cwd()).resolve()!=ROOT:return False
+        if not any(Path(arg).resolve()==ROOT/'run_agent.py' for arg in worker.cmdline()[1:] if arg.endswith('run_agent.py')):return False
+        for child in reversed(worker.children(recursive=True)):
+            try:child.kill()
+            except psutil.NoSuchProcess:pass
+        worker.kill()
+        worker.wait(timeout=15)
+        print('Agent watchdog: verified orphan worker stalled; restarting for reconciliation.',flush=True)
+        return True
+    except psutil.NoSuchProcess:return False
+
+
+def recover_orphan():
+    import psycopg
+    from psycopg.rows import dict_row
+    sys.path.insert(0,str(ROOT/'src'))
+    from aurelia_fx.storage import database_url
+    with psycopg.connect(database_url(),connect_timeout=5,autocommit=True,row_factory=dict_row,
+                         options='-c statement_timeout=5000',keepalives=1,keepalives_idle=5,
+                         keepalives_interval=2,keepalives_count=3,tcp_user_timeout=10000) as c:
+        row=c.execute("""SELECT payload_json,
+            EXTRACT(EPOCH FROM (clock_timestamp()-recorded_at)) AS age
+            FROM project_records WHERE record_type='agent_worker_heartbeat'
+            ORDER BY recorded_at DESC LIMIT 1""").fetchone()
+    if row:reap_verified_orphan(json.loads(row['payload_json']),float(row['age']),stall_limit())
+
+
 def supervise_once(*,limit=None,popen=subprocess.Popen,clock_factory=ProgressClock,
                    sleep=time.sleep,kill=kill_owned_tree):
     progress=clock_factory()
@@ -85,7 +122,9 @@ def supervise_once(*,limit=None,popen=subprocess.Popen,clock_factory=ProgressClo
 
 def main():
     while True:
-        try:supervise_once()
+        try:
+            supervise_once()
+            recover_orphan()
         except Exception as exc:
             # No exception text: connection strings must never reach this log.
             print('Agent supervisor recovery:',type(exc).__name__,flush=True)

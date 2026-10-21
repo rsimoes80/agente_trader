@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -267,12 +268,15 @@ class OperationControl:
             )
 
     def heartbeat(self, worker_id):
+        import psutil
         self.memory.record_project_data(
             "agent_worker_heartbeat",
             worker_id,
             dict(
                 worker_id=worker_id,
                 at=datetime.now(timezone.utc).isoformat(),
+                pid=os.getpid(),host=socket.gethostname(),
+                process_created_at=psutil.Process().create_time(),
                 mode="paper",
             ),
         )

@@ -20,6 +20,9 @@ a sessão: o agente permanece aguardando e verificando as condições.
    reinício. Falta de progresso por dez minutos aciona reciclagem somente da
    árvore do processo filho do projeto. O limite aumenta quando os tempos
    configurados de carga/inferência do modelo exigirem mais tempo.
+   Se uma interrupção deixar um worker órfão com o lock, a recuperação exige
+   heartbeat atrasado e correspondência de máquina, PID, criação do processo,
+   diretório e comando do projeto. Um worker saudável ou processo alheio não é encerrado.
 5. `run_agent.ps1` relança o supervisor se ele falhar. A tarefa do Windows possui
    duração ilimitada, início no login e verificação a cada minuto, sem duplicar
    instâncias. O lock PostgreSQL impede dois workers com posse simultânea.
