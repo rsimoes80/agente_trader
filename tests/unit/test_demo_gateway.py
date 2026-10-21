@@ -64,6 +64,15 @@ class GatewayTests(DemoIntentTests):
             self.assertEqual(again['status'],'UNCERTAIN')
             self.assertEqual(len(self.sent),1)
 
+    def test_sent_intent_without_checkpoint_is_detected_even_when_stopped(self):
+        from aurelia_fx.agent_live import demo_recovery_required
+        gateway=self.gateway()
+        with gateway.journal.locked() as scope:
+            gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+        state={**self.control.status(),'demo_authorization':self.auth,'desired':'stopped','position':None}
+        self.assertTrue(demo_recovery_required(self.control,state))
+        self.assertEqual(len(self.sent),1)
+
     def test_missing_native_stop_is_marked_unprotected(self):
         gateway=self.gateway()
         with gateway.journal.locked() as scope:

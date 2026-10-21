@@ -29,6 +29,12 @@ class AgentSourceRetryTests(unittest.TestCase):
         self.assertFalse(retry_due({**state,"state":"ERROR"},now+timedelta(minutes=1)))
 
     def test_worker_retries_source_without_creating_another_session(self):
+        self.run_worker_recovery(RecoverableSourceError('fixture MT5 offline'),'WAITING_SOURCE')
+
+    def test_worker_retries_unexpected_timeout_without_new_session_or_approval(self):
+        self.run_worker_recovery(TimeoutError('fixture timeout'),'RECOVERING')
+
+    def run_worker_recovery(self,error,waiting_state):
         import run_agent
         state = dict(session_id="fixture-session",state="QUEUED",desired="running",generation=1)
         transitions=[]
@@ -49,20 +55,20 @@ class AgentSourceRetryTests(unittest.TestCase):
         attempts=[]
         def prepare(*args):
             attempts.append(args[2]["session_id"])
-            if len(attempts)==1:raise RecoverableSourceError("fixture MT5 offline")
+            if len(attempts)==1:raise error
             publish("fixture-session",state="TRAINING_BLOCKED")
         with TemporaryDirectory() as directory, ExitStack() as patches:
             root=Path(directory);(root/"data").mkdir()
             patches.enter_context(patch.dict(sys.modules,{"mt5_provider":SimpleNamespace(fetch_history=Mock())}))
             for name,value in {"ROOT":root,"open_memory":lambda:memory,"OperationControl":lambda m:control,
                                "HistoricalRepository":Mock(),"prepare":prepare,
-                               "retry_due":lambda s:s["state"]=="WAITING_SOURCE"}.items():
+                               "retry_due":lambda s:s["state"] in {'WAITING_SOURCE','RECOVERING'}}.items():
                 patches.enter_context(patch.object(run_agent,name,value))
             patches.enter_context(patch.object(run_agent.threading,"Event",Stop))
             patches.enter_context(patch.object(run_agent.signal,"signal"))
             self.assertEqual(run_agent.main(),0)
             self.assertFalse((root/"data/agent.pid").exists())
         self.assertEqual(attempts,["fixture-session","fixture-session"])
-        self.assertEqual(transitions,["QUEUED","WAITING_SOURCE","QUEUED","TRAINING_BLOCKED"])
+        self.assertEqual(transitions,["QUEUED",waiting_state,"QUEUED","TRAINING_BLOCKED"])
         self.assertEqual(state["desired"],"running")
         memory.close.assert_called_once()

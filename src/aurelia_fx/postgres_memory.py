@@ -60,6 +60,11 @@ class PostgresMemory(ExperienceMemory):
             kwargs={
                 "row_factory": dict_row,
                 "connect_timeout": 10,
+                "keepalives": 1,
+                "keepalives_idle": 15,
+                "keepalives_interval": 5,
+                "keepalives_count": 3,
+                "tcp_user_timeout": 30000,
                 "application_name": "agente_trader",
                 "autocommit": True,
             },

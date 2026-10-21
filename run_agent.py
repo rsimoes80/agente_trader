@@ -42,9 +42,24 @@ def guarded_fetch(fetch, *args, **kwargs):
 
 
 def retry_due(state, now=None):
-    if state.get("state") != "WAITING_SOURCE" or state.get("desired") != "running":
+    if state.get("state") not in {"WAITING_SOURCE","RECOVERING","INSUFFICIENT_DATA"} or state.get("desired") != "running":
         return False
+    if state['state']=='INSUFFICIENT_DATA' and not autonomous_session(state):return False
+    if not state.get('retry_after'):return False
     return (now or datetime.now(timezone.utc)) >= datetime.fromisoformat(state["retry_after"])
+
+
+def autonomous_session(state):
+    return (state.get('execution_profile') or 'autonomous_'+state.get('mode','paper')) in {'autonomous_paper','autonomous_demo'}
+
+
+def recovery_changes(state,exc,*,now=None):
+    attempt=state.get('recovery_attempts',0)+1
+    delay=min(300,10*2**min(attempt-1,5))
+    return dict(state='RECOVERING',stage='connection',recovery_attempts=attempt,
+                retry_after=((now or datetime.now(timezone.utc))+timedelta(seconds=delay)).isoformat(),
+                error_type=type(exc).__name__,
+                message=f'Falha temporária na execução ({type(exc).__name__}). Sessão preservada; nova tentativa automática em {delay} segundos.')
 
 
 def main():
@@ -69,9 +84,11 @@ def main():
                 return 0
             pid_path.write_text(str(os.getpid()), encoding="ascii")
             initial = control.status()
-            autonomous = initial.get("execution_profile","autonomous_paper") in {"autonomous_paper","autonomous_demo"}
+            autonomous = autonomous_session(initial)
             if initial.get("session_id") and autonomous and initial["desired"] == "running" and initial["state"] != "STOPPED":
-                control.publish(initial["session_id"],state="QUEUED",execution_profile=initial.get('execution_profile','autonomous_paper'),
+                control.publish(initial["session_id"],expected_desired='running',
+                                expected_generation=initial.get('generation'),state="QUEUED",error_type=None,
+                                execution_profile=initial.get('execution_profile') or 'autonomous_'+initial.get('mode','paper'),
                                 message="Retomada automática: reconciliando a sessão e a memória do agente.")
             elif initial.get("session_id") and not autonomous and initial["state"] not in TERMINAL | {
                 "QUEUED"
@@ -90,8 +107,8 @@ def main():
                     last_heartbeat = time.monotonic()
                 state = control.status()
                 session_id = state.get("session_id")
-                if session_id and (state.get("position") or state.get('pending_execution')):
-                    from aurelia_fx.agent_live import management_tick
+                from aurelia_fx.agent_live import management_tick,demo_recovery_required
+                if session_id and (state.get("position") or state.get('pending_execution') or demo_recovery_required(control,state)):
 
                     try:
                         management_tick(control, fetch_history, state, worker_id)
@@ -155,14 +172,14 @@ def main():
                     except Exception as exc:
                         if lease.closed:
                             raise
+                        changes=recovery_changes(state,exc) if autonomous_session(state) else dict(
+                            state='ERROR',stage='error',error_type=type(exc).__name__,
+                            message='Não foi possível preparar o agente: '+str(exc)[:220])
                         control.publish(
                             session_id,
                             expected_generation=state.get("generation"),
-                            state="ERROR",
-                            stage="error",
-                            error_type=type(exc).__name__,
-                            message="Não foi possível preparar o agente: "
-                            + str(exc)[:220],
+                            expected_desired='running',
+                            **changes,
                         )
                         print(
                             "Agent preparation failed:", type(exc).__name__, flush=True
@@ -220,6 +237,7 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     publish(
         state="CONNECTING",
         stage="connection",
+        error_type=None,
         message="Conectando ao MT5 e verificando o lote do EUR/USD.",
     )
     source = fetch("EURUSD", "M5", 100, include_current=False)
@@ -253,6 +271,7 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         publish(
             state="INSUFFICIENT_DATA",
             stage="history",
+            retry_after=(datetime.now(timezone.utc)+timedelta(seconds=60)).isoformat(),
             history=history,
             message="O histórico foi capturado, mas ainda não atende à qualidade exigida: "
             + str(baseline["blocker"]),

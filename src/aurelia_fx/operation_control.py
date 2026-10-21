@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -275,6 +276,8 @@ class OperationControl:
                 mode="paper",
             ),
         )
+        if os.environ.get('AURELIA_AGENT_SUPERVISED')=='1':
+            print('AFX_AGENT_PROGRESS:'+worker_id,flush=True)
 
     def worker_status(self):
         with self.memory.pool.connection() as c:

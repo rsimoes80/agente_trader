@@ -122,6 +122,8 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 **state,
                 **view,
                 "sequence": state["sequence"] + 1,
+                "recovery_attempts":0,
+                "error_type":None,
                 "state": target,
                 "stage": "analysis",
                 "message": view.get("message", message),
@@ -139,7 +141,8 @@ def commit(control, account, worker_id, *, generation=None, **view):
 
 def management_tick(control, fetch, state, worker_id):
     saved = checkpoint(control, state["session_id"])
-    if not saved or not (saved.get("position") or saved.get('pending_execution')):
+    native=state.get('mode')=='demo' and bool(state.get('demo_authorization'))
+    if not native and (not saved or not (saved.get("position") or saved.get('pending_execution'))):
         if state.get("position"):
             raise ValueError(
                 "Checkpoint da posição ausente. A posição não será descartada."
@@ -147,7 +150,7 @@ def management_tick(control, fetch, state, worker_id):
         return False
     if not claim(control, state["session_id"], worker_id):
         return True
-    account = make_account(control,state,saved=saved) if saved.get('execution_mode')=='demo' else PaperAccount(
+    account = make_account(control,state,saved=saved) if native else PaperAccount(
         state["session_id"],
         state["lot"],
         state["symbol_contract"],
@@ -157,7 +160,7 @@ def management_tick(control, fetch, state, worker_id):
         research_mode=saved.get("research_mode",False),
     )
     data = fetch("EURUSD", "M5", 100, include_current=True)
-    quote = observed_quote(data, clock_id=saved["clock_id"])
+    quote = observed_quote(data, clock_id=account.data["clock_id"])
     current = control.status()
     account.mark(
         quote, force_close="OPERATOR_STOP" if current["desired"] == "stopped" else None
@@ -184,6 +187,26 @@ def make_account(control,state,*,saved=None):
                              previous_account=None if saved else project_account(control,'DEMO:'+auth['account_id']))
 
 
+def demo_recovery_required(control,state):
+    """Find accepted sends even if the process died before its first checkpoint."""
+    auth=state.get('demo_authorization')
+    if state.get('mode')!='demo' or not auth:return False
+    with control.memory.pool.connection() as c:
+        row=c.execute("""SELECT 1 FROM (
+            SELECT DISTINCT ON (record_key) record_key,payload_json::jsonb AS p
+            FROM project_records WHERE record_type='agent_demo_intent'
+            AND payload_json::jsonb #>> '{owner,account_id}'=%s
+            AND payload_json::jsonb #>> '{owner,session_id}'=%s
+            ORDER BY record_key,(payload_json::jsonb->>'sequence')::bigint DESC
+            ) latest WHERE NOT (p #> '{request,broker}' ? 'position')
+            AND (p->>'status' NOT IN ('CLOSED','REJECTED','CANCELLED')
+            OR (p->>'status'='CLOSED' AND NOT EXISTS (
+                SELECT 1 FROM project_records applied WHERE applied.record_type='agent_demo_applied'
+                AND applied.record_key=latest.record_key||':closed'))) LIMIT 1""",
+            (auth['account_id'],state['session_id'])).fetchone()
+    return bool(row)
+
+
 def run_paper(
     control, repository, state, version, fetch, config, worker_id, stop, lease,
     *, research_policy=None,
@@ -207,9 +230,13 @@ def run_paper(
     threshold = version["report"]["threshold"] if version else None
     if research_policy and (account.data["lab_state"].get("protocol_id") != research_policy.protocol_id
                             or not account.data["lab_state"].get("seed_complete")):
-        account.data["lab_state"] = research_policy.seed(control.memory,
+        seeded = research_policy.seed(control.memory,
             clock_id=account.data["clock_id"],configuration=config.fingerprint,
             as_of=datetime.now(timezone.utc))
+        if account.data['lab_state'].get('protocol_id')==research_policy.protocol_id:
+            for key in ('live','last_result','last_failed','excluded_uncertain'):
+                if key in account.data['lab_state']:seeded[key]=account.data['lab_state'][key]
+        account.data['lab_state']=seeded
     if research_policy:
         control.publish(session_id,expected_generation=state.get("generation"),
                         autonomy=research_policy.summary(account.data["lab_state"]))
@@ -470,7 +497,7 @@ def run_paper(
                     ):
                         return
                     last_persist = time.monotonic()
-            except (RuntimeError, ValueError, KeyError) as exc:
+            except (RuntimeError, ValueError, KeyError, OSError) as exc:
                 control.publish(
                     session_id,
                     expected_desired=current["desired"],
