@@ -22,6 +22,10 @@
     $("state-title").textContent=labels[current.state] || current.state;
     $("state-message").textContent=current.message;
     $("worker-label").textContent=data.worker.available?"Serviço Windows disponível":"Serviço Windows sem comunicação recente";
+    if(!data.worker.available && current.desired==="running"){
+      $("state-title").textContent="Agente sem comunicação";
+      $("state-message").textContent="O serviço Windows não está confirmando atividade. Último estado registrado: "+(labels[current.state] || current.state)+". Aguardando reconexão automática.";
+    }
     const terminal=["STOPPED","ERROR","INSUFFICIENT_DATA","TRAINING_UNAVAILABLE","TRAINING_BLOCKED"].includes(current.state);
     $("start").disabled=busy || !terminal;$("pause").disabled=busy || terminal || current.desired!=="running";
     $("stop").disabled=busy || terminal || current.desired==="stopped";
