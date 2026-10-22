@@ -14,7 +14,7 @@ def main():
     from aurelia_fx.storage import open_memory
     from aurelia_fx.agent_model import fingerprint
     from aurelia_fx.historical.repository import HistoricalRepository
-    from aurelia_fx.historical.core import summarize,utc
+    from aurelia_fx.historical.core import summarize,utc,closed_rows
     from aurelia_fx.regime_study import configurations,evaluate,recent_candidates
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--forward-only',action='store_true')
@@ -63,6 +63,7 @@ def main():
                     if captured['status']!='ready':raise ValueError('Recent history quality not ready')
                 now=datetime.now(timezone.utc)
                 rows=repo.candles(clock_id=meta['clock_id'],timeframe='M5',start=now-timedelta(days=60),as_of=now,known_by=now)
+                rows=closed_rows(rows,'M5',start=now-timedelta(days=60),as_of=now)
                 measured=summarize(rows,'M5',start=now-timedelta(days=60),as_of=now,days=60)
                 report['recent_data']=dict(as_of=now.isoformat(),known_by=now.isoformat(),statistics=measured)
                 if not measured['ready']:raise ValueError('Recent PostgreSQL history not ready')
