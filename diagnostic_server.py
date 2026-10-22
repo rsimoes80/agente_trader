@@ -17,6 +17,7 @@ from aurelia_fx.operation_control import OperationControl
 from aurelia_fx.agent_diagnostics import decisions
 from aurelia_fx.forecasting.repository import ForecastRepository
 from aurelia_fx.historical.repository import HistoricalRepository
+from aurelia_fx.training.repository import TrainingRepository
 
 CSRF=secrets.token_urlsafe(32)
 ALLOWED_ORIGINS={'http://192.168.97.221:8097','http://127.0.0.1:8770','http://localhost:8770'}
@@ -24,7 +25,9 @@ STATIC={'/operacao':'operation.html','/operation.css':'operation.css','/operatio
         '/diagnostico':'diagnostics.html','/diagnostico/':'diagnostics.html',
         '/diagnostics.css':'diagnostics.css','/diagnostics.js':'diagnostics.js',
         '/timestral.css':'timestral.css','/timestral-panel.js':'timestral-panel.js',
-        '/history.css':'history.css','/history-panel.js':'history-panel.js'}
+        '/history.css':'history.css','/history-panel.js':'history-panel.js',
+        '/treinamento':'training.html','/treinamento/':'training.html',
+        '/training.css':'training.css','/training.js':'training.js'}
 
 class Application:
     def __init__(self):
@@ -32,6 +35,7 @@ class Application:
         self.operation=OperationControl(self.memory)
         self.forecasts=ForecastRepository(self.memory)
         self.history=HistoricalRepository(self.memory)
+        self.training=TrainingRepository(self.memory)
 
 class Handler(BaseHTTPRequestHandler):
     server_version='AureliaFX/2.0'
@@ -61,6 +65,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-cache')
                 self.end_headers();self.wfile.write(body);return
             app=self.server.app
+            if path=='/api/diagnostics/training':
+                self.send(200,dict(ok=True,csrf=CSRF,state=app.training.summary()));return
             if path=='/api/diagnostics/agent':
                 self.send(200,dict(ok=True,csrf=CSRF,state=app.operation.status(),
                     worker=app.operation.worker_status(),authenticated=True,access_mode='single_user'));return
@@ -79,7 +85,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:self.send(503,dict(ok=False,error='Servico temporariamente indisponivel; nova tentativa automatica.'))
     def do_POST(self):
         try:
-            if urlparse(self.path).path!='/api/diagnostics/agent/command':
+            path=urlparse(self.path).path
+            if path not in {'/api/diagnostics/agent/command','/api/diagnostics/training/command'}:
                 self.send(404,dict(ok=False,error='Rota inexistente.'));return
             length=int(self.headers.get('Content-Length','0'))
             if not 0<length<=16000 or self.headers.get('Content-Type','').split(';')[0]!='application/json':
@@ -90,7 +97,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(403,dict(ok=False,error='Recarregue o painel para renovar a conexao.'));return
             payload=json.loads(body)
             if not isinstance(payload,dict):raise ValueError('Object required')
-            state=self.server.app.operation.command(payload,self.headers.get('Idempotency-Key',''),actor='local_owner')
+            if path=='/api/diagnostics/training/command':
+                state=self.server.app.training.command(payload.get('action'),self.headers.get('Idempotency-Key',''))
+            else:
+                state=self.server.app.operation.command(payload,self.headers.get('Idempotency-Key',''),actor='local_owner')
             self.send(200,dict(ok=True,state=state))
         except (ValueError,TypeError,KeyError) as exc:self.send(400,dict(ok=False,error=str(exc)[:200]))
         except Exception:self.send(503,dict(ok=False,error='Nao foi possivel persistir o comando. Consulte o estado antes de repetir.'))

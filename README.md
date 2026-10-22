@@ -47,8 +47,10 @@ O estado desejado no PostgreSQL preserva pausa e parada do operador.
 
 O [laboratório de treinamento Timestral](docs/PLANO_TREINAMENTO_TIMESTRAL.md)
 tem ambiente isolado e prova técnica de ajuste da saída do modelo 5M concluída.
-O Timestral-209M ativo permanece com seus pesos originais; treino em EUR/USD
-e validação de um candidato são etapas separadas, ainda pendentes.
+O Timestral-209M ativo permanece com seus pesos originais. O piloto EUR/USD
+treina o 5M, compara previsões e simula entradas sem ordens.
+O [painel do laboratório](docs/LABORATORIO_TIMESTRAL.md) está integrado em
+**http://192.168.97.221:8097/treinamento**, na mesma porta do projeto.
 
 Os materiais em `Aprendizado/` orientam as regras e características técnicas.
 Os PDFs não são treinamento direto dos pesos do Timestral. A seleção contextual

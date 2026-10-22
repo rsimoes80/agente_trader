@@ -13,14 +13,18 @@ dos pesos do 209M e não é um modelo aprovado para operar.
 |---|---|---|
 | 1. Ambiente | Dependências isoladas, revisões fixadas e hardware identificado | Concluída |
 | 2. Prova técnica | Gradientes, alteração somente da saída, exportação e recarga fiel | Concluída em dados sintéticos |
-| 3. Dataset EUR/USD | Dados congelados, qualidade, cortes cronológicos e proteção dos períodos reservados | Próxima entrega |
-| 4. Ajuste fino piloto | Treinar somente a saída do 5M; registrar configuração, custos e checkpoint | Pendente |
-| 5. Validação de previsão | Comparar original 5M e ajustado nos mesmos cortes; 209M como controle adicional | Pendente |
-| 6. Simulação e observação | Custos/risco fixos, dados novos, previsões paralelas sem ordens | Pendente |
-| 7. Ativação versionada | Evidência suficiente, decisão de ativação e rollback verificado | Pendente |
+| 3. Dataset EUR/USD | Dados congelados, qualidade, cortes cronológicos e proteção dos períodos reservados | Concluída: 74.520 candles |
+| 4. Ajuste fino piloto | Treinar somente a saída do 5M; registrar configuração, custos e checkpoint | Concluído: três épocas; época 3 selecionada |
+| 5. Validação de previsão | Comparar original 5M e ajustado nos mesmos cortes; 209M como controle adicional | Concluída: melhora de 0,14%, abaixo dos 2% exigidos |
+| 6. Simulação e observação | Custos/risco fixos, dados novos, previsões paralelas sem ordens | Replay concluído; zero entradas. Observação futura não iniciada para candidato reprovado |
+| 7. Ativação versionada | Evidência suficiente, decisão de ativação e rollback verificado | Mecanismo testado; ativação do candidato recusada corretamente |
 
 Nenhuma etapa promove uma versão automaticamente por ter reduzido a perda de
 treino ou por apresentar um trade com lucro.
+
+Entrega integrada: **http://192.168.97.221:8097/treinamento**, mesma porta do
+Aurelia FX. [Funcionamento](LABORATORIO_TIMESTRAL.md) e
+[resultado do piloto real](RESULTADO_PILOTO_TIMESTRAL.md).
 
 ## Ambiente instalado
 

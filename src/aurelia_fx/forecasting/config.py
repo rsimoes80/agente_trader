@@ -29,6 +29,8 @@ class TimestralConfig:
     local_files_only: bool = True
     python: str = ""
     cache_dir: str = ""
+    local_release: str = ""
+    local_artifact_sha256: str = ""
 
     def __post_init__(self):
         if any(
@@ -56,6 +58,10 @@ class TimestralConfig:
             raise ValueError("Timeout Timestral inválido.")
         if not 512 <= self.memory_mb <= 32768 or not 1 <= self.threads <= 8:
             raise ValueError("Limites de recursos Timestral inválidos.")
+        if bool(self.local_release)!=bool(self.local_artifact_sha256):
+            raise ValueError('Local release requires a pinned artifact hash.')
+        if self.local_artifact_sha256 and (len(self.local_artifact_sha256)!=64 or any(c not in '0123456789abcdef' for c in self.local_artifact_sha256)):
+            raise ValueError('Invalid local model hash.')
 
     @property
     def fingerprint(self):
@@ -70,6 +76,9 @@ class TimestralConfig:
             "memory_mb",
         ):
             data.pop(key)
+        # Preserve all existing 209M cache keys and prospective study identities.
+        data.pop('local_release')
+        if not data['local_artifact_sha256']:data.pop('local_artifact_sha256')
         return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 

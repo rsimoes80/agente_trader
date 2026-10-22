@@ -30,7 +30,10 @@ def engine_main():
         )
         if config.device == "cuda" and device != "cuda" and not config.cpu_fallback:
             raise RuntimeError("CUDA indisponível e fallback CPU desabilitado.")
-        directory = Path(
+        if config.local_release:
+            from aurelia_fx.training.releases import resolve
+            directory=resolve(Path(__file__).resolve().parents[3],config.local_release,config.local_artifact_sha256)
+        else:directory = Path(
             snapshot_download(
                 config.model,
                 revision=config.revision,
@@ -56,7 +59,7 @@ def engine_main():
             )
         metadata = dict(
             model=config.model,
-            revision=directory.name,
+            revision=config.revision if config.local_release else directory.name,
             artifact_sha256=artifact,
             sdk_revision=SDK_REVISION,
             device=device,
