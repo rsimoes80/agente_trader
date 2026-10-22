@@ -38,6 +38,7 @@ deploy/vm/mt5_bridge.env
 .ruff_cache/
 data/replays/
 data/replay_inputs/
+data/reports/
 data/references_cache/
 data/database.json
 data/database-access.json

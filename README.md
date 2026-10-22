@@ -52,6 +52,11 @@ automaticamente.
 
 A pesquisa histórica é separada do serviço de operação:
 
+Para comparar H1 com H4+H1 no maior catálogo histórico compatível já congelado,
+execute `python run_trend_experiment.py`. O relatório é gravado no PostgreSQL
+(`agent_trend_experiment`) e em `data/reports/`. Esse comando não muda a política
+ativa nem envia ordens. [Primeiro resultado e limites](docs/EXPERIMENTO_H1.md).
+
 ```powershell
 .venv/Scripts/python.exe run_research.py --days 60 --lot 0.01
 ```
