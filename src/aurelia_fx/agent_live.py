@@ -254,7 +254,7 @@ def run_paper(
             account.event('learning_protocol',datetime.now(timezone.utc).isoformat(),
                 protocol=continual.SPEC,protocol_hash=continual.SPEC_HASH,
                 scope='prospective_shadow_separate_from_broker_results')
-        commit(control,account,worker_id)
+        if state.get('mode')!='demo':commit(control,account,worker_id)
         control.publish(session_id,expected_generation=state.get("generation"),
                         autonomy=research_policy.summary(account.data["lab_state"]))
     if state.get('mode')=='demo':

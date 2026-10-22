@@ -11,6 +11,14 @@ def status(memory):
     if not row:return dict(enabled=True,status='WAITING_AGENT',message='Treino automatico aguarda o agente iniciado.')
     result=json.loads(row['payload_json'])
     if memory._encode(result)[1]!=row['payload_sha256']:raise ValueError('Automatic training state changed')
+    if result.get('run_id'):
+        with memory.pool.connection() as c:
+            latest=c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_training_lab_state' ORDER BY recorded_at DESC LIMIT 1").fetchone()
+        run=json.loads(latest['payload_json']) if latest else {}
+        if latest and memory._encode(run)[1]!=latest['payload_sha256']:raise ValueError('Automatic training result integrity failure')
+        if run.get('run_id')==result['run_id'] and run['status'] not in ACTIVE:
+            result={**result,'last_result_status':run['status'],'status':'WAITING_NEW_DATA',
+                'message':'Ultimo ciclo concluido. Proxima pesquisa automatica com 288 candles novos e intervalo de 24 horas.'}
     return result
 
 def schedule(repo,agent,fetch,now=None):

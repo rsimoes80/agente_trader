@@ -129,3 +129,22 @@ O laboratório não envia ordens. Somente o executor demo existente envia ordens
 depois das verificações de conta, tendência, lote e risco. O sistema não habilita
 conta real, não altera os PDFs, não modifica o classificador de regime para
 fabricar oportunidades e não prova lucratividade por ter terminado um treino.
+
+## Evidência da ativação em 22/10/2026
+
+A sessão demo existente foi preservada e o worker atualizado sem posições ou
+ordens abertas. O protocolo `continual-context-v1` foi registrado às 17:22 UTC,
+com cinco alternativas. A memória começa a contar observações posteriores ao
+registro; os três trades de versões anteriores permanecem arquivados.
+
+O primeiro retreino foi solicitado pelo agendador, sem clique no painel:
+`bd4104b6-9046-422e-8cdb-bc877b6e4719`. Foram detectados 567 candles novos e
+congelados 37.065 candles na janela móvel: 1.617 janelas de treino, 360 de
+validação e 361 de teste. A melhora no pinball do teste foi 0,0528%, abaixo do
+mínimo, com evidência diária inconclusiva. O candidato foi reprovado; o replay
+financeiro foi dispensado pela triagem e o 209M não foi substituído.
+
+Pico observado do subprocesso de treino: 379,5 MB; etapa supervisionada de
+29,56 segundos. A tarefa automática terminou com código zero e permanece
+agendada. Resultados da prova inicial e desse ciclo não são comparações diretas:
+os períodos e a composição dos testes são diferentes.
