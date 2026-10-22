@@ -102,3 +102,6 @@ instruções antigas não representam o fluxo atual.
 - [Banco e backup](docs/postgresql.md)
 - [Referência MT5 Python](DOC_METATRADER5_PYTHON.md)
 - [Revisão e redução do escopo](docs/REDUCAO_DO_ESCOPO.md)
+
+- [Arquitetura atual](docs/architecture.md)
+- [Limpeza e criterios de preservacao](docs/LIMPEZA_DO_PROJETO.md)

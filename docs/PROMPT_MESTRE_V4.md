@@ -1,28 +1,20 @@
 # PROMPT MESTRE V4 — AURELIA FX / AGENTE TRADER
 
-## Perfil operacional integrado — plano aprovado de 20/10/2026
+## Escopo vigente
 
-O [plano operacional e de treinamento](PLANO_OPERACIONAL_E_TREINAMENTO.md)
-define a implementação em andamento: lote → histórico mensal → pesquisa/treino
-quando necessário → validação → aprovação explícita → simulação ao vivo.
-O estado real das entregas está no [checkpoint](IMPLEMENTACAO_OPERACIONAL_STATUS.md).
+Este documento conserva a base conceitual V4. Os contratos operacionais atuais
+estao no [ciclo autonomo demo](CICLO_AUTONOMO_DEMO.md), na
+[arquitetura](architecture.md) e no
+[aprendizado continuo](APRENDIZADO_CONTINUO.md).
 
-No perfil novo, os conceitos técnicos revisados geram hipóteses calculáveis;
-previsões Timestral causais compõem as variáveis de um filtro de resultado da
-operação. O filtro é treinado e calibrado temporalmente, avaliado contra as
-bases técnica e Timestral e persistido como versão candidata. Não há fine-tuning
-automático dos pesos Timestral, nem treinamento por simples anexação de PDFs.
+O fluxo ativo e: lote -> historico mensal -> contexto -> hipotese -> risco ->
+execucao demo -> resultado confirmado -> memoria. O aprendizado compara
+alternativas e agenda retreinos automaticamente; candidatos somente substituem
+o modelo ativo depois das validacoes implementadas. Nao ha sessao manual de
+observacao nem aprovacao humana por entrada. Conta real permanece bloqueada.
 
-Relatórios insuficientes ou reprovados bloqueiam a operação. A aprovação não
-pode alterar o relatório, baixar os limites ou promover a própria pesquisa.
-Somente uma versão compatível e vigente pode chegar ao executor simulado,
-após nova validação de contexto, cotação, intenção do operador e risco.
-O [contrato da simulação](agent_live_simulation.md) documenta persistência,
-pausa/parada, recuperação e limitações de resultados por amostragem de cotações.
-
-As seções `observe_only` abaixo continuam descrevendo o observador e os
-diagnósticos legados. Sua configuração não liga o executor novo, cuja aprovação
-tem escopo `paper_only`. Nenhum desses perfis habilita uma conta real.
+As instrucoes historicas `observe_only`, `paper_only` e de promocao humana nas
+secoes conceituais abaixo nao descrevem o controle operacional atual.
 
 ## Premissa obrigatória de início da análise operacional
 

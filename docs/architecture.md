@@ -1,60 +1,55 @@
-# Arquitetura
+# Arquitetura atual
 
-## Atualização V4
+## Fluxo operacional
 
-Regime por timeframe e localização precedem tendência e seleção. Veja [motor V4](market_regime_v4.md), [Prompt Mestre atual](PROMPT_MESTRE_V4.md) e [PostgreSQL](postgresql.md).
+Lote -> 30 dias de historico MT5 -> contexto e tendencia -> hipotese -> risco
+-> entrada demo -> reconciliacao MT5 -> resultado -> memoria contextual.
 
-## Estado atual
+## Windows: dados, operacao e treinamento
 
-O produto é uma aplicação Python monolítica servida por `app.py` e uma interface estática. O handler conhece configurações, secrets, feed, análise, backtest e otimização. `analysis.py` retorna candidato e parâmetros de entrada; `backtest.py` é quem simula fills e aplica seus próprios limites. MT5 e Dukascopy são dois caminhos de dados distintos. O gráfico web publicado consulta uma ponte MT5 em Windows; o feed Dukascopy pertence ao painel local e agrega ticks em memória. Credenciais usam DPAPI e, portanto, são específicas ao usuário Windows.
+- `mt5_provider.py`: candles, cotacoes e normalizacao UTC.
+- `mt5_bridge.py` e `run_bridge_supervisor.py`: ponte de leitura dos graficos.
+- `run_agent.py`, `agent_live.py` e `run_agent_supervisor.py`: ciclo autonomo,
+  estado persistente e recuperacao do worker.
+- `agent_strategy.py`, `entry_trend.py` e motores de percepcao: regime,
+  estrutura, H4/H1 confirmados, gatilho M5 e direcao permitida.
+- `agent_demo.py`, `demo_gateway.py`, `demo_intents.py`: execucao somente demo,
+  reconciliacao e protecao contra duplicidade.
+- `agent_model.py` e `forecasting/`: previsoes Timestral em ambiente isolado.
+- `continual_learning.py`, `autonomous_lab.py` e `learning_storage.py`: memoria
+  de resultados e comparacao de cinco alternativas em simulacao paralela.
+- `run_training_lab.py` e `training/`: dados novos, ajuste do modelo 5M,
+  validacao retrospectiva/prospectiva, promocao automatica e rollback.
 
-## Alvo incremental
+As tarefas `AgenteTrader-Agent`, `AgenteTrader-MT5Bridge` e
+`AgenteTrader-TrainingLab` independem do navegador. MT5 e Windows precisam
+permanecer ligados; o supervisor recupera processos, mas nao substitui o terminal.
 
-Preservar a aplicação atual como interface/adaptador durante a migração. Introduzir módulos de domínio sem dependências de HTTP, pandas, MetaTrader5 ou serviços externos:
+## VM Linux: interface e persistencia
 
-```text
-src/aurelia_fx/
-  domain/       tipos imutáveis, Candle, Quote, Decision, RiskPlan, IDs
-  ports/        MarketDataProvider, Clock, Strategy, RiskManager, Journal
-  market_data/  normalização, validação, freshness e adaptadores MT5/FIX/CSV
-  sessions/     calendário configurável, timezone-aware, armazenamento em UTC
-  structure/    swings confirmados, BOS/sweep causais e zonas observáveis
-  strategy/     plugins pequenos; primeiro pullback em tendência
-  risk/         limites independentes da estratégia e do executor
-  decision/     contrato de decisão, motivos e transições de estado
-  learning/     experiências e propostas; nunca altera regras ao vivo
-  knowledge/    ingestão versionada de regras e proveniência
-  persistence/  journal e repositórios com schema/versionamento
-  replay/       relógio e fonte determinísticos
-  reporting/    relatório por run e auditoria
-  cli/          inspect, check-data, replay e report
-```
+- `diagnostic_server.py`: API do controle autonomo e consultas.
+- `static/`: operacao, grafico, diagnostico e treinamento, na porta 8097.
+- `postgres_memory.py`, `historical/` e repositorios: PostgreSQL como banco
+  operacional; historico, decisoes, experiencias e metadados dos experimentos.
+- `deploy/vm/`: Nginx, API, backup e estudo de regime separado da operacao.
 
-## Limites entre componentes
+Pesos de modelos e ambientes Python ficam em arquivos locais, fora do Git.
+Snapshots de aprendizado usam referencias por hash para evitar repetir o mesmo
+conteudo em cada checkpoint. Dados e ordens nao sao apagados pela limpeza.
 
-- Provider fornece eventos/candles tipados e metadados; não gera sinal.
-- Validador bloqueia dado ausente, duplicado, fora de ordem, inválido ou atrasado.
-- Features/analisadores são funções puras de dados fechados e parâmetros versionados.
-- Estratégia propõe um candidato ou `NO_TRADE`, sem calcular lote nem enviar comando.
-- RiskManager recebe candidato, conta e metadados do instrumento; rejeita ou emite plano de risco limitado.
-- DecisionEngine registra todos os resultados e exige transições explícitas.
-- Executor futuro aceita somente plano aprovado, idempotente e autorizado; neste estágio inexiste.
-- Journal é append-only por run, com dados, versões, regra, motivo, estado e resultado.
-- Aprendizagem propõe hipóteses para pesquisa; apenas uma promoção humana versionada pode alterar uma configuração de demo futura. Live não é alvo aprovado.
+## Pesquisa necessaria ao aprendizado
 
-## Caminho dos dados
+Replay, simulador, validacao temporal e estudos de tendencia/regime continuam
+separados das ordens demo. Eles medem alternativas com custos e dados separados;
+nao substituem o resultado confirmado pelo MT5. O laboratorio automatizado usa
+simulacao para validar modelos antes de permitir uma substituicao.
 
-```text
-MT5 | FIX | CSV/replay
-        -> normalizar UTC -> validar qualidade/freshness
-        -> sessão + estrutura/features -> estratégia
-        -> decisão NO_TRADE/candidato -> RiskManager
-        -> decisão NO_TRADE/sinal hipotético -> journal -> relatório
-```
+As literaturas e `data/knowledge` preservam conceitos e proveniencia. PDFs nao
+sao treinamento direto dos pesos. O aprendizado operacional e os retreinos sao
+explicados em [APRENDIZADO_CONTINUO.md](APRENDIZADO_CONTINUO.md).
 
-Os adaptadores atuais podem ser envolvidos pelas portas primeiro e substituídos depois. A migração deve manter o modo paper e nenhuma integração de ordem até haver política, testes, reconciliação e aprovação explícita separadas.
+## Limites mantidos
 
-
-## Implemented learning foundation
-
-`src/aurelia_fx/` integra tipos, qualidade de dados, sessões, estrutura causal, MarketObserver, TrendHierarchyEngine, PriceActionReader, SupportResistanceEngine, EvidenceEngine, MarketNarrative, ExperienceMemory, ExpectationContract e DecisionEngine. A percepção não importa execução ou autorização de risco. O orquestrador `replay.py` aplica contexto, hipótese, confirmação e gatilho antes do veto independente do RiskManager; só então pode produzir um sinal para `execution_simulator.py`. `temporal_validation.py` mantém contas/memórias independentes e holdout reservado por padrão. O banco `data/agent_memory.sqlite3` usa schema 3 com migração aditiva; snapshots, evidências e contexto de entrada permanecem congelados, e resultados posteriores são novos registros. `market_intelligence.py` adapta a percepção ao monitor legado em modo OBSERVATION_ONLY. O percentual antigo de confiança por contagem de indicadores foi removido. Veja [market_intelligence_v3.md](market_intelligence_v3.md), [replay.md](replay.md) e [execution_simulation.md](execution_simulation.md). O executor de ordens reais permanece bloqueado.
+Tendencia confirmada H4/H1, regime TREND, lote escolhido, limites de risco,
+candles fechados, identidade da fonte e reconciliacao de ordens continuam
+obrigatorios. Uma previsao ou um ganho isolado nao remove esses controles.
