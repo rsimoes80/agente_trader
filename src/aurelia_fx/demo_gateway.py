@@ -8,6 +8,7 @@ from .agent_model import fingerprint
 from .demo_intents import DemoIntentJournal
 from .operation_control import LOCK, validate_lot
 from .historical.core import utc
+from .entry_trend import entry_blocker, POLICY_ID
 
 MAGIC=70616041
 NON_EXECUTION=("REQUOTE","REJECT","CANCEL","INVALID","INVALID_VOLUME","INVALID_PRICE",
@@ -54,6 +55,8 @@ class DemoGateway:
                     clock_id=self.authorization["clock_id"])
 
     def entry_request(self,terminal,setup,lot,risk_state):
+        blocker=entry_blocker(setup.get('snapshot'),setup['candidate'].side)
+        if blocker:raise ValueError(blocker)
         sdk=terminal.sdk;info=terminal.info;quote=terminal.quote()
         terminal.check_account(sending=True)
         validate_lot(lot,dict(volume_min=info.volume_min,volume_max=info.volume_max,volume_step=info.volume_step))
@@ -99,6 +102,10 @@ class DemoGateway:
     def send(self,terminal,scope,client_id,request,metadata,*,generation=None,risk_reduction_for=None):
         previous=scope.latest(client_id)
         if previous:return previous
+        if 'position' not in request:
+            side={0:'long',1:'short'}.get(request.get('type'),'invalid')
+            blocker=entry_blocker(metadata.get('trend_snapshot'),side)
+            if blocker:raise ValueError(blocker)
         sdk=terminal.sdk;terminal.check_account(sending=True)
         request={**request,"comment":"AFX:"+client_id[:20]}
         check=sdk.order_check(request)
@@ -209,6 +216,7 @@ class DemoGateway:
             if previous:return self.resolve(terminal,scope,previous)
             request,risk=self.entry_request(terminal,setup,lot,risk_state)
             metadata=dict(**risk,side=setup["candidate"].side,hypothesis=hypothesis,features=features,
+                          entry_policy=POLICY_ID,trend_snapshot=setup['snapshot'],
                           signal_at=setup["signal_at"],entry_at=datetime.now(timezone.utc).isoformat())
             result=self.send(terminal,scope,client_id,request,metadata,generation=generation)
             if result["status"] in {"UNCERTAIN","SENDING","PARTIAL"}:

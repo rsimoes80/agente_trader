@@ -36,20 +36,34 @@ class GatewayTests(DemoIntentTests):
                        session_id='fixture-session',clock_id='fixture-clock')
         return DemoGateway(self.control,self.auth,factory)
 
+    def trend_metadata(self):
+        return dict(trend_snapshot=dict(regime="TREND",
+            macro_trend=dict(direction="bullish",state="BULL_CONFIRMED"),
+            context_trend=dict(direction="bullish",state="BULL_CONFIRMED")))
+
     def broker_request(self):
         return dict(action=1,symbol='EURUSD',volume=.01,type=0,sl=1.09,tp=1.12,magic=MAGIC)
+
+    def test_countertrend_and_missing_context_never_reach_sdk(self):
+        gateway=self.gateway()
+        for metadata in [{},self.trend_metadata()]:
+            with self.subTest(metadata=metadata),gateway.journal.locked() as scope:
+                request={**self.broker_request(),'type':1}
+                with self.assertRaises(ValueError):
+                    gateway.send(self.terminal,scope,self.client,request,metadata,generation=1)
+        self.assertEqual(self.sent,[])
 
     def test_confirmation_uses_deal_position_identifier_not_order_ticket(self):
         gateway=self.gateway()
         with gateway.journal.locked() as scope:
-            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.assertEqual(intent['status'],'UNCERTAIN')
             self.positions=[N(ticket=900,identifier=800,magic=MAGIC,symbol='EURUSD',comment='',sl=1.09,tp=1.12)]
             self.deals=[N(ticket=200,position_id=800,magic=MAGIC,symbol='EURUSD',entry=0,comment='')]
             resolved=gateway.resolve(self.terminal,scope,intent)
             self.assertEqual(resolved['status'],'CONFIRMED')
             self.assertEqual(resolved['evidence']['position_tickets'],[900])
-            gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.assertEqual(len(self.sent),1)
 
     def test_sdk_timeout_is_durable_and_never_resent(self):
@@ -57,10 +71,10 @@ class GatewayTests(DemoIntentTests):
         def fail(request):self.sent.append(request);raise TimeoutError('fixture')
         self.sdk.order_send=fail
         with gateway.journal.locked() as scope:
-            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.assertEqual(intent['status'],'UNCERTAIN')
         with gateway.journal.locked() as scope:
-            again=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            again=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.assertEqual(again['status'],'UNCERTAIN')
             self.assertEqual(len(self.sent),1)
 
@@ -68,7 +82,7 @@ class GatewayTests(DemoIntentTests):
         from aurelia_fx.agent_live import demo_recovery_required
         gateway=self.gateway()
         with gateway.journal.locked() as scope:
-            gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
         state={**self.control.status(),'demo_authorization':self.auth,'desired':'stopped','position':None}
         self.assertTrue(demo_recovery_required(self.control,state))
         self.assertEqual(len(self.sent),1)
@@ -76,7 +90,7 @@ class GatewayTests(DemoIntentTests):
     def test_missing_native_stop_is_marked_unprotected(self):
         gateway=self.gateway()
         with gateway.journal.locked() as scope:
-            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.positions=[N(ticket=900,identifier=800,magic=MAGIC,symbol='EURUSD',
                               comment='AFX:'+self.client[:20],sl=0,tp=1.12)]
             result=gateway.resolve(self.terminal,scope,intent)
@@ -98,7 +112,7 @@ class GatewayTests(DemoIntentTests):
     def test_foreign_deal_in_same_position_is_not_automatically_closed(self):
         gateway=self.gateway()
         with gateway.journal.locked() as scope:
-            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.positions=[N(ticket=900,identifier=800,magic=MAGIC,symbol='EURUSD',
                               comment='AFX:'+self.client[:20],sl=1.09,tp=1.12)]
             self.deals=[N(ticket=201,position_id=800,magic=999,symbol='EURUSD',volume=.01)]
@@ -110,14 +124,14 @@ class GatewayTests(DemoIntentTests):
         with self.pool.connection() as c:
             state=self.control.latest(c);self.control.append(c,{**state,'desired':'paused','sequence':2})
         with gateway.journal.locked() as scope:
-            result=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            result=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.assertEqual(result['status'],'CANCELLED')
         self.assertEqual(self.sent,[])
 
     def test_closed_result_includes_fees_and_swap(self):
         gateway=self.gateway()
         with gateway.journal.locked() as scope:
-            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),{},generation=1)
+            intent=gateway.send(self.terminal,scope,self.client,self.broker_request(),self.trend_metadata(),generation=1)
             self.deals=[N(ticket=200,position_id=800,magic=MAGIC,symbol='EURUSD',entry=0,
                           comment='',volume=.01,price=1.1,profit=0,commission=-.035,swap=0,fee=0),
                         N(ticket=201,position_id=800,magic=MAGIC,symbol='EURUSD',entry=1,

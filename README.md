@@ -11,6 +11,10 @@ valida risco e envia entradas demo quando houver gatilho. Resultados confirmados
 pelo MT5 atualizam a memória contextual. Ganho isolado não comprova uma estratégia.
 Não há login do projeto nem aprovação manual por operação. Conta real é bloqueada.
 
+Novas entradas exigem H4 e H1 com tendência confirmada e na mesma direção:
+alta permite somente compra; baixa, somente venda. Conflito ou tendência indefinida
+bloqueia a entrada. [Política e referências](docs/ENTRADAS_A_FAVOR_DA_TENDENCIA.md).
+
 - **Operação `/`**: lote, iniciar/pausar/retomar/parar, gráfico e resultados.
 - **Mercado `/mercado`**: gráfico detalhado, períodos e EMA, somente leitura.
 - **Decisões `/diagnostico`**: decisões reais da sessão autônoma, contexto disponível,

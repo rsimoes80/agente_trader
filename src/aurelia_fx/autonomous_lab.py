@@ -12,6 +12,7 @@ from datetime import timedelta
 from .agent_model import fingerprint
 from .agent_strategy import SPEC_HASH
 from .historical.core import utc
+from .entry_trend import entry_blocker, POLICY_ID
 
 HYPOTHESES = (
     ("context_pullback", "Pullback com direção H1"),
@@ -27,7 +28,7 @@ SPEC = dict(version="autonomous-context-v1", strategy_spec=SPEC_HASH,
 
 def context_key(features, snapshot):
     sessions = "+".join(sorted(snapshot.get("session") or ["outside"]))
-    return f"{snapshot.get('regime','UNKNOWN')}|H1:{int(features['h1_direction_known'])}|{sessions}"
+    return f"{POLICY_ID}|{snapshot.get('regime','UNKNOWN')}|H1:{int(features['h1_direction_known'])}|{sessions}"
 
 
 def eligible(features):
@@ -79,6 +80,10 @@ class AutonomousLab:
         self.protocol_id = fingerprint(dict(spec=SPEC,configuration=configuration,execution_mode=execution_mode))
 
     def select(self, features, snapshot, state):
+        side = {1: "long", -1: "short"}.get(features.get("side"), "invalid")
+        blocker = entry_blocker(snapshot, side)
+        if blocker:
+            raise ValueError(blocker)
         key = context_key(features,snapshot)
         arms = eligible(features)
         previous_failure = state.get("last_failed",{}).get(key)
@@ -98,7 +103,7 @@ class AutonomousLab:
             return mean+exploration
         chosen = max(sorted(arms),key=score)
         return dict(id=chosen,name=dict(HYPOTHESES)[chosen],context=key,
-                    protocol_id=self.protocol_id,selection_score=score(chosen),
+                    protocol_id=self.protocol_id,entry_policy=POLICY_ID,selection_score=score(chosen),
                     reason="Alternativa após resultado não positivo." if previous_failure
                     else "Hipótese selecionada pelo histórico deste contexto e pela exploração.")
 
@@ -106,13 +111,18 @@ class AutonomousLab:
         rows=[]
         for arm,name in HYPOTHESES:
             aggregate=empty_stats()
-            for cell in state.get("live",{}).values():
+            for key,cell in state.get("live",{}).items():
+                if not key.startswith(POLICY_ID+'|'):
+                    continue
                 stats=cell.get(arm,empty_stats())
                 for key in aggregate:aggregate[key]+=stats[key]
             rows.append(dict(id=arm,name=name,**aggregate))
         return dict(protocol_id=state.get("protocol_id",self.protocol_id),mode="autonomous_demo_research" if self.execution_mode=="demo" else "autonomous_paper_research",
+                    entry_policy=POLICY_ID,
                     hypotheses=rows,historical_samples=state.get("historical_samples",0),
-                    last_result=state.get("last_result"),
+                    last_result=state.get("last_result") if (state.get('last_result') or {}).get('context','').startswith(POLICY_ID+'|') else None,
+                    previous_policy_results=sum(v.get('n',0) for key,cell in state.get('live',{}).items()
+                                                if not key.startswith(POLICY_ID+'|') for v in cell.values()),
                     excluded_uncertain=state.get("excluded_uncertain",0),
                     native_orders=self.execution_mode=="demo")
 
@@ -130,12 +140,12 @@ class AutonomousLab:
                     and as_of-timedelta(days=7)<=utc(manifest["as_of"])<=as_of):
                     compatible.append(data)
             if not compatible:
-                return dict(protocol_id=self.protocol_id,live={},history={},historical_samples=0,seed_complete=True)
+                return dict(protocol_id=self.protocol_id,entry_policy=POLICY_ID,live={},history={},historical_samples=0,seed_complete=True)
             selected=max(compatible,key=lambda d:(d["manifest"]["training_days"],d["manifest"]["as_of"]))
             samples=c.execute("""SELECT payload_json FROM project_records
                 WHERE record_type='agent_training_sample' AND record_key=ANY(%s)""",
                 (selected["sample_ids"],)).fetchall()
-        state=dict(protocol_id=self.protocol_id,live={},history={},historical_samples=0,seed_complete=True,
+        state=dict(protocol_id=self.protocol_id,entry_policy=POLICY_ID,live={},history={},historical_samples=0,seed_complete=True,
                    seed_run_id=selected["run_id"],seed_scope="development_only_overlapping_counterfactuals")
         boundary=utc(selected["manifest"]["boundaries"][0])
         seen=set()
@@ -144,6 +154,9 @@ class AutonomousLab:
             if sample["sample_id"] in seen or utc(sample["exit_at"])>=boundary:
                 continue
             seen.add(sample["sample_id"])
+            side={1:'long',-1:'short'}.get(sample['features'].get('side'),'invalid')
+            if entry_blocker(sample.get('snapshot'),side):
+                continue
             key=context_key(sample["features"],sample["snapshot"])
             cell=state["history"].setdefault(key,{})
             for arm in eligible(sample["features"]):

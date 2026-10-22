@@ -12,6 +12,7 @@ from .agent_forecast_view import forecast_view
 from .agent_paper import PaperAccount, observed_quote
 from .agent_research import SESSIONS, cached_forecast, intelligence_session
 from .agent_strategy import attach_forecast, propose_pullback
+from .entry_trend import POLICY_ID
 from .forecasting.adapter import TimestralAdapter
 from .forecasting.core import prepare
 from .historical.core import closed_rows, readiness, utc
@@ -229,7 +230,8 @@ def run_paper(
     model = version["model"] if version else None
     threshold = version["report"]["threshold"] if version else None
     if research_policy and (account.data["lab_state"].get("protocol_id") != research_policy.protocol_id
-                            or not account.data["lab_state"].get("seed_complete")):
+                            or not account.data["lab_state"].get("seed_complete")
+                            or account.data["lab_state"].get("entry_policy") != POLICY_ID):
         seeded = research_policy.seed(control.memory,
             clock_id=account.data["clock_id"],configuration=config.fingerprint,
             as_of=datetime.now(timezone.utc))
@@ -348,7 +350,6 @@ def run_paper(
                         snapshot,
                         session.history,
                         daily_history=session.aggregator.history["D1"],
-                        **({"research":True} if research_policy else {}),
                     )
                     age = (
                         utc(quote["at"])
@@ -372,6 +373,8 @@ def run_paper(
                         at=datetime.now(timezone.utc).isoformat(),
                         quote_at=quote["at"],
                         candle=latest["timestamp"],
+                        entry_policy=POLICY_ID,
+                        trend_context={role:snapshot.as_dict().get(role) for role in ('macro_trend','context_trend')},
                     )
                     if setup and not reason:
                         context = prepare(

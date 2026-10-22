@@ -23,7 +23,9 @@ class PaperAccountTests(unittest.TestCase):
             ),
             signal_at=self.start.isoformat(),
             production_eligible=True,
-            snapshot=dict(session=["london"]),
+            snapshot=dict(session=["london"],regime="TREND",
+                          macro_trend=dict(direction="bullish",state="BULL_CONFIRMED"),
+                          context_trend=dict(direction="bullish",state="BULL_CONFIRMED")),
         )
 
     def quote(self, seconds=0, bid=1.1, ask=1.1001):

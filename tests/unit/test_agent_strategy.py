@@ -45,7 +45,7 @@ class AgentStrategyTests(unittest.TestCase):
         snapshot, history, daily = self.context()
         setup, reason = propose_pullback(snapshot, history, daily_history=daily)
         self.assertIsNone(setup)
-        self.assertEqual(reason, "REGIME_UNKNOWN")
+        self.assertEqual(reason, "TREND_REGIME_REQUIRED")
         setup, reason = propose_pullback(
             snapshot, history, daily_history=daily, research=True
         )

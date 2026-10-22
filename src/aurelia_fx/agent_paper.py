@@ -220,6 +220,10 @@ class PaperAccount:
         self.data["peak"] = max(self.data["peak"], self.equity(quote))
 
     def open(self, setup, features, probability, quote, *, active_sessions, hypothesis=None):
+        from .entry_trend import entry_blocker
+        blocker = entry_blocker(setup.get("snapshot"), setup["candidate"].side)
+        if blocker:
+            return dict(approved=False, reasons=[blocker])
         if self.data["position"]:
             raise ValueError("Já existe posição simulada.")
         if self.data["research_mode"] and not hypothesis:

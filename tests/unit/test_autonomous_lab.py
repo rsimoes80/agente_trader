@@ -8,8 +8,8 @@ class AutonomousLabTests(unittest.TestCase):
     def setUp(self):
         self.fixture=paper_fixtures.PaperAccountTests();self.fixture.setUp()
         self.lab=AutonomousLab("fixture-config")
-        self.features=dict(h1_direction_known=0,forecast_3_atr=0.1,forecast_6_atr=0.2)
-        self.snapshot=dict(regime="UNKNOWN",session=["london"])
+        self.features=dict(side=1,h1_direction_known=1,forecast_3_atr=0.1,forecast_6_atr=0.2)
+        self.snapshot=self.fixture.setup['snapshot']
         self.fixture.setup["production_eligible"]=False
         self.account=PaperAccount("research","0.01",self.fixture.contract,self.lab.protocol_id,"clock",research_mode=True)
 
@@ -47,9 +47,11 @@ class AutonomousLabTests(unittest.TestCase):
         self.assertEqual(sum(row["n"] for row in self.lab.summary(state)["hypotheses"]),0)
         self.assertEqual(self.account.data["closed_trades"],1)
 
-    def test_no_historical_prior_or_h1_direction_does_not_stop_research(self):
+    def test_no_historical_prior_still_requires_confirmed_trend(self):
         state={}
         features={**self.features,"forecast_3_atr":-1}
         result=self.lab.select(features,self.snapshot,state)
-        self.assertEqual(result["id"],"price_action_pullback")
+        self.assertIn(result["id"],["context_pullback","price_action_pullback"])
         self.assertNotIn("probability",result)
+        with self.assertRaises(ValueError):
+            self.lab.select(features,{**self.snapshot,'regime':'UNKNOWN'},state)

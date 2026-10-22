@@ -12,6 +12,7 @@ from datetime import timedelta
 from statistics import mean
 
 from .domain import Candidate
+from .entry_trend import entry_blocker, POLICY_ID
 
 STRATEGY_ID = "agent_pullback_timestral"
 VERSION = "research-v3-counterfactual-context"
@@ -78,6 +79,10 @@ def propose_pullback(
         return None, "INSUFFICIENT_CONTEXT"
     if daily_history is None or len(daily_history) < 20:
         return None, "DAILY_CONTEXT_INSUFFICIENT"
+    if not research:
+        blocker = entry_blocker(snapshot.as_dict())
+        if blocker:
+            return None, blocker
     if snapshot.regime != "TREND" and not research:
         return None, "REGIME_" + snapshot.regime
     if not snapshot.session:
@@ -192,6 +197,7 @@ def propose_pullback(
         strategy_id=STRATEGY_ID,
         strategy_version=VERSION,
         spec_hash=SPEC_HASH,
+        entry_policy=POLICY_ID if not research else "offline_counterfactual",
         production_eligible=snapshot.regime == "TREND" and h1_known,
         candidate_scope="counterfactual_research"
         if research

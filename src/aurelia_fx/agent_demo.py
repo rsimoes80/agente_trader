@@ -110,6 +110,9 @@ class NativeDemoAccount(PaperAccount):
         self.data['last_quote']=quote
 
     def open(self,setup,features,probability,quote,*,active_sessions,hypothesis):
+        from .entry_trend import entry_blocker
+        blocker=entry_blocker(setup.get('snapshot'),setup['candidate'].side)
+        if blocker:return dict(approved=False,reasons=[blocker])
         if self.data['position'] or self.data['pending_execution']:
             return dict(approved=False,reasons=['DEMO_RECONCILIATION_REQUIRED'])
         if not hypothesis or hypothesis['protocol_id']!=self.data['model_id']:

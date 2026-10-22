@@ -81,12 +81,14 @@ class AgentRegistryTests(unittest.TestCase):
         from aurelia_fx.autonomous_lab import AutonomousLab
         from aurelia_fx.agent_strategy import SPEC
         now=datetime.now(timezone.utc)
-        features=dict(h1_direction_known=1,forecast_3_atr=0.2,forecast_6_atr=0.1)
+        features=dict(side=1,h1_direction_known=1,forecast_3_atr=0.2,forecast_6_atr=0.1)
         ids=[]
         for label,exit_at in (("development",now-timedelta(days=3)),("validation",now-timedelta(hours=12))):
             ids.append(label)
             self.record("agent_training_sample",label,dict(sample_id=label,features=features,
-                snapshot=dict(regime="TRANSITION",session=["london"]),exit_at=exit_at.isoformat(),
+                snapshot=dict(regime="TREND",session=["london"],
+                    macro_trend=dict(direction="bullish",state="BULL_CONFIRMED"),
+                    context_trend=dict(direction="bullish",state="BULL_CONFIRMED")),exit_at=exit_at.isoformat(),
                 net_pnl=5,result_in_r=2))
         manifest=dict(strategy=SPEC,model_configuration="fixture",clock_id="clock",
                       as_of=(now-timedelta(hours=1)).isoformat(),training_days=335,
@@ -237,7 +239,6 @@ class AgentRegistryTests(unittest.TestCase):
         fixture.start = datetime.now(timezone.utc)-timedelta(seconds=10)
         fixture.setup.update(signal_at=fixture.start.isoformat(), candidate=Candidate(
             "long", 1.1, 1.098, 1.105, fixture.start+timedelta(minutes=5), ("fixture",)))
-        fixture.setup["snapshot"]["regime"]="UNKNOWN"
         fixture.setup["production_eligible"]=not research
         self.control.publish(self.state["session_id"], symbol_contract=fixture.contract,history=dict(clock_id="clock"))
         state = self.control.status()
@@ -272,7 +273,7 @@ class AgentRegistryTests(unittest.TestCase):
                 "intelligence_session":lambda:session, "readiness":lambda *a,**k:None,
                 "closed_rows":lambda *a,**k:[row], "propose_pullback":lambda *a,**k:(fixture.setup,None),
                 "prepare":lambda *a,**k:context, "cached_forecast":lambda *a:("cache",dict(quantiles=[[1.09,1.1,1.11]]*12)),
-                "attach_forecast":lambda *a:dict(h1_direction_known=0,forecast_3_atr=0.1,forecast_6_atr=0.2), "predict":lambda *a:0.8, "SessionEngine":Sessions,
+                "attach_forecast":lambda *a:dict(side=1,h1_direction_known=1,forecast_3_atr=0.1,forecast_6_atr=0.2), "predict":lambda *a:0.8, "SessionEngine":Sessions,
             }.items():
                 patches.enter_context(patch("aurelia_fx.agent_live."+name, value))
             patches.enter_context(patch("aurelia_fx.agent_live.observed_quote", side_effect=quotes))
