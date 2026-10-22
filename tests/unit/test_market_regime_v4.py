@@ -252,7 +252,7 @@ class RegimeTests(unittest.TestCase):
 
     def test_version_and_parameters_are_frozen(self):
         state = self.feed(range_bars())[1][-1]
-        self.assertEqual(state.regime_model_version, "0.1.0-research")
+        self.assertEqual(state.regime_model_version, self.config.regime_model_version)
         self.assertEqual(len(state.regime_config_hash), 64)
         cfg = replace(self.config, range_efficiency_max=0.2)
         self.assertNotEqual(

@@ -5,7 +5,8 @@ from dataclasses import asdict, dataclass, field
 
 @dataclass(frozen=True)
 class RegimeConfig:
-    regime_model_version: str = "0.1.0-research"
+    regime_model_version: str = "0.1.1-expiry"
+    transition_expiry_policy: str = "reset_pending_v1"
     window: int = 20
     confirmation_bars: int = 3
     breakout_acceptance_bars: int = 3
@@ -54,6 +55,7 @@ class RegimeConfig:
             or not self.maximum_age_periods >= 1
             or not self.regime_model_version
             or self.validation_status != "needs_review"
+            or self.transition_expiry_policy not in {"reset_pending_v1", "legacy_research_v0"}
         ):
             raise ValueError("Inconsistent or unapproved regime configuration")
 
@@ -159,7 +161,7 @@ class MarketRegimeState:
     detected_at: str = ""
     last_updated_at: str = ""
     expires_at: str = ""
-    regime_model_version: str = "0.1.0-research"
+    regime_model_version: str = "0.1.1-expiry"
     regime_config_hash: str = ""
     transition: dict = field(default_factory=dict)
     breakout: dict = field(default_factory=dict)

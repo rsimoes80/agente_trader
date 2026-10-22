@@ -61,6 +61,9 @@ ativa nem envia ordens. [Primeiro resultado e limites](docs/EXPERIMENTO_H1.md).
 exemplos gráficos e alternativas medidas offline. Reprodução com
 `run_regime_audit.py`, usando as dependências opcionais de `requirements-research.txt`.
 
+[Correção de expiração e validação prospectiva](docs/ESTUDO_EXPIRACAO_E_PARAMETROS.md):
+`run_regime_study.py` mantém eficiência 55% e duas confirmações em estudos separados.
+
 ```powershell
 .venv/Scripts/python.exe run_research.py --days 60 --lot 0.01
 ```

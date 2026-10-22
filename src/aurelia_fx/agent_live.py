@@ -13,6 +13,7 @@ from .agent_paper import PaperAccount, observed_quote
 from .agent_research import SESSIONS, cached_forecast, intelligence_session
 from .agent_strategy import attach_forecast, propose_pullback
 from .entry_trend import POLICY_ID
+from .autonomous_lab import REGIME_HASH
 from .forecasting.adapter import TimestralAdapter
 from .forecasting.core import prepare
 from .historical.core import closed_rows, readiness, utc
@@ -231,7 +232,8 @@ def run_paper(
     threshold = version["report"]["threshold"] if version else None
     if research_policy and (account.data["lab_state"].get("protocol_id") != research_policy.protocol_id
                             or not account.data["lab_state"].get("seed_complete")
-                            or account.data["lab_state"].get("entry_policy") != POLICY_ID):
+                            or account.data["lab_state"].get("entry_policy") != POLICY_ID
+                            or account.data["lab_state"].get("regime_config_hash") != REGIME_HASH):
         seeded = research_policy.seed(control.memory,
             clock_id=account.data["clock_id"],configuration=config.fingerprint,
             as_of=datetime.now(timezone.utc))
@@ -351,6 +353,13 @@ def run_paper(
                         session.history,
                         daily_history=session.aggregator.history["D1"],
                     )
+                    if reason == 'TREND_REGIME_REQUIRED' and snapshot.regime == 'UNKNOWN':
+                        regime_state=snapshot.as_dict().get('regime_state',{})
+                        classification=regime_state.get('features',{}).get('classification_reason')
+                        reason=('REGIME_DATA_UNAVAILABLE' if regime_state.get('missing_data') else
+                                'TRANSITION_EXPIRED_WAITING_CONTEXT' if classification=='TRANSITION_EXPIRED' else
+                                'REGIME_CONFIRMATION_PENDING' if classification=='AWAITING_DISTINCT_CLOSED_BARS' else
+                                'REGIME_UNCLASSIFIED')
                     age = (
                         utc(quote["at"])
                         - utc(latest["timestamp"])

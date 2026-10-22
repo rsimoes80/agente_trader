@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from aurelia_fx.agent_paper import PaperAccount
 from aurelia_fx.domain import Candidate
+from aurelia_fx.autonomous_lab import REGIME_HASH
 
 
 class PaperAccountTests(unittest.TestCase):
@@ -23,7 +24,7 @@ class PaperAccountTests(unittest.TestCase):
             ),
             signal_at=self.start.isoformat(),
             production_eligible=True,
-            snapshot=dict(session=["london"],regime="TREND",
+            snapshot=dict(session=["london"],regime="TREND",regime_config_hash=REGIME_HASH,
                           macro_trend=dict(direction="bullish",state="BULL_CONFIRMED"),
                           context_trend=dict(direction="bullish",state="BULL_CONFIRMED")),
         )

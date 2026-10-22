@@ -437,6 +437,17 @@ class MarketRegimeEngine:
                 transition = replace(transition, status="EXPIRED")
                 if regime == "TRANSITION":
                     regime, subtype, status = "UNKNOWN", "UNRESOLVED", "DEVELOPING"
+        if (cfg.transition_expiry_policy == "reset_pending_v1"
+            and transition and transition.status == "EXPIRED"
+            and (regime == "TRANSITION" or
+                 (regime == "UNKNOWN" and context and context.status == "EXIT_ACCEPTED"))):
+            # Expiration is not evidence of a new trend. Release pending context
+            # so it cannot resurrect TRANSITION on the next closed bar.
+            regime, subtype, status = "UNKNOWN", "TRANSITION_EXPIRED", "DEVELOPING"
+            context = None
+            breakout = None
+            track["count"] = 0
+            track["candidate"] = None
         detected = (
             track["state"].detected_at
             if track["state"] and previous == regime
@@ -451,6 +462,12 @@ class MarketRegimeEngine:
             location = self.range_location(context, last.close)
             context = replace(context, position_inside_range=location.relative_location)
         features = {
+            "classification_reason": "TRANSITION_EXPIRED" if subtype == "TRANSITION_EXPIRED"
+            else "GEOMETRY_UNCLASSIFIED" if regime == "UNKNOWN" and candidate == "UNKNOWN"
+            else "AWAITING_DISTINCT_CLOSED_BARS" if regime == "UNKNOWN" and track["count"] < cfg.confirmation_bars
+            else "ACTIVE_TRANSITION" if regime == "TRANSITION"
+            else "CLASSIFIED" if regime in {"TREND", "RANGE"}
+            else "CONTEXT_UNRESOLVED",
             "efficiency": efficiency,
             "mean_overlap": overlap,
             "alternation": alternation,

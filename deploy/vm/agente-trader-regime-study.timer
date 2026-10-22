@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Aurelia FX offline regime evaluation
+
+[Timer]
+OnCalendar=*-*-* 02:20:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+Unit=agente-trader-regime-study.service
+
+[Install]
+WantedBy=timers.target

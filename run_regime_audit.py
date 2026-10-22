@@ -34,7 +34,7 @@ def main():
      if rg=='UNKNOWN':counts['unknown:'+r.get('classification_status','')]+=1
     print(json.dumps(dict(stage='catalog',counts=counts,missing=missing)),flush=True)
     frozen,rows=HistoricalRepository(m).frozen_candles(b,record_type='agent_training_history')
-    base=RegimeConfig();variants={'base':base,'eff55':replace(base,trend_efficiency_min=.55),'eff50':replace(base,trend_efficiency_min=.50),'confirm2':replace(base,confirmation_bars=2),'range60':replace(base,range_lifetime_bars=60),'combined_exploratory':replace(base,trend_efficiency_min=.55,trend_extreme_fraction_min=.45,confirmation_bars=2)}
+    base=RegimeConfig(regime_model_version="0.1.0-research",transition_expiry_policy="legacy_research_v0");variants={'base':base,'eff55':replace(base,trend_efficiency_min=.55),'eff50':replace(base,trend_efficiency_min=.50),'confirm2':replace(base,confirmation_bars=2),'range60':replace(base,range_lifetime_bars=60),'combined_exploratory':replace(base,trend_efficiency_min=.55,trend_extreme_fraction_min=.45,confirmation_bars=2)}
     engines={k:MarketRegimeEngine(v) for k,v in variants.items()};full={k:Counter() for k in variants};candidate_map={k:{} for k in variants};last_h1=None;agg=intelligence_session().aggregator;previous=None;h1s=[]
     for row in rows:
      bar=Candle(utc(row['timestamp']),*(row[k] for k in ['open','high','low','close']),row.get('volume',0),row.get('spread_pips'))

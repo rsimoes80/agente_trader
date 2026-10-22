@@ -1,0 +1,21 @@
+[Unit]
+Description=Aurelia FX offline regime study (no orders)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rafael
+WorkingDirectory=/home/rafael/apps/agente-trader
+ExecStart=/home/rafael/apps/agente-trader/.venv/bin/python -u run_regime_study.py --forward-only
+Environment=PYTHONDONTWRITEBYTECODE=1
+Nice=10
+CPUQuota=50%
+MemoryMax=1G
+TimeoutStartSec=1800
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rafael/apps/agente-trader/data
+PrivateTmp=true

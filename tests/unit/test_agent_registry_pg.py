@@ -78,7 +78,7 @@ class AgentRegistryTests(unittest.TestCase):
 
 
     def test_autonomous_seed_excludes_validation_and_final_labels(self):
-        from aurelia_fx.autonomous_lab import AutonomousLab
+        from aurelia_fx.autonomous_lab import AutonomousLab, REGIME_HASH
         from aurelia_fx.agent_strategy import SPEC
         now=datetime.now(timezone.utc)
         features=dict(side=1,h1_direction_known=1,forecast_3_atr=0.2,forecast_6_atr=0.1)
@@ -86,7 +86,7 @@ class AgentRegistryTests(unittest.TestCase):
         for label,exit_at in (("development",now-timedelta(days=3)),("validation",now-timedelta(hours=12))):
             ids.append(label)
             self.record("agent_training_sample",label,dict(sample_id=label,features=features,
-                snapshot=dict(regime="TREND",session=["london"],
+                snapshot=dict(regime="TREND",session=["london"],regime_config_hash=REGIME_HASH,
                     macro_trend=dict(direction="bullish",state="BULL_CONFIRMED"),
                     context_trend=dict(direction="bullish",state="BULL_CONFIRMED")),exit_at=exit_at.isoformat(),
                 net_pnl=5,result_in_r=2))
