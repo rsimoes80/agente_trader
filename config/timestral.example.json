@@ -1,0 +1,23 @@
+{
+  "enabled": false,
+  "model": "mistralai/Timestral-209M",
+  "revision": "9874d252ab0aae16f7f7c999f98f98d6ad7d8365",
+  "device": "cpu",
+  "cpu_fallback": true,
+  "timeframe": "M5",
+  "horizons": [
+    3,
+    6,
+    12
+  ],
+  "mode": "observe_only",
+  "context": 256,
+  "min_context": 64,
+  "threads": 2,
+  "memory_mb": 4096,
+  "timeout_seconds": 45,
+  "load_timeout_seconds": 180,
+  "local_files_only": true,
+  "python": "<PASTA_DO_PROJETO_WINDOWS>/.venv-timestral/Scripts/python.exe",
+  "cache_dir": "<PASTA_DO_PROJETO_WINDOWS>/data/models/timestral"
+}

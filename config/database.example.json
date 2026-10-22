@@ -1,0 +1,3 @@
+{
+  "database_url": "postgresql://agente_trader_app:<SENHA_URL_ENCODED>@<HOST_POSTGRES>:5432/agente_trader"
+}

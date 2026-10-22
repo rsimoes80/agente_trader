@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "purpose": "Referencia de replicacao; nao e carregado automaticamente pela aplicacao.",
+  "recorded_at": "2026-10-22",
+  "source_commit": "184e0df6d41b6ac400f6211ec70d59cde1cf1f87",
+  "repository": "https://github.com/rsimoes80/agente_trader.git",
+  "topology": {
+    "windows": {
+      "role": "MT5 demo, agente, ponte e treinamento CPU",
+      "python_observed": "3.14.7",
+      "project_path": "<PASTA_DO_PROJETO_WINDOWS>",
+      "bridge_host_current": "192.168.200.1",
+      "bridge_port": 8769,
+      "tasks": [
+        "AgenteTrader-Agent",
+        "AgenteTrader-MT5Bridge",
+        "AgenteTrader-TrainingLab"
+      ]
+    },
+    "linux": {
+      "role": "PostgreSQL, API, Nginx e estudo de regime",
+      "host_current": "192.168.97.221",
+      "project_path_current": "/home/rafael/apps/agente-trader",
+      "service_user_current": "rafael",
+      "web_port": 8097,
+      "api_port": 8770,
+      "postgres_major": 16,
+      "postgres_port": 5432,
+      "database": "agente_trader",
+      "database_user": "agente_trader_app",
+      "postgres_container_current": "postgres",
+      "chart_container": "agente-trader-chart"
+    }
+  },
+  "python_environments": {
+    "operational": {
+      "directory": ".venv",
+      "requirements": "requirements.txt"
+    },
+    "forecast": {
+      "directory": ".venv-timestral",
+      "installer": "install_timestral.ps1",
+      "requirements": "requirements-timestral.txt"
+    },
+    "training": {
+      "directory": ".venv-training",
+      "requirements": "requirements-training-lock.txt",
+      "note": "Lock do Windows CPU/Python 3.14; reavaliar compatibilidade em outra plataforma."
+    }
+  },
+  "model": {
+    "active_original": "mistralai/Timestral-209M",
+    "active_revision": "9874d252ab0aae16f7f7c999f98f98d6ad7d8365",
+    "sdk_revision": "a534bdbd244d64f3d9d743f46c7bf6fc330ed4ff",
+    "training_source": "mistralai/Timestral-5M",
+    "training_source_revision": "bdd20cfc15a3fea0e4cb5ccef37f8d3ca7aa335f",
+    "note": "Referencia na data registrada. Na migracao prevalecem a configuracao privada atual e os artefatos ativos verificados."
+  },
+  "private_configuration": [
+    {
+      "template": "config/database.example.json",
+      "destination": "data/database.json",
+      "on": [
+        "windows",
+        "linux"
+      ]
+    },
+    {
+      "template": "config/timestral.example.json",
+      "destination": "data/timestral.json",
+      "on": [
+        "windows"
+      ]
+    },
+    {
+      "template": "config/mt5_bridge.example.env",
+      "destination": "deploy/vm/mt5_bridge.env",
+      "on": [
+        "linux"
+      ]
+    },
+    {
+      "destination": "data/mt5_bridge.token",
+      "on": [
+        "windows"
+      ],
+      "contents": "Mesmo token privado configurado no Nginx; gerar ou transferir fora do Git."
+    }
+  ],
+  "backup_outside_git": [
+    "PostgreSQL dump .sql.gz e .sha256",
+    "data/models/",
+    "data/training/",
+    "Aprendizado/",
+    "data/timestral.json",
+    "data/database.json (Windows e Linux)",
+    "data/mt5_bridge.token",
+    "deploy/vm/mt5_bridge.env",
+    "artefatos adicionais referenciados por uma liberacao ativa"
+  ],
+  "do_not_transfer_as_runtime": [
+    ".venv/",
+    ".venv-timestral/",
+    ".venv-training/",
+    "__pycache__/",
+    "arquivos .pid",
+    "mt5_clock_state.json como calibracao valida de outra maquina"
+  ],
+  "migration_guide": "docs/REPLICACAO_DO_AMBIENTE.md"
+}
