@@ -18,7 +18,7 @@ TOKEN = os.environ.get("AURELIA_MT5_BRIDGE_TOKEN", "")
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AureliaMT5Bridge/1.0"
+    server_version = "AgenteTraderIA-MT5Bridge/1.0"
     sys_version = ""
 
     def log_message(self, fmt: str, *args: Any) -> None:
@@ -40,7 +40,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/health":
-            self._send(200, {"ok": True, "service": "Aurelia FX MT5 read-only bridge"})
+            # Keep the wire identity expected by supervisors already running.
+            self._send(200, {"ok": True, "service": "Aurelia FX MT5 read-only bridge",
+                             "display_name": "Agente Trader - IA MT5 read-only bridge"})
             return
         if path != "/api/mt5/chart":
             self._send(404, {"ok": False, "error": "Rota não encontrada."})

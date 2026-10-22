@@ -1,9 +1,15 @@
-# Replicar o Aurelia FX em outro equipamento
+# Replicar o Agente Trader - IA em outro equipamento
 
 Referência registrada em 22/10/2026. O inventário está em
 [`config/environment.example.json`](../config/environment.example.json).
 Os arquivos `*.example.*` são modelos para consulta: **não são lidos
 automaticamente pelo sistema nem provisionam a infraestrutura**.
+
+O nome público é **Agente Trader - IA**. O pacote Python `aurelia_fx`, variáveis
+`AURELIA_*` e a identidade técnica da ponte são identificadores de compatibilidade
+preservados. Não renomeie esses identificadores ao restaurar: tarefas, imports,
+configurações e processos já iniciados dependem deles. O banco, o repositório e
+os serviços continuam usando os nomes técnicos `agente_trader`/`agente-trader`.
 
 ## 1. O que recuperar
 

@@ -1038,7 +1038,7 @@ def write_html(
     metrics = report.get("execution", {})
     path.write_text(
         """<!doctype html><html lang="pt-BR"><meta charset="utf-8">
-<title>Aurelia FX - Replay EUR/USD</title><style>body{font:15px system-ui;background:#10181e;color:#e7edf0;margin:32px}
+<title>Agente Trader - IA - Replay EUR/USD</title><style>body{font:15px system-ui;background:#10181e;color:#e7edf0;margin:32px}
 table{border-collapse:collapse;width:100%}td,th{padding:8px;border-bottom:1px solid #30434d;text-align:left}
 pre{white-space:pre-wrap;background:#17252e;padding:16px}h1{color:#43d69a}</style>
 <h1>Replay EUR/USD</h1><p>Pesquisa experimental com candles fechados. Sinais hipotéticos, sem envio de ordens.</p>

@@ -1,2 +1,2 @@
-"""Foundational, side-effect-free domain components for the Aurelia FX migration."""
+"""Foundational, side-effect-free domain components for the Agente Trader - IA migration."""
 

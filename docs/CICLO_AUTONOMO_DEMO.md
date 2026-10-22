@@ -3,7 +3,7 @@
 ## Fluxo de uso
 
 1. Abrir o MT5, conectar à conta **demo** e habilitar AlgoTrading.
-2. No painel Aurelia FX, escolher o lote e o ambiente **MT5 Demo**.
+2. No painel Agente Trader - IA, escolher o lote e o ambiente **MT5 Demo**.
 3. Clicar em **Iniciar agente**. Não há credencial do projeto nem aprovação por operação.
 
 O agente prepara os últimos 30 dias do ativo, aproveita o histórico local e constrói

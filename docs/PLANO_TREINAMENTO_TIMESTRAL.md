@@ -26,7 +26,7 @@ Nenhuma etapa promove uma versão automaticamente por ter reduzido a perda de
 treino ou por apresentar um trade com lucro.
 
 Entrega integrada: **http://192.168.97.221:8097/treinamento**, mesma porta do
-Aurelia FX. [Funcionamento](LABORATORIO_TIMESTRAL.md) e
+Agente Trader - IA. [Funcionamento](LABORATORIO_TIMESTRAL.md) e
 [resultado do piloto real](RESULTADO_PILOTO_TIMESTRAL.md).
 
 ## Ambiente instalado

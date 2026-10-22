@@ -38,7 +38,7 @@ class Application:
         self.training=TrainingRepository(self.memory)
 
 class Handler(BaseHTTPRequestHandler):
-    server_version='AureliaFX/2.0'
+    server_version='AgenteTraderIA/2.0'
     sys_version=''
     def setup(self):
         super().setup()
@@ -80,7 +80,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/diagnostics/timestral':
                 self.send(200,dict(ok=True,**app.forecasts.summary(scope=args.get('scope','live'),source_id=args.get('source_id'))));return
             if path=='/health':
-                self.send(200,dict(ok=True,service='Aurelia FX operation API',worker=app.operation.worker_status()));return
+                self.send(200,dict(ok=True,service='Agente Trader - IA operation API',worker=app.operation.worker_status()));return
             self.send(404,dict(ok=False,error='Rota inexistente.'))
         except (ValueError,TypeError,KeyError):self.send(400,dict(ok=False,error='Consulta invalida.'))
         except Exception:self.send(503,dict(ok=False,error='Servico temporariamente indisponivel; nova tentativa automatica.'))

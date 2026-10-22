@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily Aurelia FX offline regime evaluation
+Description=Daily Agente Trader - IA offline regime evaluation
 
 [Timer]
 OnCalendar=*-*-* 02:20:00 UTC

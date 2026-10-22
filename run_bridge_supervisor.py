@@ -12,6 +12,7 @@ import urllib.request
 from run_agent_supervisor import kill_owned_tree
 
 ROOT=Path(__file__).resolve().parent
+# Stable wire identity; this is not the product's display name.
 SERVICE='Aurelia FX MT5 read-only bridge'
 HEALTH_URL='http://{}:{}/health'.format(os.environ.get('AURELIA_MT5_BRIDGE_HOST','192.168.200.1'),os.environ.get('AURELIA_MT5_BRIDGE_PORT','8769'))
 

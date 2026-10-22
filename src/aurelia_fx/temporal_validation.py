@@ -136,7 +136,7 @@ def run_temporal_validation(
                 )
         (directory / "report.html").write_text(
             '<!doctype html><html lang="pt-BR"><meta charset="utf-8">'
-            "<title>Validação temporal — Aurelia FX</title><style>body{font:16px system-ui;max-width:1100px;margin:32px auto;"
+            "<title>Validação temporal — Agente Trader - IA</title><style>body{font:16px system-ui;max-width:1100px;margin:32px auto;"
             "background:#10181e;color:#eee}td,th{padding:14px;text-align:left}a{color:#43d69a}pre{white-space:pre-wrap}</style>"
             "<h1>Validação temporal EUR/USD</h1><p>Configuração congelada, contas e memórias independentes por janela.</p>"
             "<table><tr><th>Janela</th><th>Candles</th><th>Trades encerrados</th><th>P&amp;L líquido simulado USD</th><th>Detalhes</th></tr>"

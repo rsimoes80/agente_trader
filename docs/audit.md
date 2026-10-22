@@ -1,4 +1,4 @@
-# Auditoria inicial do Aurelia FX
+# Auditoria inicial do Agente Trader - IA
 
 **Escopo:** código próprio na raiz, `static/`, `deploy/`, arquivos de dados por metadados e inventário de `Aprendizado/`, `avulso/` e `nautilus_trader/`. A árvore contém cerca de 5.300 arquivos de NautilusTrader e 160 arquivos legados/artefatos em `avulso/`; esses diretórios foram classificados como código de terceiros e material de referência, não auditados linha a linha como código próprio.
 

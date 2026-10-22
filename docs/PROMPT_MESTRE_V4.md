@@ -1,4 +1,4 @@
-# PROMPT MESTRE V4 — AURELIA FX / AGENTE TRADER
+# PROMPT MESTRE V4 — Agente Trader - IA
 
 ## Escopo vigente
 

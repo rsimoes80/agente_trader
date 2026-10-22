@@ -1,4 +1,4 @@
-# Aurelia FX
+# Agente Trader - IA
 
 Agente autônomo EUR/USD, execução M5 em conta **demo do MT5**, memória no
 PostgreSQL e Timestral para previsão de séries temporais.

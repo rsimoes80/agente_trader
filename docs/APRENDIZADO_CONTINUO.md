@@ -1,4 +1,4 @@
-# Aprendizado contínuo do Aurelia FX
+# Aprendizado contínuo do Agente Trader - IA
 
 ## Uso
 

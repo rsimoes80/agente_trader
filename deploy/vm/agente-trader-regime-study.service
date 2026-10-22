@@ -1,5 +1,5 @@
 [Unit]
-Description=Aurelia FX offline regime study (no orders)
+Description=Agente Trader - IA offline regime study (no orders)
 After=network-online.target
 Wants=network-online.target
 

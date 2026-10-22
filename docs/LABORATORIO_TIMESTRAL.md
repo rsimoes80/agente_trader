@@ -1,4 +1,4 @@
-# Laboratório Timestral no Aurelia FX
+# Laboratório Timestral no Agente Trader - IA
 
 ## Acesso e funcionamento
 

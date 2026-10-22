@@ -1,4 +1,4 @@
-# PROMPT MESTRE V3 — AURELIA FX / AGENTE TRADER
+# PROMPT MESTRE V3 — Agente Trader - IA
 
 Versão consolidada: prompt original + fundação V2 + integração V3. Este arquivo substitui as listas antigas de estados, o contrato mental e o vertical slice. O adendo V2 permanece como histórico.
 

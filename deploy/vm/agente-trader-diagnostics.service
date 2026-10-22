@@ -1,5 +1,5 @@
 [Unit]
-Description=Aurelia FX regime diagnostics and read-only observer
+Description=Agente Trader - IA regime diagnostics and read-only observer
 After=network-online.target docker.service
 Wants=network-online.target
 

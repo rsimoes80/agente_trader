@@ -70,7 +70,7 @@ def capture_mt5(timeframe: str, count: int, directory: Path) -> Path:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Aurelia FX: replay causal EURUSD, PostgreSQL e relatorio HTML."
+        description="Agente Trader - IA: replay causal EURUSD, PostgreSQL e relatorio HTML."
     )
     parser.add_argument(
         "--timestral",

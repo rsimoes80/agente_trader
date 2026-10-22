@@ -11,7 +11,7 @@ modulos por subprocesso antes de considerar um componente sem uso.
 
 - Clone local `nautilus_trader/`: 5.302 arquivos, 165.088.706 bytes logicos
   (157,4 MiB). Git limpo, sem alteracoes ou arquivos novos. Nenhum import ou
-  comando operacional do Aurelia FX depende desse clone.
+  comando operacional do Agente Trader - IA depende desse clone.
 - Nove documentos de funcionalidades retiradas ou planos substituidos:
   `DUKASCOPY_FIX.md`, `INTEGRATION_NAUTILUS.md`, `DECISAO_E_APRENDIZADO.md`,
   `docs/human_review_panel.md`, `docs/conversation_gap_audit.md`,

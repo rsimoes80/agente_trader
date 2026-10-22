@@ -1,4 +1,4 @@
-# Timestral no Aurelia FX
+# Timestral no Agente Trader - IA
 
 ## Arquitetura incremental
 
@@ -109,7 +109,7 @@ conectados para receber novos candles. Não há API paga.
 
 Para desativar, use `enabled=false` e encerre/reinicie somente a tarefa
 Timestral. Uma instância já em execução lê a configuração no próximo início.
-O restante do Aurelia FX continua funcionando. Nenhum peso é armazenado no banco.
+O restante do Agente Trader - IA continua funcionando. Nenhum peso é armazenado no banco.
 
 ## PostgreSQL
 

@@ -106,5 +106,6 @@
     "arquivos .pid",
     "mt5_clock_state.json como calibracao valida de outra maquina"
   ],
-  "migration_guide": "docs/REPLICACAO_DO_AMBIENTE.md"
+  "migration_guide": "docs/REPLICACAO_DO_AMBIENTE.md",
+  "project_name": "Agente Trader - IA"
 }
