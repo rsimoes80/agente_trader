@@ -57,6 +57,10 @@ execute `python run_trend_experiment.py`. O relatório é gravado no PostgreSQL
 (`agent_trend_experiment`) e em `data/reports/`. Esse comando não muda a política
 ativa nem envia ordens. [Primeiro resultado e limites](docs/EXPERIMENTO_H1.md).
 
+[Auditoria do classificador de regime](docs/AUDITORIA_DO_REGIME.md): bloqueios,
+exemplos gráficos e alternativas medidas offline. Reprodução com
+`run_regime_audit.py`, usando as dependências opcionais de `requirements-research.txt`.
+
 ```powershell
 .venv/Scripts/python.exe run_research.py --days 60 --lot 0.01
 ```
