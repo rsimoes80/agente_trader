@@ -1,0 +1,10 @@
+# Isolated CPU proof environment. Do not install into the trading environments.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+timestral @ git+https://github.com/mistralai/timestral.git@a534bdbd244d64f3d9d743f46c7bf6fc330ed4ff
+numpy==2.5.4
+safetensors==0.8.0
+huggingface-hub==2.2.0
+psutil>=7,<8
+psycopg[binary,pool]>=3.2,<4
+pytest>=8,<10

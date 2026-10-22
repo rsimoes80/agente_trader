@@ -1,5 +1,7 @@
 .venv/
 .venv-timestral/
+.venv-training/
+data/training/
 vendor/timestral/
 data/models/
 data/timestral.json
@@ -9,6 +11,7 @@ data/agent.pid
 data/platform-operator.token
 .agents/
 .tools/
+.cache/
 nautilus_trader/
 avulso/
 Aprendizado/

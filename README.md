@@ -45,6 +45,11 @@ O estado desejado no PostgreSQL preserva pausa e parada do operador.
 
 ## Aprendizado e pesquisa
 
+O [laboratório de treinamento Timestral](docs/PLANO_TREINAMENTO_TIMESTRAL.md)
+tem ambiente isolado e prova técnica de ajuste da saída do modelo 5M concluída.
+O Timestral-209M ativo permanece com seus pesos originais; treino em EUR/USD
+e validação de um candidato são etapas separadas, ainda pendentes.
+
 Os materiais em `Aprendizado/` orientam as regras e características técnicas.
 Os PDFs não são treinamento direto dos pesos do Timestral. A seleção contextual
 aprende com experiências e resultados; os pesos do Timestral não são ajustados
