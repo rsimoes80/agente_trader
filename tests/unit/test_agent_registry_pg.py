@@ -26,6 +26,22 @@ from . import test_agent_paper as paper_fixtures
     os.environ.get("TIMESTRAL_TEST_POSTGRES") == "1", "PostgreSQL opt-in"
 )
 class AgentRegistryTests(unittest.TestCase):
+    def test_learning_snapshots_are_deduplicated_and_integrity_checked_on_restart(self):
+        from aurelia_fx.continual_learning import initialize
+        self.c.execute('ALTER TABLE project_records ADD PRIMARY KEY(record_type,record_key,payload_sha256)')
+        fixture=paper_fixtures.PaperAccountTests();fixture.setUp()
+        account=PaperAccount(self.state['session_id'],'0.01',fixture.contract,'fixture','clock',research_mode=True)
+        initialize(account.data['lab_state'],datetime.now(timezone.utc),1000.)
+        claim(self.control,self.state['session_id'],'worker')
+        self.assertTrue(commit(self.control,account,'worker'));self.assertTrue(commit(self.control,account,'worker'))
+        count=self.c.execute("SELECT count(*) AS n FROM project_records WHERE record_type='agent_learning_checkpoint'").fetchone()['n']
+        self.assertEqual(count,1)
+        restored=checkpoint(self.control,self.state['session_id'])
+        self.assertEqual(restored['lab_state']['continual']['observations'],0)
+        self.assertTrue(self.control.status()['autonomy']['continual']['automatic'])
+        self.c.execute("UPDATE project_records SET payload_json='{}' WHERE record_type='agent_learning_checkpoint'")
+        with self.assertRaises(ValueError):checkpoint(self.control,self.state['session_id'])
+
     def test_diagnostics_uses_actual_session_events_and_checks_integrity(self):
         from aurelia_fx.agent_diagnostics import decisions
         event=dict(event_id='fixture',session_id=self.state['session_id'],status='decision',
@@ -239,11 +255,12 @@ class AgentRegistryTests(unittest.TestCase):
         fixture.start = datetime.now(timezone.utc)-timedelta(seconds=10)
         fixture.setup.update(signal_at=fixture.start.isoformat(), candidate=Candidate(
             "long", 1.1, 1.098, 1.105, fixture.start+timedelta(minutes=5), ("fixture",)))
+        fixture.setup['atr']=.001
         fixture.setup["production_eligible"]=not research
         self.control.publish(self.state["session_id"], symbol_contract=fixture.contract,history=dict(clock_id="clock"))
         state = self.control.status()
         candle_at = fixture.start-timedelta(minutes=5)
-        row = dict(timestamp=candle_at.isoformat(), spread_pips=1)
+        row = dict(timestamp=candle_at.isoformat(), spread_pips=1,open=1.1,high=1.101,low=1.099,close=1.1,volume=100)
         context = [SimpleNamespace(timestamp=candle_at, close=1.1)]
         session = SimpleNamespace(last=None, history=context,
             aggregator=SimpleNamespace(history={"D1":[]}),
@@ -251,7 +268,7 @@ class AgentRegistryTests(unittest.TestCase):
         repo = SimpleNamespace(candles=lambda **k: [], latest=lambda **k: {})
         version = dict(model=dict(model_id="fixture-model"), report=dict(threshold=0.55),
                        approval=dict(clock_id="clock",valid_until=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()))
-        config = SimpleNamespace(fingerprint="fixture-config")
+        config = SimpleNamespace(fingerprint="fixture-config",local_release='')
         from aurelia_fx.autonomous_lab import AutonomousLab
         policy=AutonomousLab(config.fingerprint) if research else None
 
@@ -268,6 +285,7 @@ class AgentRegistryTests(unittest.TestCase):
         for quote in quotes:
             quote["at"] = quote["observed_at"]
         with ExitStack() as patches:
+            patches.enter_context(patch('aurelia_fx.forecasting.config.load_config',return_value=config))
             patches.enter_context(patch.object(self.control, "heartbeat"))
             for name, value in {
                 "intelligence_session":lambda:session, "readiness":lambda *a,**k:None,
@@ -287,7 +305,7 @@ class AgentRegistryTests(unittest.TestCase):
         self.assertEqual(stored["closed_trades"], 1)
         self.assertAlmostEqual(stored["balance"], 10004.89)
         events = self.c.execute("SELECT payload_json FROM project_records WHERE record_type='agent_paper_event'").fetchall()
-        self.assertEqual(sorted(json.loads(e["payload_json"])["status"] for e in events),["closed","decision","opened"])
+        self.assertEqual(sorted(json.loads(e["payload_json"])["status"] for e in events),["closed","decision","learning_protocol","opened"] if research else ["closed","decision","opened"])
         if research:
-            self.assertEqual(sum(r["wins"] for r in self.control.status()["autonomy"]["hypotheses"]),1)
+            self.assertEqual(self.control.status()["autonomy"]['continual']['real_results'],1)
             self.assertTrue(stored["research_mode"])

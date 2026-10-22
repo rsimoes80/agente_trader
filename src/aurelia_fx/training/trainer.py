@@ -8,13 +8,16 @@ from .proof import SOURCE_MODEL,SOURCE_REVISION,SDK_REVISION,file_hash,tensor_ha
 from .metrics import forecast_metrics,paired_day_interval,forecast_gate
 
 
-def train(root,folder,output,progress,check):
+def train(root,folder,output,progress,check,recipe='conservative'):
     import numpy as np
     import torch
     from safetensors.torch import save_file,load_file
     from huggingface_hub import snapshot_download
     from timestral import TimestralForecaster
     from timestral.scaler import denormalize_quantiles
+    from .protocol import RECIPES
+    if recipe not in RECIPES:raise ValueError('Unknown training recipe')
+    settings=RECIPES[recipe]
     torch.set_num_threads(1);torch.manual_seed(31)
     folder,output,root=Path(folder),Path(output),Path(root)
     from .dataset import validate_dataset
@@ -72,9 +75,9 @@ def train(root,folder,output,progress,check):
     best_path=output/'best-head.safetensors';save_file(initial_head,best_path)
     history=[dict(epoch=0,validation_pinball_pips=best*10000)]
     for p in model.head.parameters():p.requires_grad_(True)
-    optimizer=torch.optim.AdamW(model.head.parameters(),lr=1e-5,weight_decay=0)
+    optimizer=torch.optim.AdamW(model.head.parameters(),lr=settings['learning_rate'],weight_decay=0)
     rng=np.random.default_rng(31)
-    for epoch in range(1,4):
+    for epoch in range(1,settings['epochs']+1):
         order=rng.permutation(len(train_data['hidden']));losses=[]
         for offset in range(0,len(order),32):
             check();idx=order[offset:offset+32];optimizer.zero_grad(set_to_none=True)
@@ -87,7 +90,7 @@ def train(root,folder,output,progress,check):
             loss.backward()
             norm=torch.nn.utils.clip_grad_norm_(model.head.parameters(),1.,error_if_nonfinite=True)
             optimizer.step();losses.append(float(loss.detach()))
-            if offset%320==0:progress(status='TRAINING',stage='training',message='Ajustando somente a saida',epoch=epoch,epochs=3,completed=offset,total=len(order))
+            if offset%320==0:progress(status='TRAINING',stage='training',message='Ajustando somente a saida',epoch=epoch,epochs=settings['epochs'],completed=offset,total=len(order))
         value=score(predict_phase(validation),validation['target'])
         history.append(dict(epoch=epoch,training_normalized_pinball=float(np.mean(losses)),validation_pinball_pips=value*10000))
         if value<best:
@@ -104,7 +107,7 @@ def train(root,folder,output,progress,check):
     progress(status='VALIDATING',stage='validation',message='Avaliando o teste cronologico apos congelar o candidato',selection=sealed)
     report=dict(dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,source_revision=SOURCE_REVISION,
                 sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,epochs=history,partitions={},
-                prior_market_data_seen=True,backbone_unchanged=True,live_model_changed=False)
+                prior_market_data_seen=True,backbone_unchanged=True,live_model_changed=False,recipe=recipe,training_settings=settings)
     for phase in ('validation','test'):
         a=arrays(phase);idx=np.load(folder/(phase+'.npy'),allow_pickle=False)
         predicted=predict_phase(a);target=data[idx[:,None]+np.arange(12)[None,:],4]

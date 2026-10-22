@@ -66,6 +66,10 @@ def learn(state, position, pnl, result_r):
     if position["coverage_uncertain"]:
         state["excluded_uncertain"] = state.get("excluded_uncertain",0)+1
         return
+    from .continual_learning import real_result
+    real_result(state,hypothesis,pnl,result_r)
+    if hypothesis.get('learning_version'):
+        return  # Versioned variants have their own contexts; do not relabel them as legacy arms.
     key, arm = hypothesis["context"], hypothesis["id"]
     cell = state.setdefault("live",{}).setdefault(key,{})
     add_reward(cell.setdefault(arm,empty_stats()),pnl,result_r)
@@ -111,6 +115,7 @@ class AutonomousLab:
                     else "Hipótese selecionada pelo histórico deste contexto e pela exploração.")
 
     def summary(self, state):
+        from .continual_learning import summary as learning_summary
         rows=[]
         for arm,name in HYPOTHESES:
             aggregate=empty_stats()
@@ -128,7 +133,7 @@ class AutonomousLab:
                     previous_policy_results=sum(v.get('n',0) for key,cell in state.get('live',{}).items()
                                                 if not key.startswith(POLICY_ID+'|'+REGIME_HASH+'|') for v in cell.values()),
                     excluded_uncertain=state.get("excluded_uncertain",0),
-                    native_orders=self.execution_mode=="demo")
+                    native_orders=self.execution_mode=="demo",continual=learning_summary(state))
 
     def seed(self, memory, *, clock_id, configuration, as_of):
         """Reuse only development labels; former validation/final are excluded."""

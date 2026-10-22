@@ -66,7 +66,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers();self.wfile.write(body);return
             app=self.server.app
             if path=='/api/diagnostics/training':
-                self.send(200,dict(ok=True,csrf=CSRF,state=app.training.summary()));return
+                from aurelia_fx.training.automatic import status as automatic_status
+                self.send(200,dict(ok=True,csrf=CSRF,state=app.training.summary(),automatic=automatic_status(app.memory)));return
             if path=='/api/diagnostics/agent':
                 self.send(200,dict(ok=True,csrf=CSRF,state=app.operation.status(),
                     worker=app.operation.worker_status(),authenticated=True,access_mode='single_user'));return

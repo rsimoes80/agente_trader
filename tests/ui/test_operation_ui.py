@@ -157,3 +157,16 @@ class OperationBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#approve").count(),0)
         self.assertEqual(self.page.locator("#password").count(),0)
         self.assertEqual(self.errors,[])
+
+    def test_continuous_memory_separates_shadow_results_from_actual_session(self):
+        self.state.update(state='ANALYZING',desired='running',mode='demo',execution_profile='autonomous_demo',
+            autonomy=dict(continual=dict(observations=12,eligible_signals=2,real_results=0,suspended_contexts=0,
+                champion_name='Base 2,5R',evidence_status='COLLECTING',last_result=None,last_change=None,
+                variants=[dict(name='Alvo 3R',closed=2,wins=1,net_pnl=.5,active=False)])))
+        self.page.goto('http://127.0.0.1:37771/')
+        self.page.locator('#hypotheses-table').filter(has_text='Alvo 3R').wait_for()
+        self.assertIn('Simulações encerradas',self.page.locator('#hypotheses-table').inner_text())
+        self.assertIn('12 candles',self.page.locator('#autonomy-info').inner_text())
+        self.assertIn('não são operações',self.page.locator('#last-learning').inner_text())
+        self.assertEqual(self.page.locator('#samples').inner_text(),'0')
+        self.assertEqual(self.errors,[])

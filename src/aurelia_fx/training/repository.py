@@ -5,7 +5,7 @@ from uuid import uuid4
 
 LOCK=70616081
 RUN_LOCK=70616080
-ACTIVE={'QUEUED','DATASET','WAITING_RESOURCES','TRAINING','VALIDATING','SIMULATING','SHADOW'}
+ACTIVE={'QUEUED','DATASET','WAITING_RESOURCES','TRAINING','VALIDATING','SIMULATING','SHADOW','AWAITING_PROSPECTIVE'}
 
 
 class Cancelled(RuntimeError):pass
@@ -48,7 +48,7 @@ class TrainingRepository:
             if action=='START':
                 if state['status'] not in ACTIVE:
                     state=self.append(c,dict(run_id=str(uuid4()),status='QUEUED',stage='dataset',cancel_requested=False,
-                        created_at=datetime.now(timezone.utc).isoformat(),message='Treino solicitado. Aguardando o servico Windows.',live_model_changed=False))
+                        created_at=datetime.now(timezone.utc).isoformat(),dataset_policy='rolling',message='Treino solicitado. Aguardando o servico Windows.',live_model_changed=False))
             elif state['status'] in ACTIVE:
                 state=self.append(c,{**state,'cancel_requested':True,'message':'Cancelamento solicitado somente para o laboratorio.'})
             payload={'action':action,'state':state};text,digest=self.memory._encode(payload)

@@ -2,6 +2,12 @@
 
 ## Acesso e funcionamento
 
+**Atualização:** o [aprendizado contínuo](APRENDIZADO_CONTINUO.md) agora agenda
+treinos com dados novos e conduz a validação futura automaticamente. O botão
+foi renomeado para **Antecipar treino** e é opcional. A descrição do piloto
+abaixo preserva o histórico da primeira entrega; suas limitações foram ampliadas
+pelo ciclo contínuo. O primeiro candidato reprovado não foi promovido.
+
 **http://192.168.97.221:8097/treinamento** — mesma aplicação e mesma porta.
 O painel principal contém o link **Treinamento**.
 

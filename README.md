@@ -54,8 +54,11 @@ O [painel do laboratório](docs/LABORATORIO_TIMESTRAL.md) está integrado em
 
 Os materiais em `Aprendizado/` orientam as regras e características técnicas.
 Os PDFs não são treinamento direto dos pesos do Timestral. A seleção contextual
-aprende com experiências e resultados; os pesos do Timestral não são ajustados
-automaticamente.
+aprende com experiências e resultados. O [aprendizado contínuo](docs/APRENDIZADO_CONTINUO.md)
+compara alternativas em paralelo e agenda retreinos do 5M com dados novos.
+A troca de pesos é automática somente após validação retrospectiva e futura,
+incluindo comparação com o modelo em operação. A tarefa Windows
+`AgenteTrader-TrainingLab` funciona independentemente da página aberta.
 
 A pesquisa histórica é separada do serviço de operação:
 

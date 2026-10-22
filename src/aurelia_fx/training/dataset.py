@@ -22,14 +22,14 @@ def validate_dataset(folder):
     if fingerprint(identity)!=manifest['dataset_id']:raise ValueError('Dataset manifest changed')
     if file_hash(folder/'candles.npy')!=manifest['array_sha256']:raise ValueError('Dataset prices changed')
     data=np.load(folder/'candles.npy',mmap_mode='r',allow_pickle=False)
-    expected,boundaries,excluded=split_windows(data[:,0],first_label=manifest['first_label_at'],end=manifest['source_as_of'])
+    expected,boundaries,excluded=split_windows(data[:,0],first_label=manifest['first_label_at'],end=manifest['source_as_of'],reserved=manifest.get('reserved_intervals',()))
     for phase,indices in expected.items():
         if not np.array_equal(indices,np.load(folder/(phase+'.npy'),allow_pickle=False)):raise ValueError('Dataset target partition changed')
     if manifest['counts']!={k:len(v) for k,v in expected.items()}:raise ValueError('Dataset counts changed')
     return manifest,data
 
 
-def split_windows(stamps,*,first_label,end,context=CONTEXT,horizon=HORIZON,stride=STRIDE):
+def split_windows(stamps,*,first_label,end,context=CONTEXT,horizon=HORIZON,stride=STRIDE,reserved=()):
     import numpy as np
     stamps=np.asarray(stamps,dtype=np.int64)
     if len(stamps)<context+horizon or (np.diff(stamps)<=0).any():raise ValueError('Insufficient or unordered data')
@@ -38,6 +38,8 @@ def split_windows(stamps,*,first_label,end,context=CONTEXT,horizon=HORIZON,strid
     gaps=np.r_[0,np.cumsum(np.diff(stamps)!=300)]
     result={k:[] for k in ('train','validation','test')};excluded={'gap':0,'cross_boundary':0,'outside':0}
     for i in range(context,len(stamps)-horizon+1,stride):
+        if any(stamps[i-context]<utc(b).timestamp() and stamps[i+horizon-1]+300>utc(a).timestamp() for a,b in reserved):
+            excluded['reserved']=excluded.get('reserved',0)+1;continue
         if stamps[i]<first or stamps[i+horizon-1]+300>end:
             excluded['outside']+=1;continue
         if gaps[i+horizon-1]!=gaps[i-context]:
@@ -100,4 +102,41 @@ def export(memory,root,progress=lambda **kw:None):
     manifest['array_sha256']=hashlib.sha256((folder/'candles.npy').read_bytes()).hexdigest()
     (folder/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     memory.record_project_data('agent_timestral_training_dataset',manifest['dataset_id'],manifest)
+    return folder,manifest
+
+def export_rolling(memory,root,progress=lambda **kw:None):
+    """New immutable snapshot per automatic run; previously researched data explicit."""
+    import numpy as np
+    baseline=HistoricalRepository(memory).latest()
+    if not baseline:raise ValueError('HISTORY_BASELINE_REQUIRED')
+    end=utc(baseline['as_of']);start=end-timedelta(days=180);known=baseline['_recorded_at']
+    rows=HistoricalRepository(memory).candles(clock_id=baseline['clock_id'],timeframe='M5',start=start,as_of=end,known_by=known)
+    rows=closed_rows(rows,'M5',start=start,as_of=end)
+    if not rows:raise ValueError('HISTORY_EMPTY')
+    start=max(start,utc(rows[0]['timestamp']));first=start+timedelta(days=10)
+    with memory.pool.connection() as c:
+        protocols=c.execute("SELECT payload_json FROM project_records WHERE record_type='agent_regime_study_protocol'").fetchall()
+    intervals=[]
+    for p in protocols:
+        at=utc(json.loads(p['payload_json'])['registered_at'])
+        intervals.append((at.isoformat(),(at+timedelta(days=7)).isoformat()))
+    array=np.asarray([[utc(r['timestamp']).timestamp(),*[r[k] for k in ('open','high','low','close','volume')],r.get('spread_pips') if r.get('spread_pips') is not None else float('nan')] for r in rows],dtype=np.float64)
+    splits,bounds,excluded=split_windows(array[:,0],first_label=first,end=end,reserved=intervals)
+    if any(len(v)<200 for v in splits.values()):raise ValueError('ROLLING_WINDOWS_INSUFFICIENT')
+    manifest=dict(version='eurusd-rolling-v1',source_run='automatic',baseline_id=baseline['baseline_id'],
+        source_clock_id=baseline['clock_id'],known_by=known,source_as_of=end.isoformat(),source_start=start.isoformat(),
+        first_label_at=first.isoformat(),boundaries=[datetime.fromtimestamp(t,timezone.utc).isoformat() for t in bounds],
+        source_candles_sha256=hashlib.sha256(json.dumps(rows,sort_keys=True,allow_nan=False).encode()).hexdigest(),
+        context=CONTEXT,horizon=HORIZON,stride=STRIDE,candles=len(array),counts={k:len(v) for k,v in splits.items()},excluded=excluded,
+        reserved_intervals=intervals,prior_market_data_seen=True,
+        split='70/15/15 chronological; all reserved study windows excluded; prospective validation required',
+        columns=['timestamp','open','high','low','close','volume','spread_pips'],lot=.01,contract=dict(trade_contract_size=100000,currency_profit='USD'))
+    manifest['dataset_id']=fingerprint(manifest)
+    folder=Path(root)/'data/training/datasets'/manifest['dataset_id'];folder.mkdir(parents=True,exist_ok=True)
+    np.save(folder/'candles.npy',array,allow_pickle=False)
+    for name,indices in splits.items():np.save(folder/(name+'.npy'),indices,allow_pickle=False)
+    manifest['array_sha256']=hashlib.sha256((folder/'candles.npy').read_bytes()).hexdigest()
+    (folder/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+    memory.record_project_data('agent_timestral_training_dataset',manifest['dataset_id'],manifest)
+    progress(stage='dataset',message='Historico recente congelado para aprendizado automatico',candles=len(array))
     return folder,manifest

@@ -14,11 +14,11 @@ do projeto; os PDFs não são pesos treinados diretamente no Timestral.
 
 ## O que aprende automaticamente
 
-O catálogo inicial contém pullback com direção H1, pullback confirmado pelo
-Timestral e gatilho de price action. A seleção combina evidências históricas de
-desenvolvimento com resultados novos por contexto. Após um resultado não positivo,
-prioriza outra hipótese elegível quando há alternativa. Não inventa código de uma
-estratégia nova a cada perda e não altera os pesos do Timestral automaticamente.
+O [ciclo de aprendizado contínuo](APRENDIZADO_CONTINUO.md) atualiza memória por
+contexto, dá peso às experiências recentes e compara cinco alternativas reais
+em carteiras simuladas. Ganhos e perdas isolados não trocam a estratégia. A
+adoção de alternativas e o retreinamento periódico são automáticos, com critérios
+registrados e validação separada. O agente não inventa código arbitrário.
 
 Ganhos e perdas são evidências, não comprovação de uma estratégia. A memória é
 persistida no PostgreSQL. Validação e teste final históricos permanecem fora da

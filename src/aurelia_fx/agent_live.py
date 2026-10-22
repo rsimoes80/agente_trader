@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from .agent_model import predict
@@ -19,6 +20,7 @@ from .forecasting.core import prepare
 from .historical.core import closed_rows, readiness, utc
 from .operation_control import LOCK
 from .sessions import SessionEngine
+from . import continual_learning as continual
 
 
 def checkpoint(control, session_id):
@@ -29,7 +31,8 @@ def checkpoint(control, session_id):
             ORDER BY recorded_at DESC LIMIT 1""",
             (session_id,),
         ).fetchone()
-    return json.loads(row["payload_json"]) if row else None
+    from .learning_storage import hydrate
+    return hydrate(control.memory,json.loads(row["payload_json"])) if row else None
 
 
 def claim(control, session_id, worker_id):
@@ -50,7 +53,8 @@ def project_account(control, account_key='EURUSD:USD'):
         row = c.execute("""SELECT payload_json FROM project_records
             WHERE record_type='agent_paper_account' AND record_key=%s
             ORDER BY recorded_at DESC LIMIT 1""",(account_key,)).fetchone()
-    return json.loads(row["payload_json"]) if row else None
+    from .learning_storage import hydrate
+    return hydrate(control.memory,json.loads(row["payload_json"])) if row else None
 
 
 def commit(control, account, worker_id, *, generation=None, **view):
@@ -75,6 +79,8 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 ('agent_demo_event' if native else 'agent_paper_event',event["event_id"], text, digest),
             )
         data = account.snapshot()
+        from .learning_storage import pack
+        pack(control.memory,c,data)
         text, digest = control.memory._encode(data)
         c.execute(
             """INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256,recorded_at)
@@ -132,7 +138,7 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 "position": data["position"],
                 "pending_execution":data.get('pending_execution',False),
                 "account": account.summary(),
-                "autonomy": AutonomousLab("",execution_mode='demo' if native else 'paper').summary(data["lab_state"])
+                "autonomy": AutonomousLab("",execution_mode='demo' if native else 'paper').summary(account.data["lab_state"])
                     if data.get("research_mode") else None,
             },
         )
@@ -238,10 +244,17 @@ def run_paper(
             clock_id=account.data["clock_id"],configuration=config.fingerprint,
             as_of=datetime.now(timezone.utc))
         if account.data['lab_state'].get('protocol_id')==research_policy.protocol_id:
-            for key in ('live','last_result','last_failed','excluded_uncertain'):
+            for key in ('live','last_result','last_failed','excluded_uncertain','continual','model_study'):
                 if key in account.data['lab_state']:seeded[key]=account.data['lab_state'][key]
         account.data['lab_state']=seeded
     if research_policy:
+        initialized=account.data['lab_state'].get('continual')
+        current_learning=continual.initialize(account.data['lab_state'],datetime.now(timezone.utc),account.data['units'])
+        if current_learning is not initialized:
+            account.event('learning_protocol',datetime.now(timezone.utc).isoformat(),
+                protocol=continual.SPEC,protocol_hash=continual.SPEC_HASH,
+                scope='prospective_shadow_separate_from_broker_results')
+        commit(control,account,worker_id)
         control.publish(session_id,expected_generation=state.get("generation"),
                         autonomy=research_policy.summary(account.data["lab_state"]))
     if state.get('mode')=='demo':
@@ -288,9 +301,12 @@ def run_paper(
             observed_at=utc(row["timestamp"]) + timedelta(minutes=5),
         )
     adapter = TimestralAdapter(config)
+    from .training.online_study import OnlineStudy
+    study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id']) if research_policy else None
     sessions = SessionEngine(SESSIONS)
     last_persist = 0
     last_history_refresh = 0
+    last_config_check = 0
     try:
         while not stop.is_set():
             lease.execute("SELECT 1")
@@ -307,6 +323,38 @@ def run_paper(
                     if current["desired"] == "stopped"
                     else None,
                 )
+                if study:
+                    try:study.tick(quote,stop=current['desired']!='running')
+                    except (RuntimeError,ValueError,KeyError,OSError) as exc:
+                        account.data['lab_state'].setdefault('model_study',{})['error']=type(exc).__name__
+                        study.close()
+                if research_policy and not account.data['position'] and not account.data.get('pending_execution') and time.monotonic()-last_config_check>60:
+                    last_config_check=time.monotonic()
+                    from .forecasting.config import load_config
+                    rollback_request=account.data['lab_state']['continual'].get('model_rollback_request')
+                    if config.local_release and rollback_request and rollback_request['model_configuration']==config.fingerprint:
+                        from .training.releases import rollback
+                        from .forecasting.config import ROOT
+                        account.data['model_reload_pending']=True
+                        rollback(ROOT,Path(config.local_release).parent.name)
+                        account.event('model_rollback',quote['at'],reason=rollback_request['reason'],samples=rollback_request['samples'])
+                    new_config=load_config()
+                    if new_config.fingerprint!=config.fingerprint and (new_config.local_release or config.local_release):
+                        from .training.releases import resolve
+                        from .forecasting.config import ROOT
+                        if new_config.local_release:resolve(ROOT,new_config.local_release,new_config.local_artifact_sha256)
+                        account.data['model_reload_pending']=True
+                        replacement=TimestralAdapter(new_config)
+                        try:replacement.warmup()
+                        except Exception:
+                            replacement.close();raise
+                        adapter.close();adapter=replacement;config=new_config
+                        account.data['model_reload_pending']=False
+                        learning=account.data['lab_state']['continual']
+                        learning.update(registered_at=datetime.now(timezone.utc).isoformat(),outcomes=[],portfolios={},champion='baseline',
+                            evidence_status='REVALIDATING_AFTER_MODEL_CHANGE',last_change=dict(at=quote['at'],reason='FORECAST_MODEL_CHANGED',previous='previous model context',selected='baseline'))
+                        account.event('model_changed',quote['at'],artifact_sha256=config.local_artifact_sha256,
+                            reason='AUTOMATIC_VALIDATED_RELEASE',release=config.local_release)
                 if current["desired"] != "running":
                     commit(control, account, worker_id)
                     if not account.data["position"] and not account.data.get('pending_execution'):
@@ -353,6 +401,10 @@ def run_paper(
                         session.history,
                         daily_history=session.aggregator.history["D1"],
                     )
+                    if research_policy:
+                        if setup:setup.update(learning_source=account.data['clock_id'],learning_model=config.fingerprint)
+                        for result in continual.advance(account.data['lab_state'],closed,utc(quote['at'])):
+                            account.event('learning_shadow_result',result.get('exit_at',result.get('at',quote['at'])),result=result)
                     if reason == 'TREND_REGIME_REQUIRED' and snapshot.regime == 'UNKNOWN':
                         regime_state=snapshot.as_dict().get('regime_state',{})
                         classification=regime_state.get('features',{}).get('classification_reason')
@@ -366,6 +418,9 @@ def run_paper(
                         - timedelta(minutes=5)
                     ).total_seconds()
                     reason = (
+                        'MODEL_RELOAD_PENDING'
+                        if account.data.get('model_reload_pending')
+                        else
                         "HISTORY_NOT_READY"
                         if history_block
                         else "MODEL_APPROVAL_EXPIRED"
@@ -385,7 +440,15 @@ def run_paper(
                         entry_policy=POLICY_ID,
                         trend_context={role:snapshot.as_dict().get(role) for role in ('macro_trend','context_trend')},
                     )
-                    if setup and not reason:
+                    if study and study.run:
+                        try:
+                            study_context=prepare(session.history,utc(latest['timestamp'])+timedelta(minutes=5),config)
+                            study.observe(study_context,closed,quote,adapter,setup=setup if not history_block and age<=90 and age>=0 else None,
+                                quote_fetch=lambda:observed_quote(fetch('EURUSD','M5',100,include_current=True),clock_id=account.data['clock_id']))
+                        except (RuntimeError,ValueError,KeyError,OSError) as exc:
+                            account.data['lab_state'].setdefault('model_study',{})['error']=type(exc).__name__
+                            study.close()
+                    if setup and (not reason or (research_policy and reason=='POSITION_ALREADY_OPEN')):
                         context = prepare(
                             session.history,
                             utc(latest["timestamp"]) + timedelta(minutes=5),
@@ -395,7 +458,11 @@ def run_paper(
                             control.memory, context, config, adapter
                         )
                         features = attach_forecast(setup, output)
-                        hypothesis = research_policy.select(features,setup["snapshot"],account.data["lab_state"]) if research_policy else None
+                        if research_policy:
+                            continual.consider(account.data['lab_state'],setup,features)
+                            hypothesis=continual.choose(account.data['lab_state'],setup,features,research_policy.protocol_id)
+                            if not hypothesis.get('wait'):setup=continual.apply(setup,hypothesis['variant_id'])
+                        else:hypothesis=None
                         probability = None if research_policy else predict(model, features)
                         decision.update(
                             probability=probability,
@@ -407,7 +474,7 @@ def run_paper(
                             ),
                             hypothesis=hypothesis,
                         )
-                        if research_policy or probability >= threshold:
+                        if not reason and ((research_policy and not hypothesis.get('wait')) or (not research_policy and probability >= threshold)):
                             fresh = control.status()
                             fresh_data = fetch(
                                 "EURUSD", "M5", 100, include_current=True
@@ -478,6 +545,8 @@ def run_paper(
                                         research_mode=bool(research_policy),
                                     )
                                     account.events = before_events
+                                    if study:
+                                        study.close();study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id'])
                                     continue
                             else:
                                 decision["reason"] = (
@@ -485,7 +554,7 @@ def run_paper(
                                 )
                         else:
                             decision["reason"] = (
-                                "O filtro aprendido não aprovou esta oportunidade."
+                                reason or (hypothesis['reason'] if research_policy else "O filtro aprendido não aprovou esta oportunidade.")
                             )
                     account.data["last_candle"] = latest["timestamp"]
                     account.event(
@@ -523,3 +592,4 @@ def run_paper(
             stop.wait(3)
     finally:
         adapter.close()
+        if study:study.close()

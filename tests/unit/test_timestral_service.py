@@ -59,7 +59,7 @@ class TimestralServiceTests(unittest.TestCase):
         adapter.process = process
         with patch(
             "psutil.Process",
-            return_value=SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=100)),
+            return_value=SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=100),children=lambda **kw:[],is_running=lambda:True),
         ):
             with self.assertRaisesRegex(ModelUnavailable, "Timeout"):
                 adapter._wait(0.02)
@@ -75,7 +75,7 @@ class TimestralServiceTests(unittest.TestCase):
         with patch(
             "psutil.Process",
             return_value=SimpleNamespace(
-                memory_info=lambda: SimpleNamespace(rss=10**12)
+                memory_info=lambda: SimpleNamespace(rss=10**12),children=lambda **kw:[],is_running=lambda:True
             ),
         ):
             with self.assertRaisesRegex(ModelUnavailable, "memória"):
@@ -105,7 +105,7 @@ class TimestralServiceTests(unittest.TestCase):
             patch(
                 "psutil.Process",
                 return_value=SimpleNamespace(
-                    memory_info=lambda: SimpleNamespace(rss=100)
+                    memory_info=lambda: SimpleNamespace(rss=100),children=lambda **kw:[],is_running=lambda:True,create_time=lambda:1.
                 ),
             ),
         ):

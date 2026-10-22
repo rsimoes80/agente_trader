@@ -44,6 +44,18 @@ class TrainingReleaseTests(unittest.TestCase):
         (self.folder/'candidate/model.safetensors').write_bytes(b'tampered')
         with self.assertRaisesRegex(ValueError,'artifact changed'):resolve(self.root,release,self.digest)
 
+    def test_repeated_activation_and_crash_recovery_preserve_original_backup(self):
+        from unittest.mock import patch
+        from aurelia_fx.training.releases import atomic_json
+        def interrupted(path,value):
+            if Path(path).resolve()==self.config.resolve():raise OSError('fixture interruption before config switch')
+            atomic_json(path,value)
+        with patch('aurelia_fx.training.releases.atomic_json',side_effect=interrupted),self.assertRaises(OSError):activate(self.root,self.run)
+        self.assertEqual(json.loads(self.config.read_text()),self.original)
+        release=activate(self.root,self.run)
+        self.assertEqual(activate(self.root,self.run),release)
+        self.assertEqual(rollback(self.root,self.run),self.original)
+
     def test_path_escape_and_candidate_mismatch_refused(self):
         with self.assertRaises(ValueError):activate(self.root,'../../foreign')
         self.future['candidate_sha256']='a'*64

@@ -1,5 +1,5 @@
 """Versioned, fail-closed activation and rollback. No automatic live promotion."""
-import json,os
+import json,os,time
 from datetime import datetime,timezone
 from pathlib import Path
 from uuid import uuid4
@@ -10,7 +10,11 @@ def atomic_json(path,value):
     temporary=path.with_name(path.name+'.'+uuid4().hex+'.tmp')
     try:
         temporary.write_text(json.dumps(value,indent=2),encoding='utf-8')
-        os.replace(temporary,path)
+        for attempt in range(6):
+            try:os.replace(temporary,path);break
+            except PermissionError:
+                if attempt==5:raise
+                time.sleep(.05*(attempt+1))
     finally:
         if temporary.exists():temporary.unlink()
 
@@ -43,8 +47,13 @@ def activate(root,run_id,config_path=None):
     config_path=Path(config_path or root/'data/timestral.json')
     old=json.loads(config_path.read_text())
     backup=release.parent/'previous-config.json'
-    if release.exists():raise ValueError('Release already exists; choose rollback or a new run')
-    atomic_json(backup,old);atomic_json(release,payload)
+    if release.exists():
+        resolve(root,str(release.relative_to(root)),digest)
+        if old.get('local_release')==str(release.relative_to(root)) and old.get('local_artifact_sha256')==digest:return str(release.relative_to(root))
+        if not backup.exists() or json.loads(backup.read_text())!=old:raise ValueError('Existing release conflicts with current configuration')
+        # Recover a crash between writing evidence and switching the configuration.
+    else:
+        atomic_json(backup,old);atomic_json(release,payload)
     new={**old,'model':report['source_model'],'revision':digest,'local_release':str(release.relative_to(root)),
         'local_artifact_sha256':digest}
     from aurelia_fx.forecasting.config import TimestralConfig

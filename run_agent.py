@@ -300,6 +300,16 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     from aurelia_fx.agent_live import run_paper
     mode=state.get('mode','paper')
     policy=AutonomousLab(config.fingerprint,execution_mode=mode)
+    if config.local_release:
+        # Adaptive weights do not change the user's existing demo/account/lot authority.
+        from aurelia_fx.training.releases import resolve
+        resolve(ROOT,config.local_release,config.local_artifact_sha256)
+        if mode=='demo' and state.get('demo_authorization'):
+            policy.protocol_id=state['demo_authorization']['protocol_id']
+        elif mode=='paper':
+            from aurelia_fx.agent_live import checkpoint
+            prior=checkpoint(control,session_id)
+            if prior and prior.get('research_mode'):policy.protocol_id=prior['model_id']
     if mode=='demo':
         from aurelia_fx.demo_terminal import demo_terminal
         from aurelia_fx.agent_model import fingerprint

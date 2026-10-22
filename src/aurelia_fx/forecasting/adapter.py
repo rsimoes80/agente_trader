@@ -22,6 +22,7 @@ class TimestralAdapter:
     def __init__(self, config):
         self.config = config
         self.process = None
+        self._birth = None
         self.responses = queue.Queue()
         self.lock = threading.Lock()
 
@@ -29,11 +30,20 @@ class TimestralAdapter:
         process, self.process = self.process, None
         if process is not None:
             if process.poll() is None:
+                import psutil
+                try:
+                    parent=psutil.Process(process.pid)
+                    children=parent.children(recursive=True) if self._birth is None or parent.create_time()==self._birth else []
+                    for child in reversed(children):
+                        try:child.kill()
+                        except psutil.NoSuchProcess:pass
+                except psutil.NoSuchProcess:pass
                 process.kill()
             process.wait(timeout=10)
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream:
                     stream.close()
+        self._birth=None
 
     def _read(self, process, responses):
         try:
@@ -51,7 +61,12 @@ class TimestralAdapter:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
-                rss = psutil.Process(self.process.pid).memory_info().rss
+                parent=psutil.Process(self.process.pid)
+                if self._birth is not None and parent.create_time()!=self._birth:
+                    self.close();raise ModelUnavailable('Processo Timestral mudou de identidade.')
+                rss=sum(p.memory_info().rss for p in [parent,*parent.children(recursive=True)] if p.is_running())
+                if psutil.virtual_memory().available<128*1024**2:
+                    self.close();raise ModelUnavailable('Timestral aguarda memoria livre; processo isolado encerrado.')
                 if rss > self.config.memory_mb * 1024**2:
                     self.close()
                     raise ModelUnavailable("Timestral excedeu limite de memória.")
@@ -89,7 +104,7 @@ class TimestralAdapter:
         log_dir.mkdir(exist_ok=True)
         with (log_dir / "timestral-engine.log").open("a", encoding="utf-8") as log:
             self.process = subprocess.Popen(
-                [python, "-u", str(ROOT / "run_timestral.py"), "--engine"],
+                self._command(python),
                 cwd=ROOT,
                 env=env,
                 stdin=subprocess.PIPE,
@@ -99,10 +114,12 @@ class TimestralAdapter:
                 encoding="utf-8",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
+        import psutil
+        self._birth=psutil.Process(self.process.pid).create_time()
         threading.Thread(
             target=self._read, args=(self.process, self.responses), daemon=True
         ).start()
-        self.process.stdin.write(json.dumps(asdict(self.config)) + "\n")
+        self.process.stdin.write(json.dumps(self._options()) + "\n")
         self.process.stdin.flush()
         ready = self._wait(self.config.load_timeout_seconds)
         if not ready.get("ready"):
@@ -110,6 +127,9 @@ class TimestralAdapter:
             raise ModelUnavailable(
                 "Falha no carregamento Timestral: " + ready.get("error_type", "unknown")
             )
+
+    def _command(self,python):return [python,'-u',str(ROOT/'run_timestral.py'),'--engine']
+    def _options(self):return asdict(self.config)
 
     def warmup(self):
         if not self.config.enabled:

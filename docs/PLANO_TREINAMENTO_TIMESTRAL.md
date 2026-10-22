@@ -1,5 +1,8 @@
 # Laboratório de treinamento Timestral
 
+Evolução implantada: [aprendizado contínuo automático](APRENDIZADO_CONTINUO.md).
+O piloto abaixo é o primeiro experimento arquivado; novos ciclos usam dados novos.
+
 ## Objetivo e estado
 
 Criar e avaliar versões ajustadas do modelo de previsão, separadas do agente
