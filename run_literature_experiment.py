@@ -12,19 +12,19 @@ sys.path.insert(0, str(ROOT/'src'))
 SOURCE = 'f898357a5ab80a9e9bf4d05eecda1f92754c3616239bd754c7d4b820f33086e1'
 
 
-def simulate(samples, candles, *, start, end, stress=False):
+def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, purge_hours=2):
     from aurelia_fx.agent_research import simulator, request_for, SESSIONS
     from aurelia_fx.broker_calendar import unexpected_broker_gap, slot_tradable
     from aurelia_fx.sessions import SessionEngine
     from aurelia_fx.historical.core import utc
     from aurelia_fx.domain import Candidate
     start, end = utc(start), utc(end)
-    selected = [s for s in samples if start <= utc(s['entry_at']) < end-timedelta(hours=2)]
+    selected = [s for s in samples if start <= utc(s['entry_at']) < end-timedelta(hours=purge_hours)]
     signals = {utc(s['entry_at']): s for s in selected}
     if len(signals) != len(selected):
         raise ValueError('Duplicate signals in one family')
     engine = simulator(1000)
-    engine.config = replace(engine.config, max_holding_bars=24, slippage_pips=.4 if stress else .2)
+    engine.config = replace(engine.config, max_holding_bars=holding_bars, slippage_pips=.4 if stress else .2)
     sessions = SessionEngine(SESSIONS)
     previous = None
     overlaps = 0

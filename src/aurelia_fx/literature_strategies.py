@@ -45,7 +45,7 @@ def efficiency(bars):
     return abs(bars[-1].close-bars[0].close) / path if path else 0.
 
 
-def candidate(current, sign, structural_stop, scale, *, target=None):
+def candidate(current, sign, structural_stop, scale, *, target=None, seconds=300):
     """Freeze quote-aware geometry now; actual next-open fills remain risk checked."""
     if sign not in (-1, 1) or not scale or scale <= 0 or current.spread_pips is None:
         return None
@@ -58,23 +58,28 @@ def candidate(current, sign, structural_stop, scale, *, target=None):
     target = target if target is not None else anticipated + sign*3*distance
     if sign*(target-anticipated) <= 0:
         return None
-    signal = current.timestamp + timedelta(minutes=5)
+    signal = current.timestamp + timedelta(seconds=seconds)
     return Candidate('long' if sign == 1 else 'short', entry, stop, target,
-        signal+timedelta(minutes=5), ('literature-family-research',))
+        signal+timedelta(seconds=seconds), ('literature-family-research',))
 
 
-def setups(histories):
-    bars = list(histories.get('M5', []))
-    h1 = list(histories.get('H1', []))
-    m15 = list(histories.get('M15', []))
+def setups(histories, *, execution='M5', context='H1', confirmation='M15', macro='H4'):
+    from .trend import timeframe_seconds
+    from .broker_calendar import unexpected_broker_gap
+    seconds = timeframe_seconds(execution)
+    bars = list(histories.get(execution, []))
+    h1 = list(histories.get(context, []))
+    m15 = list(histories.get(confirmation, []))
     if len(bars) < 64 or len(h1) < 60:
         return {}
     current, previous = bars[-1], bars[-2]
-    known = current.timestamp+timedelta(minutes=5)
-    for tf, seconds in (('M5', 300), ('M15', 900), ('H1', 3600), ('H4', 14400)):
-        if any(b.timestamp+timedelta(seconds=seconds) > known for b in histories.get(tf, [])):
+    known = current.timestamp+timedelta(seconds=seconds)
+    for tf in {execution, context, confirmation, macro}:
+        if any(b.timestamp+timedelta(seconds=timeframe_seconds(tf)) > known for b in histories.get(tf, [])):
             raise ValueError('Research received unfinished/future context')
-    if any((b.timestamp-a.timestamp).total_seconds() != 300 for a,b in zip(bars[-64:-1],bars[-63:])):
+    missing = lambda a,b: ((b.timestamp-a.timestamp).total_seconds() != 300 if execution=='M5'
+                         else unexpected_broker_gap(a,b,seconds))
+    if any(missing(a,b) for a,b in zip(bars[-64:-1],bars[-63:])):
         return {}
     if current.spread_pips is None or not 0 <= current.spread_pips <= 2:
         return {}
@@ -84,12 +89,17 @@ def setups(histories):
     direction = bias(h1)
     output = {}
 
-    def add(family, sign, stop, event, context, target=None):
-        proposal = candidate(current, sign, stop, scale, target=target)
+    def add(family, sign, stop, event, description, target=None):
+        proposal = candidate(current, sign, stop, scale, target=target, seconds=seconds)
         if proposal:
-            output[family] = dict(candidate=proposal, event=event, context=context,
-                h1_bias=direction, h4_bias=bias(list(histories.get('H4', []))),
-                against_h1=bool(direction and sign != direction), known_at=known.isoformat())
+            output[family] = dict(candidate=proposal, event=event, context=description,
+                h1_bias=bias(list(histories.get('H1', []))), h4_bias=bias(list(histories.get('H4', []))),
+                against_h1=bool(bias(list(histories.get('H1', []))) and sign != bias(list(histories.get('H1', [])))), known_at=known.isoformat())
+            if execution != 'M5':
+                output[family].update(execution_timeframe=execution, context_timeframe=context,
+                    confirmation_timeframe=confirmation, macro_timeframe=macro,
+                    context_bias=direction, macro_bias=bias(list(histories.get(macro, []))),
+                    against_context=bool(direction and sign!=direction))
 
     if direction:
         sign = direction
@@ -100,7 +110,7 @@ def setups(histories):
         extreme = previous.high if sign == 1 else previous.low
         if (correction or touched) and sign*(current.close-extreme) > 0 and sign*(current.close-current_fast) > 0 and sign*(current.close-current.open) > 0:
             stop = min(b.low for b in bars[-5:])-.2*scale if sign == 1 else max(b.high for b in bars[-5:])+.2*scale
-            add('trend_pullback', sign, stop, previous.timestamp.isoformat(), 'H1 trend; correction followed by closed resumption')
+            add('trend_pullback', sign, stop, previous.timestamp.isoformat(), f'{context} trend; correction followed by closed resumption')
 
         # Breakout level is frozen from bars preceding that breakout, never the retest.
         for j in range(len(bars)-2, len(bars)-8, -1):
@@ -112,7 +122,7 @@ def setups(histories):
             touch = current.low <= level+.25*scale if sign == 1 else current.high >= level-.25*scale
             if crossing and valid and touch and sign*(current.close-level) > 0 and sign*(current.close-current.open) > 0 and sign*(current.close-extreme) > 0:
                 stop = min(b.low for b in tail)-.2*scale if sign == 1 else max(b.high for b in tail)+.2*scale
-                add('breakout_retest', sign, stop, bars[j].timestamp.isoformat(), 'H1 trend; prior breakout and subsequent retest')
+                add('breakout_retest', sign, stop, bars[j].timestamp.isoformat(), f'{context} trend; prior breakout and subsequent retest')
                 break
 
     zone = bars[-26:-2]
@@ -130,5 +140,5 @@ def setups(histories):
         micro = max(b.high for b in bars[-4:-1]) if sign == 1 else min(b.low for b in bars[-4:-1])
         m15_confirms = bool(m15 and sign*(m15[-1].close-m15[-1].open) > 0)
         if direction == -sign and sweep and resumed and sign*(current.close-micro) > 0 and m15_confirms:
-            add('reversal_shift', sign, stop, previous.timestamp.isoformat(), 'Against prior H1 bias; failed extreme, M5 micro break and closed M15 response')
+            add('reversal_shift', sign, stop, previous.timestamp.isoformat(), f'Against prior {context} bias; failed extreme, {execution} micro break and closed {confirmation} response')
     return output
