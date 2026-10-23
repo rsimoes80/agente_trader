@@ -159,6 +159,8 @@ M15/M10 com rompimento/reteste teve expectativa bruta de 0,44 pip no
 desenvolvimento e custo médio de 2,19 pips. A mediana das durações ficou entre
 7 e 18 minutos, conforme perfil e período: são efetivamente entradas curtas.
 
+![Expectativa bruta, custos e expectativa líquida no desenvolvimento conservador](audits/m1-conservative-costs.png)
+
 Algumas carteiras sob estresse tiveram exposição censurada por lacuna e seu
 resultado total é indeterminado (`null`), sem substituição por zero nem soma
 de parcelas conhecidas como resultado completo. A frequência comparativa H4/H1
