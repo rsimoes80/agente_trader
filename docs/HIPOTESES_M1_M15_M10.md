@@ -14,9 +14,36 @@ e reteste de região anterior. O manifesto
 EMA, ATR, períodos e limiares deste estudo são definições de engenharia,
 não uma receita numérica atribuída aos autores.
 
-## Protocolo registrado antes dos resultados
+## Protocolos registrados antes dos resultados
 
 ID: `4b39756aa50c48dde15f7a1cf8b9798885f2851e14ee999e0d6182060ea1d0fe`.
+
+Esse primeiro protocolo exige agregações completas a partir de M1 e serve como
+comparação conservadora. A auditoria posterior dos dados encontrou 232
+intervalos com minutos ausentes, dos quais muitos ocorrem na virada diária;
+isso pode impedir desproporcionalmente o aquecimento H4/H1 quando todo o
+contexto é reiniciado por uma lacuna M1.
+
+**Antes de qualquer seleção financeira**, foi registrado o protocolo primário
+com contextos nativos do MT5:
+`35520ecaa695eda4130c93568303fbe38e1476cb23ab35c98cf6fbca06275736`.
+Ele usa os mesmos quatro perfis, regras e amostra de execução M1, mas busca
+M5/M10/M15/H1/H4 diretamente do terminal, com 30 dias adicionais de contexto.
+Um minuto sem candle não é preenchido: o OHLC maior é o publicado pela corretora,
+que não estabelece uma trajetória intrabar completa. Ausência de um candle
+inteiro do contexto invalida seus 60 candles de direção; contexto atrasado e
+gatilho M1 com lacunas também bloqueiam sinais.
+
+Uma versão preliminar, `856af733…`, teve apenas a captura executada e foi
+substituída antes de gerar sinais/resultados: a versão atual trata a mudança de
+alinhamento H4 por horário de verão durante o fim de semana fechado. Lacunas
+de negociação continuam inválidas. O mesmo snapshot nativo foi reutilizado e
+a alteração está registrada em `agent_m1_native_protocol_amendment`.
+
+Os dois resultados serão preservados. A versão nativa responde à comparação
+de períodos vista no MT5; a versão agregada mede a sensibilidade à exigência de
+minutos completos. Essa ampliação foi motivada por qualidade dos dados, não
+pela escolha de um resultado mais lucrativo.
 
 | Perfil | Direção e confirmação | Gatilho |
 |---|---|---|
@@ -76,8 +103,10 @@ Os resultados de todos os perfis são preservados, inclusive perdas e censuras.
 
 ## Verificações já executadas
 
-- 53 testes automatizados passaram, incluindo dez novos testes específicos M1,
+- 58 testes automatizados passaram, incluindo dez novos testes específicos M1,
   duração real de 60 minutos e invariância dos sinais ao acrescentar dados futuros.
+- Cinco testes adicionais verificam os contextos nativos, ausência de dados
+  futuros, horário de verão e bloqueios por contexto incompleto/atrasado e por lacunas M1.
 - Amostra nativa: 100 candles por período M5/M10/M15, todos coincidentes em
   OHLC e volume com a agregação dos M1. O spread agregado não foi equiparado
   ao campo spread nativo de outro período, pois a amostragem pode diferir.
@@ -89,6 +118,8 @@ Os resultados de todos os perfis são preservados, inclusive perdas e censuras.
 ```powershell
 .venv/Scripts/python.exe run_m1_context_experiment.py --capture-only
 .venv/Scripts/python.exe run_m1_context_experiment.py --resume PROTOCOL_ID
+.venv/Scripts/python.exe run_m1_native_context_experiment.py --capture-only
+.venv/Scripts/python.exe run_m1_native_context_experiment.py --resume NATIVE_PROTOCOL_ID
 ```
 
 `--resume` exige os mesmos hashes de implementação e reutiliza o snapshot,
