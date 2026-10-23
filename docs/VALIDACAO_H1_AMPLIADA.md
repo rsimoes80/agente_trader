@@ -1,5 +1,12 @@
 # Validação ampliada da candidata H1
 
+**Atualização da coleta futura:** a primeira versão do observador tinha um
+candle ausente na transição inicial. Não houve operações nesse estudo; seus
+registros foram preservados e não devem validar o contexto. A versão corrigida
+começou em 23/10/2026 às 15:35 de Brasília, conforme a
+[auditoria de inicialização](TESTE_DE_HORARIOS_H1.md#correção-da-inicialização-prospectiva).
+Os testes históricos deste documento não foram alterados por essa correção.
+
 ## Objetivo e funcionamento
 
 Verificar se o rompimento com reteste em H1 apresenta vantagem líquida em

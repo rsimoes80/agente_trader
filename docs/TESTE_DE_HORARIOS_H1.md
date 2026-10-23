@@ -258,7 +258,7 @@ lacuna com M1; nenhum preço foi interpolado. A auditoria
 
 ## Etapa 4 — sensibilidade ao perfil de comissão
 
-Está sendo registrado e processado um experimento separado com comissão zero,
+Foi concluído um experimento separado com comissão zero,
 usando os mesmos oito conjuntos M15 de sinais congelados. Ele representa a
 sensibilidade compatível com as seis execuções demo observadas; não confirma
 o tipo da conta nem uma tarifa futura de conta real.
@@ -282,12 +282,123 @@ de mercado controlável pelo agente.
 .venv/Scripts/python.exe run_demo_fee_sensitivity.py
 ```
 
-Registros `agent_demo_fee_protocol`, `agent_demo_fee_selection` e, ao concluir,
-`agent_demo_fee_experiment`. Os resultados finais serão acrescentados após a
-conclusão. Nenhum dos experimentos desta documentação promove estratégias
-ou envia operações novas à conta demo.
+Registros `agent_demo_fee_protocol`, `agent_demo_fee_selection` e
+`agent_demo_fee_experiment`. Relatório concluído:
+`6a65b9b9df12e3a248638dba5105b89131d378465722758fa8bc727911bf9884`.
 
-## Observação prospectiva automática
+A escolha continuou sendo reversão M15 no horário original:
+
+| Período, comissão zero | Encerradas | Líquido (US$) | Estresse (US$) |
+|---|---:|---:|---:|
+| Desenvolvimento 2021–2023 | 53 | +10,67 | +6,50 |
+| Checagem 2024 | 18 | −2,57 | −3,72 |
+| Checagem 2025 | 19 | +14,93 | +13,37 |
+| Checagem 2020 maio–dezembro | 10 | −8,28 | −9,05 |
+
+Nenhuma checagem cumpriu todo o protocolo. O resultado positivo em 2025 ficou
+com 19 operações; 2024 e 2020 também foram negativos. Não houve redução do
+mínimo depois dos resultados.
+
+Na falha de faixa, retirar comissão alterou vetos de risco e aumentou de 109
+para 126 o número de negócios do desenvolvimento; o líquido piorou de
+−US$ 1,47 para −US$ 10,72. Portanto, somar as comissões aos negócios antigos
+teria produzido uma conclusão errada sobre a carteira sem comissão.
+
+O perfil de comissão é um custo a identificar, não um parâmetro para escolher
+conforme dê mais lucro. Os dois perfis permanecem separados, sem confirmação
+do tipo de conta e sem extrapolar seis execuções demo para uma tarifa real.
+
+## Correção da inicialização prospectiva
+
+A auditoria identificou um candle descartado entre o seed e o fluxo novo da
+primeira versão do observador: último seed às 16:25 UTC e primeira barra do
+arquivo novo às 16:35 UTC. A barra de 16:30 estava se formando na captura
+inicial e foi indevidamente excluída quando fechou. A diferença de 10 minutos
+reiniciava artificialmente o contexto.
+
+Os estudos anteriores não tinham operações nem posições simuladas abertas.
+Seus registros foram preservados e marcados como inadequados para validação
+do contexto, em `agent_shadow_startup_audit`. Nenhuma operação antiga foi
+inserida retroativamente para melhorar o resultado.
+
+A versão corrigida continua a partir da última barra efetivamente presente
+no seed, incluindo a barra que estava em formação assim que ela fecha. Uma
+checagem real confirmou seed às 18:25 UTC, primeira barra nova às 18:30 UTC
+e continuidade de cinco minutos. O contexto preservou 213 candles H4 e 300
+H1; D1 tinha 39, ainda abaixo do mínimo de 60, explicitamente sem inferir
+neutralidade a partir dessa falta.
+
+Novo feed prospectivo:
+`20a06833abbd6ddb7edfde7dba6a95e4841f39af6cb3f91cbc6cad8057ebff6a`.
+Novo comparador de horários:
+`4eb88a647c9e4ff16852cee79a16232d4051ac32deae9fc1031fcb4d4e0f4e10`.
+Ambos iniciados em **23/10/2026 às 15:35 de Brasília** (18:35 UTC).
+Os consumidores passam a localizar o feed pelo hash da implementação atual;
+se ele ainda não estiver registrado no login, aguardam e tentam novamente.
+Não continuam silenciosamente ligados à versão antiga.
+
+Somente os dois observadores de pesquisa foram reiniciados. Agente principal,
+ponte de gráfico e terminal permaneceram em execução. A verificação real da
+continuidade foi registrada em `agent_shadow_startup_verification` pela chave
+do novo feed. Novos testes cobrem a barra em formação, a retomada sem duplicação
+e a corrida de inicialização entre produtor e consumidor.
+
+## Observação M15 em preços novos
+
+A candidata de desenvolvimento também ganhou um observador separado,
+**exclusivamente de pesquisa**, já que não passou pelas checagens históricas.
+Ele compara a mesma reversão M15 nos perfis de comissão zero e conservador,
+ambos com custos normais e agravados. Não altera a escolha após poucos ganhos.
+
+Tarefa: `AgenteTrader-M15StrategyShadow`. A versão atual iniciou em
+**23/10/2026 às 16:00 de Brasília** (19:00 UTC). Protocolo:
+`803436531a5e31359fd3ccd5a20bd950ac818067ff7f9dd922ec7f28f1801525`.
+O worker reutiliza o arquivo já coletado, respeita o fechamento M15 e exclui
+sinais recebidos com atraso. Não faz uma nova conexão ao terminal nem envia
+ordens. Resultados em `agent_m15_strategy_shadow_cycle`.
+
+Cada proposta preserva cenário, direção, stop, alvo, contexto e horário da
+primeira captura em `agent_m15_strategy_signal`. Cada encerramento tem um
+registro por perfil de custo em `agent_m15_strategy_outcome`, vinculado ao
+mesmo identificador da proposta. Atualizações posteriores não duplicam a
+experiência; os ciclos guardam resumos em vez de repetir todas as operações.
+Quatro simulações de custo do mesmo evento não são quatro experiências
+independentes de mercado. Esses registros apoiam avaliação e pesquisa;
+não significam atualização automática dos pesos ou da estratégia ativa.
+
+A versão inicial M15, iniciada às 15:45 de Brasília sob identificador
+`1393593fa2cb88220da7895a67a0bef8394e7d42eb77b047c281cf5f0b663e37`,
+foi substituída antes de qualquer operação para acrescentar esse diário
+estruturado e evitar repetição de negócios nos snapshots. Os registros de
+zero operações foram preservados em `agent_shadow_version_transition`.
+
+O comando `h1_research_status.py` mostra os resultados e se o mínimo futuro de
+50 encerramentos foi atingido com líquido positivo, fator ≥ 1,1, estresse
+positivo e carteira sem exposição desconhecida. Cumprir esse mínimo não
+promove automaticamente uma estratégia nem comprova lucro futuro.
+
+```powershell
+.venv/Scripts/python.exe run_m15_strategy_shadow.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File install_m15_strategy_shadow_startup.ps1
+```
+
+**Situação:** nenhuma das alternativas desta rodada está aprovada para
+substituir a estratégia do agente. Os resultados históricos e as hipóteses
+estão persistidos, e a evidência futura passa a ser coletada automaticamente.
+Nenhum dos experimentos promove modelos, muda pesos do Timestral ou envia
+operações novas à conta demo.
+
+92 testes direcionados aprovados ao final da implementação, incluindo
+persistência sem duplicação, perfis de custo separados e a continuidade do
+contexto após iniciar os observadores. O objetivo de encontrar vantagem
+consistente continua em aberto; os ganhos históricos isolados não foram
+apresentados como uma estratégia aprovada.
+
+## Observação prospectiva automática — registro inicial preservado
+
+O registro abaixo descreve a versão inicial, substituída após a auditoria do
+candle ausente. Para a coleta válida atual, use os identificadores e horários
+da correção acima; os registros antigos não foram apagados.
 
 As quatro regras de horário foram registradas para comparação simulada em
 preços novos a partir de **23/10/2026 às 14:35 de Brasília** (17:35 UTC).

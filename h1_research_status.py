@@ -13,7 +13,7 @@ def main():
         report = {}
         for kind in ('agent_h1_extended_experiment','agent_h1_shadow_cycle','agent_h1_shadow_protocol',
                      'agent_h1_hours_experiment','agent_h1_hours_shadow_cycle','agent_h1_family_experiment',
-                     'agent_m15_family_experiment','agent_demo_fee_experiment'):
+                     'agent_m15_family_experiment','agent_demo_fee_experiment','agent_m15_strategy_shadow_cycle'):
             with memory.pool.connection() as connection:
                 row = connection.execute('SELECT record_key,payload_json,payload_sha256 FROM project_records WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1',(kind,)).fetchone()
             if not row:
@@ -40,8 +40,16 @@ def main():
                 report[kind] = dict(selected=value.get('selected_on_development',value.get('selected')),
                     checks=value.get('selected_check_passed',value.get('checks')),
                     report_id=value.get('report_id'),as_of=value.get('as_of'),mode=value.get('mode','historical_research'))
-                if kind=='agent_h1_hours_shadow_cycle':
+                if kind in ('agent_h1_hours_shadow_cycle','agent_m15_strategy_shadow_cycle'):
                     report[kind]['results']={arm:summary(pair) for arm,pair in value['results'].items()}
+                    if kind=='agent_m15_strategy_shadow_cycle':
+                        from run_h1_extended_validation import qualified
+                        for arm,pair in value['results'].items():
+                            report[kind]['results'][arm]['conservative_net']=pair['conservative_normal']['net_pnl']
+                            report[kind]['results'][arm]['forward_minimum_passed']=qualified(pair['normal'],pair['stress'],50)
+                            report[kind]['results'][arm]['conservative_profile_passed']=qualified(pair['conservative_normal'],pair['conservative_stress'],50)
+                        report[kind]['historically_validated']=False
+                        report[kind]['automatic_promotion']=False
                 else:
                     report[kind]['results']={period:{arm:summary(pair) for arm,pair in arms.items()} for period,arms in value['results'].items()}
         print(json.dumps(report,ensure_ascii=False,indent=2))

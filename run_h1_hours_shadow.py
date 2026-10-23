@@ -10,7 +10,17 @@ import argparse
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT/'src'))
 HOURS='2be30ccf58ecdb26d43b1793b4a1201974d6822466004ee6e1f19a93769161a3'
-TAPE='ee64b0a467c7ba7908178d90c99f3c5ea442600432cc7480dec2f7b95ca90aed'
+def current_tape(memory):
+    """Bind a study to the current feed implementation, including logon races."""
+    from run_h1_shadow import implementation_hashes
+    expected=implementation_hashes()
+    with memory.pool.connection() as c:
+        rows=c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_h1_shadow_protocol' ORDER BY recorded_at DESC LIMIT 20").fetchall()
+    for row in rows:
+        value=json.loads(row['payload_json'])
+        if memory._encode(value)[1]!=row['payload_sha256']:raise ValueError('Feed protocol integrity mismatch')
+        if value['code_hashes']==expected:return value['protocol_id']
+    raise RuntimeError('Waiting for current H1 feed protocol; automatic retry')
 
 
 def main():
@@ -38,14 +48,15 @@ def main():
             try:
                 selection=read('agent_h1_hours_selection',HOURS)
                 if selection is None:raise ValueError('Historical selection not frozen')
+                tape=current_tape(memory)
                 files=sorted((ROOT/'src').rglob('*.py'))+[ROOT/p for p in ('run_h1_hours_shadow.py','run_h1_hours_experiment.py','run_literature_experiment.py')]
                 hashes={p.relative_to(ROOT).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-                identity=fingerprint(dict(parent=HOURS,tape=TAPE,code_hashes=hashes))
+                identity=fingerprint(dict(parent=HOURS,tape=tape,code_hashes=hashes))
                 protocol=read('agent_h1_hours_shadow_protocol',identity)
                 if protocol is None:
                     now=datetime.now(timezone.utc)
                     start=datetime.fromtimestamp((int(now.timestamp())//300+1)*300,timezone.utc)
-                    protocol=dict(protocol_id=identity,parent=HOURS,tape=TAPE,code_hashes=hashes,
+                    protocol=dict(protocol_id=identity,parent=HOURS,tape=tape,code_hashes=hashes,
                         registered_at=now.isoformat(),start=start.isoformat(),arms=ARMS,selected=selection['selected'],
                         mode='paper_only',orders_sent=0,live_policy_changed=False,
                         methodology='Reuse on-time H1 signals and first-seen M5 tape, no new MT5 reader.Only entries after this registration; full portfolio replay per arm,normal+stress,original exits.',
@@ -57,10 +68,10 @@ def main():
                 while True:
                     try:
                         with memory.pool.connection() as c:
-                            source=decode(c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_h1_shadow_cycle' AND record_key LIKE %s ORDER BY recorded_at DESC LIMIT 1",(TAPE+':%',)).fetchone())
+                            source=decode(c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_h1_shadow_cycle' AND record_key LIKE %s ORDER BY recorded_at DESC LIMIT 1",(tape+':%',)).fetchone())
                         if source and utc(source['as_of'])>utc(protocol['start']) and source['as_of']!=previous:
                             with memory.pool.connection() as c:
-                                records=c.execute("SELECT DISTINCT ON(record_key) payload_json,payload_sha256 FROM project_records WHERE record_type='agent_h1_shadow_bar' AND record_key LIKE %s ORDER BY record_key,recorded_at ASC",(TAPE+':%',)).fetchall()
+                                records=c.execute("SELECT DISTINCT ON(record_key) payload_json,payload_sha256 FROM project_records WHERE record_type='agent_h1_shadow_bar' AND record_key LIKE %s ORDER BY record_key,recorded_at ASC",(tape+':%',)).fetchall()
                             rows=[decode(r) for r in records]
                             cs=candles_from([r for r in rows if utc(protocol['start'])<=utc(r['timestamp'])<utc(source['as_of'])])
                             ss=[s for s in source['signals'] if utc(s['entry_at'])>=utc(protocol['start'])]
@@ -69,7 +80,7 @@ def main():
                                 filtered=[s for s in ss if permits(s,arm)]
                                 kw=dict(start=utc(protocol['start']),end=utc(source['as_of']),holding_bars=288,purge_hours=0,session_buffer_minutes=5)
                                 results[arm]=dict(normal=simulate(filtered,cs,**kw),stress=simulate(filtered,cs,stress=True,**kw))
-                            cycle=dict(protocol_id=identity,source_tape=TAPE,source_cycle_at=source['as_of'],
+                            cycle=dict(protocol_id=identity,source_tape=tape,source_cycle_at=source['as_of'],
                                 as_of=source['as_of'],recorded_at=datetime.now(timezone.utc).isoformat(),
                                 selected=protocol['selected'],results=results,mode='paper_only',orders_sent=0,live_policy_changed=False,
                                 source_late_signals_not_traded=source['late_signals_not_traded'])

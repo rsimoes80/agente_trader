@@ -17,6 +17,20 @@ UTC = timezone.utc
 PARENT = '4865501c4118d37fbd53f9872e3040565a637c1e3c9d978f3a3be7016fb12f53'
 
 
+def implementation_hashes():
+    files = sorted((ROOT/'src').rglob('*.py'))+[ROOT/p for p in ('run_h1_shadow.py','run_h1_extended_validation.py','run_literature_experiment.py','mt5_provider.py')]
+    return {p.relative_to(ROOT).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+
+
+def pending_rows(candles,seed,tape):
+    """Preserve the still-forming startup candle once it actually closes."""
+    from aurelia_fx.historical.core import utc
+    if not seed:
+        raise ValueError('Initial context is empty')
+    last=utc(tape[-1]['timestamp']) if tape else utc(seed[-1]['timestamp'])
+    return [r for r in candles if utc(r['timestamp'])>last]
+
+
 def on_time(signals, tape, tolerance_seconds=90):
     from aurelia_fx.historical.core import utc
     first_seen = {utc(row['timestamp'])+timedelta(minutes=5):utc(row['first_seen_at']) for row in tape}
@@ -54,8 +68,7 @@ def main():
         if memory._encode(value)[1] != row['payload_sha256']:
             raise ValueError('Immutable record integrity mismatch')
         return value
-    files = sorted((ROOT/'src').rglob('*.py'))+[ROOT/p for p in ('run_h1_shadow.py','run_h1_extended_validation.py','run_literature_experiment.py','mt5_provider.py')]
-    hashes = {p.relative_to(ROOT).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+    hashes = implementation_hashes()
     try:
         with memory.pool.connection() as lock:
             acquired = lock.execute("SELECT pg_try_advisory_lock(hashtext('agente-trader-h1-shadow-v1')) AS ok").fetchone()['ok']
@@ -72,6 +85,7 @@ def main():
                     now = datetime.now(UTC)
                     start = datetime.fromtimestamp(((int(now.timestamp())//300)+1)*300,UTC)
                     protocol = dict(protocol_id=identity,parent=PARENT,code_hashes=hashes,
+                        version='h1-shadow-contiguous-startup-v2',
                         registered_at=now.isoformat(),start=start.isoformat(),mode='paper_only',
                         rules=parent,live_policy_changed=False,orders_sent=0,
                         timely_signal='First capture of its closed signal M5 candle must be within90sec of signal close. Late backfills never count as forward entries.',
@@ -103,10 +117,8 @@ def main():
                             tape.append(value)
                         latest = utc(tape[-1]['timestamp']) if tape else None
                         appended = 0
-                        for row in data['candles']:
+                        for row in pending_rows(data['candles'],seed['candles'],tape):
                             stamp = utc(row['timestamp'])
-                            if stamp < utc(protocol['start']) or (latest is not None and stamp <= latest):
-                                continue
                             value = dict(**row,first_seen_at=now.isoformat())
                             memory.record_project_data('agent_h1_shadow_bar',prefix+row['timestamp'],value)
                             tape.append(value)
@@ -116,7 +128,7 @@ def main():
                             cutoff = latest+timedelta(minutes=5)
                             rows = seed['candles']+tape
                             candles = candles_from(rows)
-                            signals = generate(candles,utc(protocol['start']))
+                            signals = generate(candles,utc(protocol['start'])-timedelta(minutes=5))
                             timely, late = on_time(signals,tape)
                             kwargs = dict(start=utc(protocol['start']),end=cutoff,holding_bars=288,purge_hours=0,session_buffer_minutes=5)
                             normal = simulate(timely,candles,**kwargs)

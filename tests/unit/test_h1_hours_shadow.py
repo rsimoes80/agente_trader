@@ -5,10 +5,25 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from run_h1_hours_shadow import main
+from run_h1_hours_shadow import main,current_tape
 
 
 class HoursShadowTests(unittest.TestCase):
+    def test_source_version_waits_then_binds_only_matching_implementation(self):
+        def encode(value):
+            text=json.dumps(value,sort_keys=True)
+            return text,hashlib.sha256(text.encode()).hexdigest()
+        def row(value):
+            text,digest=encode(value)
+            return dict(payload_json=text,payload_sha256=digest)
+        records=[row(dict(protocol_id='old',code_hashes=dict(source='old')))]
+        connection=SimpleNamespace(execute=lambda _:SimpleNamespace(fetchall=lambda:records))
+        memory=SimpleNamespace(pool=SimpleNamespace(connection=lambda:nullcontext(connection)),_encode=encode)
+        with patch('run_h1_shadow.implementation_hashes',return_value=dict(source='new')):
+            with self.assertRaises(RuntimeError):current_tape(memory)
+            records.insert(0,row(dict(protocol_id='new',code_hashes=dict(source='new'))))
+            self.assertEqual(current_tape(memory),'new')
+
     def test_reuses_tape_and_does_not_retroactively_trade_before_registration(self):
         def encode(value):
             text=json.dumps(value,sort_keys=True)
@@ -35,7 +50,8 @@ class HoursShadowTests(unittest.TestCase):
             _encode=encode,record_project_data=lambda *args:writes.append(args),close=lambda:None)
         result=dict(closed_trades=0,net_pnl=None,censored_trades=1,account_locked=True)
         with patch('sys.argv',['run_h1_hours_shadow.py']),patch('aurelia_fx.storage.open_memory',return_value=memory),\
-             patch('run_literature_experiment.simulate',return_value=result) as replay,patch('builtins.print'):
+             patch('run_literature_experiment.simulate',return_value=result) as replay,\
+             patch('run_h1_hours_shadow.current_tape',return_value='test-tape'),patch('builtins.print'):
             main()
         self.assertEqual(replay.call_count,8)
         for call in replay.call_args_list:
