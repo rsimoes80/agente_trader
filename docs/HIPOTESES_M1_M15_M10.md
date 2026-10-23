@@ -103,12 +103,14 @@ Os resultados de todos os perfis são preservados, inclusive perdas e censuras.
 
 ## Verificações já executadas
 
-- 61 testes automatizados passaram, incluindo dez novos testes específicos M1,
+- 63 testes automatizados passaram, incluindo dez novos testes específicos M1,
   duração real de 60 minutos e invariância dos sinais ao acrescentar dados futuros.
 - Cinco testes adicionais verificam os contextos nativos, ausência de dados
   futuros, horário de verão e bloqueios por contexto incompleto/atrasado e por lacunas M1.
 - Três testes do auditor detectam alteração de custos, exposição desconhecida,
   contexto futuro e mudança de fonte, além de reconciliar os resultados pareados.
+- Dois testes adicionais verificam a comparação pareada por semanas, incluindo
+  semanas sem entradas e a impossibilidade de comparar P&L total censurado.
 - Amostra nativa: 100 candles por período M5/M10/M15, todos coincidentes em
   OHLC e volume com a agregação dos M1. O spread agregado não foi equiparado
   ao campo spread nativo de outro período, pois a amostragem pode diferir.
@@ -154,6 +156,11 @@ Nenhuma candidata passou no desenvolvimento; a seleção foi congelada como
 negativo nos dois períodos seguintes. A sensibilidade com comissão zero manteve
 perdas nessas quatro regras nos três períodos; spread e slippage continuam cobrados.
 
+A contagem de entradas respeita o limite existente de cinco por dia. No
+desenvolvimento, o pullback M15/M10 teve 4.398 propostas bloqueadas por esse
+limite; M10/M5 teve 7.477. Portanto, aumentar sinais brutos não se traduz
+proporcionalmente em mais operações executadas sob a política de risco testada.
+
 O custo médio foi aproximadamente **2,19–2,21 pips por operação**. Por exemplo,
 M15/M10 com rompimento/reteste teve expectativa bruta de 0,44 pip no
 desenvolvimento e custo médio de 2,19 pips. A mediana das durações ficou entre
@@ -173,6 +180,20 @@ custos do mesmo sinal. Essa contagem não representa 20.559 experiências
 independentes. Custos, saldo, duração de até 60 minutos, vínculo ao sinal,
 direção e ausência de contexto futuro foram conferidos. A dependência de
 seleção/estatística também coincide com o hash do estudo anterior selado.
+
+Uma análise descritiva adicional usa 5.000 reamostragens de semanas de calendário
+pareadas, incluindo semanas sem operações e semanas parciais nas bordas. A
+diferença é sempre o resultado da primeira carteira menos o da segunda, com
+lote e capital fixos. Não altera seleção nem aprovação, não corrige múltiplas
+comparações e não demonstra desempenho futuro.
+
+No rompimento/reteste, M15/M10 perdeu USD 48,36 menos que M10/M5 no
+desenvolvimento, mas a vantagem descritiva caiu para USD 11,55 na verificação
+e USD 10,83 no período final. Os intervalos de 95% das diferenças foram
+respectivamente [26,55; 71,12], [−3,25; 27,74] e [−1,03; 22,23]. Portanto,
+a diferença entre duas regras perdedoras não constitui validação; os dois
+últimos intervalos incluem zero. Diferenças contra o controle H4/H1 conservador
+incluem o efeito da indisponibilidade de contexto e exigem essa ressalva.
 
 ### Comparação principal com contextos nativos
 

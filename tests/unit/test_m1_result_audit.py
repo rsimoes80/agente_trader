@@ -5,9 +5,9 @@ import unittest
 from unittest.mock import patch
 
 from aurelia_fx.domain import Candle
-from run_m1_context_experiment import ROOT, simulate
+from run_m1_context_experiment import ROOT, PROFILES, FAMILIES, simulate
 from tests.unit import test_m1_context_experiment as fixtures
-from verify_m1_context_results import audit
+from verify_m1_context_results import audit, weekly_comparisons
 
 
 class M1ResultAuditTests(unittest.TestCase):
@@ -55,6 +55,31 @@ class M1ResultAuditTests(unittest.TestCase):
             else:report['protocol']['code_hashes']['README.md']='wrong'
             with patch('verify_m1_context_results.read',return_value=signals):
                 with self.assertRaises(ValueError):audit(None,report)
+
+    def test_paired_calendar_weeks_include_zero_trade_weeks(self):
+        report,_=self.data();pair=next(iter(report['results']['development'].values()))
+        report['results']={p:{profile+':'+family:deepcopy(pair) for profile in PROFILES for family in FAMILIES}
+                           for p in ('development','check','final')}
+        report['windows']={p:['2026-01-01T00:00:00+00:00','2026-01-15T00:00:00+00:00'] for p in report['results']}
+        result=weekly_comparisons(report,draws=100)
+        for period in result['results'].values():
+            for comparison in period.values():
+                self.assertEqual(comparison['calendar_weeks'],3)
+                self.assertEqual(comparison['delta_net_usd'],0.)
+                self.assertEqual(comparison['delta_net_interval_95'],[0.,0.])
+                self.assertEqual(comparison['delta_closed_trades'],0)
+
+    def test_incomplete_portfolio_has_no_paired_profit_estimate(self):
+        report,_=self.data();pair=next(iter(report['results']['development'].values()))
+        report['results']={p:{profile+':'+family:deepcopy(pair) for profile in PROFILES for family in FAMILIES}
+                           for p in ('development','check','final')}
+        report['windows']={p:['2026-01-01T00:00:00+00:00','2026-01-15T00:00:00+00:00'] for p in report['results']}
+        r=report['results']['check']['M10_M5_M1:trend_pullback']['normal']
+        r['net_pnl']=None;r['account_locked']=True;r['censored_trades']=1
+        result=weekly_comparisons(report,draws=100)
+        comparison=result['results']['check']['M15_M10_M1:trend_pullback minus M10_M5_M1:trend_pullback']
+        self.assertFalse(comparison['comparable'])
+        self.assertNotIn('delta_net_usd',comparison)
 
 
 if __name__=='__main__':unittest.main()

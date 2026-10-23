@@ -8,6 +8,61 @@ from statistics import median
 from run_m1_context_experiment import ROOT, PROFILES, read
 
 
+def weekly_comparisons(report, draws=5000):
+    """Paired calendar-week bootstrap, descriptive only; no selection change."""
+    from datetime import datetime, timezone
+    import numpy as np
+    from aurelia_fx.historical.core import utc
+    pairs=(('M15_M10_M1','M10_M5_M1'),
+           ('M15_M10_M1','H4_H1_M1_control'),
+           ('M10_M5_M1','H4_H1_M1_control'),
+           ('H4_H1_M1_control','H4_H1_M5_control'))
+    if 'windows' in report:
+        windows={p:tuple(map(utc,w)) for p,w in report['windows'].items()}
+    else:
+        windows=dict(development=(utc(report['archive']['start'])+timedelta(days=7),datetime(2026,1,1,tzinfo=timezone.utc)),
+            check=(datetime(2026,1,1,tzinfo=timezone.utc),datetime(2026,7,1,tzinfo=timezone.utc)),
+            final=(datetime(2026,7,1,tzinfo=timezone.utc),utc(report['archive']['as_of'])))
+    output={}
+    rng=np.random.default_rng(20261023)
+    for period,(start,end) in windows.items():
+        weeks=[];week=start.date()-timedelta(days=start.weekday())
+        while week<=end.date():
+            if datetime.combine(week,datetime.min.time(),timezone.utc)<end:weeks.append(week)
+            week+=timedelta(days=7)
+        index={week:i for i,week in enumerate(weeks)}
+        weights=rng.integers(0,len(weeks),size=(draws,len(weeks)))
+        output[period]={}
+        for family in ('trend_pullback','breakout_retest'):
+            for first,second in pairs:
+                a=first+':'+family;b=second+':'+family
+                left=report['results'][period][a]['normal'];right=report['results'][period][b]['normal']
+                key=a+' minus '+b
+                if any(r['net_pnl'] is None or r['account_locked'] or r['unresolved_position'] or r['censored_trades'] for r in (left,right)):
+                    output[period][key]=dict(comparable=False,reason='Incomplete portfolio; no partial total comparison')
+                    continue
+                def blocks(result):
+                    values=np.zeros((len(weeks),2))
+                    for trade in result['trades']:
+                        stamp=utc(trade['entry_at'])
+                        if not start<=stamp<end:raise ValueError('Trade outside declared comparison window')
+                        bucket=stamp.date()-timedelta(days=stamp.weekday())
+                        values[index[bucket]]+=[trade['financial_result']['net_pnl'],1]
+                    return values
+                delta=blocks(left)-blocks(right)
+                sampled=delta[weights].sum(axis=1)
+                intervals=np.quantile(sampled,[.025,.975],axis=0)
+                output[period][key]=dict(comparable=True,calendar_weeks=len(weeks),
+                    delta_net_usd=float(delta[:,0].sum()),delta_net_interval_95=intervals[:,0].tolist(),
+                    delta_closed_trades=int(delta[:,1].sum()),delta_trades_interval_95=intervals[:,1].tolist(),
+                    win_rate_difference_pp=(left['win_rate_pct']-right['win_rate_pct'])
+                        if left['win_rate_pct'] is not None and right['win_rate_pct'] is not None else None)
+    return dict(draws=draws,seed=20261023,results=output,
+        scope='Normal fee35 portfolios only; paired calendar weeks including zero-trade and partial boundary weeks. Difference is first minus second. Fixed lot/capital, not equal realized risk.',
+        context_control_warning=None if 'native_capture' in report else 'Strict M1 gaps suppress long-context availability. Differences versus H4/H1 include coverage effects, not a pure timeframe effect.',
+        interpretation='Post-preregistered descriptive uncertainty, no multiple-comparison correction, no prospective proof, no new selection/promotion gate. Higher difference can mean smaller loss, not positive profit.')
+
+
 def audit(memory, report, *, native=False):
     from aurelia_fx.historical.core import utc
     from aurelia_fx.trend import timeframe_seconds
@@ -125,10 +180,11 @@ def main():
         if hashlib.sha256((ROOT/dependency).read_bytes()).hexdigest()!=expected:
             raise ValueError('Selection/uncertainty dependency changed since earlier sealed study')
         verified['supplementary_dependency']=dict(path=dependency,sha256=expected,earlier_sealed_report=earlier_id)
+        verified['weekly_comparisons']=weekly_comparisons(report)
         m.record_project_data('agent_m1_context_verification',args.report_id,verified)
         path=ROOT/'data/reports'/('m1-verified-'+args.report_id[:12]+'.json')
         path.write_text(json.dumps(verified,indent=2),encoding='utf-8')
-        print(json.dumps({k:v for k,v in verified.items() if k!='summary'}))
+        print(json.dumps({k:v for k,v in verified.items() if k not in ('summary','weekly_comparisons')}))
     finally:m.close()
 
 
