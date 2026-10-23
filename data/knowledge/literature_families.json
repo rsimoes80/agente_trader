@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "review_id": "literature-families-2026-v1",
+  "reviewed_at": "2026-10-23T14:51:31.483545+00:00",
+  "status": "approved_for_research_only",
+  "sources": [
+    {
+      "document": "analise-tecnica-explicadapdf-pdf-free.pdf",
+      "author": "Martin J. Pring",
+      "sha256": "3ad719584001d7e4292fb00828eabd6a67565e9a25cf9f16dac2c1f87ef2b598",
+      "pdf_pages": 814,
+      "reviewed_pdf_pages": [
+        16,
+        17,
+        68,
+        69,
+        70,
+        71,
+        89,
+        132
+      ],
+      "method": "text_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Tendências relativas ao horizonte; zonas e inversão de papel de suporte/resistência; quebra não garante nova tendência."
+    },
+    {
+      "document": "EBOOK-MANUAL-DO-PULLBACK.pdf",
+      "author": "Manual do Pullback",
+      "sha256": "324ddfc6a021fbd95877cb41ef67559da9a7e1261a0fc8803b7d5731c0d91c3b",
+      "pdf_pages": 27,
+      "reviewed_pdf_pages": [
+        5,
+        10,
+        11,
+        13,
+        16,
+        20
+      ],
+      "method": "text_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Esperar correção em região relevante e retomada; não confundir correção de tempo com correção de preço; stop fora do ruído."
+    },
+    {
+      "document": "wyckoff-20-portugues-pr.pdf",
+      "author": "Wyckoff 2.0",
+      "sha256": "6eb0c44a55eb9a215c5d6810c7f0a6966d19664eae63a7cf98ce9fa120131d18",
+      "pdf_pages": 342,
+      "reviewed_pdf_pages": [
+        32,
+        33,
+        70,
+        74
+      ],
+      "method": "text_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Contexto e reação subsequente importam; extremo isolado não autoriza entrada; spring/upthrust podem falhar."
+    },
+    {
+      "document": "operando-price-action-tendencias-al-brooks-5-pdf-free.pdf",
+      "author": "Al Brooks",
+      "sha256": "a3753997a674d45433cdd90c13ee0712999d886aee800a786572340d17fde342",
+      "pdf_pages": 538,
+      "reviewed_pdf_pages": [
+        127,
+        135
+      ],
+      "method": "visual_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Distinguir rompimento, falha, setup, entrada e continuidade; movimentos têm contexto."
+    },
+    {
+      "document": "Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "author": "Al Brooks",
+      "sha256": "03278d531f739fd2587093695b99f702855c3d89e523f3b6993d8f810d413755",
+      "pdf_pages": 688,
+      "reviewed_pdf_pages": [
+        137,
+        405,
+        406
+      ],
+      "method": "visual_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Rompimentos bem-sucedidos exigem continuidade; faixas permitem negociação bilateral e cenários diferentes de tendência."
+    },
+    {
+      "document": "Smart Money Concepts - MARRAIK SMC 2 (1).pdf",
+      "author": "MARRAIK SMC",
+      "sha256": "601752f994fe76b771d8182952e728f7f981dc599d2f801973905ade094baab8",
+      "pdf_pages": 344,
+      "reviewed_pdf_pages": [
+        13,
+        32,
+        64,
+        112
+      ],
+      "method": "text_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Estrutura interna depende do contexto superior; mudança local e macro podem discordar. Não inferir intenção institucional do OHLC."
+    },
+    {
+      "document": "Reminiscências de Um Especulador Financeiro por Jesse Livermore e Edward Lefèvre.pdf",
+      "author": "Edward Lefèvre / Jesse Livermore",
+      "sha256": "fa7362bbf21664fd2f04616d33838ba5de3cf291219e1930b7ad426f38919717",
+      "pdf_pages": 216,
+      "reviewed_pdf_pages": [
+        79,
+        157
+      ],
+      "method": "text_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "O comportamento observado e a direção do mercado devem confrontar a tese; não perseguir explicações contrárias ao preço."
+    },
+    {
+      "document": "Trading_in_the_Zone.PDF",
+      "author": "Mark Douglas",
+      "sha256": "f63ab932f53e788581171a851ac6282db30721f61e67d7bc02de8f72b3d34363",
+      "pdf_pages": 143,
+      "reviewed_pdf_pages": [
+        130,
+        133,
+        134,
+        136
+      ],
+      "method": "text_review_of_selected_sections",
+      "full_book_reviewed": false,
+      "concept": "Definir variáveis e risco antes da execução; avaliar séries de resultados. O exercício psicológico não fornece vantagem técnica comprovada."
+    }
+  ],
+  "families": {
+    "trend_pullback": {
+      "concept": "Correção e retomada em tendência H1.",
+      "sources": [
+        0,
+        1,
+        3,
+        6
+      ]
+    },
+    "breakout_retest": {
+      "concept": "Nível rompido, reteste posterior e retomada.",
+      "sources": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "range_failure": {
+      "concept": "Faixa de baixa eficiência, falha no extremo e retorno ao interior.",
+      "sources": [
+        2,
+        4
+      ]
+    },
+    "reversal_shift": {
+      "concept": "Falha no extremo e mudança local confirmada contra o viés H1 anterior.",
+      "sources": [
+        0,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  },
+  "engineering_notice": "EMA20/50 H1, ATR14, janelas de 20/24 barras, tolerâncias, alvo 3R, prazo 2h e critérios de seleção são hipóteses de engenharia; não são uma fórmula exata ou recomendação unânime dos autores.",
+  "risk_notice": "Mesmos limites de risco. Nenhuma autorização para demo/live ou substituição automática da estratégia atual."
+}

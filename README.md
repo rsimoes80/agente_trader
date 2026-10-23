@@ -112,3 +112,4 @@ instruções antigas não representam o fluxo atual.
 - [Investigação do contexto anterior à entrada](docs/INVESTIGACAO_CONTEXTO_DA_ENTRADA.md)
 
 - [Validação das hipóteses no histórico de 2026](docs/VALIDACAO_HISTORICA_2026.md).
+- [Estratégias da literatura: famílias, filtros e resultados](docs/ESTRATEGIAS_DA_LITERATURA.md).
