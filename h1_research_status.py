@@ -13,7 +13,7 @@ def main():
         report = {}
         for kind in ('agent_h1_extended_experiment','agent_h1_shadow_cycle','agent_h1_shadow_protocol',
                      'agent_h1_hours_experiment','agent_h1_hours_shadow_cycle','agent_h1_family_experiment',
-                     'agent_m15_family_experiment'):
+                     'agent_m15_family_experiment','agent_demo_fee_experiment'):
             with memory.pool.connection() as connection:
                 row = connection.execute('SELECT record_key,payload_json,payload_sha256 FROM project_records WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1',(kind,)).fetchone()
             if not row:

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-10-23",
+  "purpose": "Research cost evidence; does not modify live execution or confirm the account tariff",
+  "observed_account": {
+    "mode": "demo",
+    "currency": "USD",
+    "account_type_confirmed": false,
+    "account_label_mentions_standard_or_zero": false,
+    "eurusd_execution_deals": 6,
+    "total_deal_volume_lots": 0.06,
+    "commission_sum": 0.0,
+    "fee_sum": 0.0,
+    "swap_sum": 0.0,
+    "source": "Local MT5 history_deals_get for 2026, EURUSD buy/sell executions; no identifiers published"
+  },
+  "official_references": [
+    {
+      "title": "ThinkMarkets Trading fees",
+      "url": "https://support.thinkmarkets.com/hc/en-gb/articles/25861919173649-Trading-fees",
+      "finding": "Standard has spread-only pricing; ThinkZero has raw spreads and commission"
+    },
+    {
+      "title": "ThinkZero account commission",
+      "url": "https://support.thinkmarkets.com/hc/en-gb/articles/22387032763921-ThinkZero-account-commission",
+      "finding": "USD account FX commission USD7 per round-turn lot; equivalent USD35 per million units per side at100000units/lot"
+    }
+  ],
+  "current_research_profile": {
+    "commission_usd_per_million_units_per_side": 35,
+    "historical_spread": "observed source values",
+    "slippage_pips": 0.2,
+    "status": "conservative assumption, not confirmed account tariff"
+  },
+  "limitations": [
+    "Six demo executions do not confirm a live-account fee schedule or future broker charges",
+    "Raw-spread and Standard historical spreads are not interchangeable",
+    "A zero-commission sensitivity requires a separate protocol and full portfolio replay because risk vetoes can change fills",
+    "No commission assumption was changed after seeing outcomes of the ongoing comparisons"
+  ]
+}
