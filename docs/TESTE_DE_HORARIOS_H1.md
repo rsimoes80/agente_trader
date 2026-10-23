@@ -165,6 +165,40 @@ concretas; não invalida todas as estratégias possíveis dos autores.
 posição após o fim da janela de entrada, seleção sem redução do mínimo de
 amostra e comparação futura sem inserir operações anteriores ao registro.
 
+O código original dessas duas etapas foi publicado no commit `ef24a6a`.
+Depois, o gerador foi extraído para `run_literature_validation.py`, com perfil
+de timeframe explícito; `run_h1_family_validation.py` permanece como entrada
+compatível. Os hashes históricos referem-se ao código preservado naquele commit.
+
+## Etapa 3 — comparação ampliada em M15
+
+Está em processamento o protocolo
+`7407ef3ece26ce511e2ba781667a9a67ae0bf7a6a395c7d68e661877334a2e02`.
+Ele compara as quatro famílias em M15, cada uma nos dois horários já definidos:
+original e sem Nova York exclusiva. Nenhum número de EMA, ATR, tolerância ou
+risco foi otimizado a partir dos resultados.
+
+O perfil é o mesmo da pesquisa M15 anterior: contexto H1, confirmação H1 e
+macro H4. Contexto e confirmação H1 são correlacionados; não representam duas
+evidências independentes. Mantêm-se as saídas em preços M5 e 24 candles de
+execução como prazo nominal (72 candles M5), além do encerramento por sessão.
+O veto de entradas nas últimas 24 horas de cada janela é mantido.
+
+O período 2021–2023 é usado para seleção com os mesmos mínimos. Os resultados
+de 2024, 2025 e 2020 aparecem depois como checagens históricas já expostas a
+pesquisas anteriores, não como validação independente. As quatro famílias M15
+de 2026 deverão reproduzir os sinais congelados da comparação original.
+
+```powershell
+.venv/Scripts/python.exe run_literature_validation.py --timeframe M15
+```
+
+Registros: `agent_m15_family_protocol`, `agent_m15_family_signals`,
+`agent_m15_family_selection` e, ao concluir, `agent_m15_family_experiment`.
+Os resultados finais serão acrescentados após a conclusão do processamento.
+86 testes direcionados aprovados após a generalização do gerador, incluindo
+perfil M15 e disponibilidade apenas de candles fechados.
+
 ## Observação prospectiva automática
 
 As quatro regras de horário foram registradas para comparação simulada em

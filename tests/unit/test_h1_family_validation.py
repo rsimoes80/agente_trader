@@ -28,3 +28,16 @@ class FamilyValidationTests(unittest.TestCase):
 
     def test_empty_input_never_generates_an_entry(self):
         self.assertTrue(all(not values for values in generate([],None).values()))
+
+    def test_m15_uses_frozen_m15_profile_without_future_context(self):
+        histories,known=fixtures.TimeframeExperimentTests().higher('M15')
+        current=histories['M15'][-1]
+        base=Candle(known-timedelta(minutes=5),current.open,current.high,current.low,current.close,current.volume,current.spread_pips)
+        aggregator=SimpleNamespace(add=lambda _:histories,reset=lambda:None)
+        with patch('aurelia_fx.agent_research.intelligence_session',return_value=SimpleNamespace(aggregator=aggregator)):
+            pools=generate([base],base.timestamp,timeframe='M15')
+        signal=pools['trend_pullback'][0]
+        self.assertTrue(signal['sample_id'].startswith('M15:'))
+        self.assertEqual(signal['snapshot']['research_context']['context_timeframe'],'H1')
+        self.assertEqual(signal['candidate']['expires_at'],(known+timedelta(minutes=15)).isoformat())
+        with self.assertRaises(ValueError):generate([],None,timeframe='M1')
