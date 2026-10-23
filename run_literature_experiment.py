@@ -12,12 +12,14 @@ sys.path.insert(0, str(ROOT/'src'))
 SOURCE = 'f898357a5ab80a9e9bf4d05eecda1f92754c3616239bd754c7d4b820f33086e1'
 
 
-def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, purge_hours=2):
+def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, purge_hours=2, session_buffer_minutes=0):
     from aurelia_fx.agent_research import simulator, request_for, SESSIONS
     from aurelia_fx.broker_calendar import unexpected_broker_gap, slot_tradable
     from aurelia_fx.sessions import SessionEngine
     from aurelia_fx.historical.core import utc
     from aurelia_fx.domain import Candidate
+    if type(session_buffer_minutes) is not int or session_buffer_minutes < 0:
+        raise ValueError('Session buffer must be a nonnegative integer')
     start, end = utc(start), utc(end)
     selected = [s for s in samples if start <= utc(s['entry_at']) < end-timedelta(hours=purge_hours)]
     signals = {utc(s['entry_at']): s for s in selected}
@@ -28,6 +30,7 @@ def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, pur
     sessions = SessionEngine(SESSIONS)
     previous = None
     overlaps = 0
+    buffer_skips = 0
     for original in candles:
         if not start <= original.timestamp < end:
             continue
@@ -35,6 +38,9 @@ def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, pur
         gap = previous is not None and unexpected_broker_gap(previous, bar, 300)
         active = sessions.identify(bar.timestamp).active_sessions
         sample = signals.get(bar.timestamp)
+        if sample and session_buffer_minutes and not sessions.identify(bar.timestamp+timedelta(minutes=session_buffer_minutes)).active_sessions:
+            buffer_skips += 1
+            sample = None
         if sample and not gap:
             if engine.busy:
                 overlaps += 1
@@ -44,7 +50,7 @@ def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, pur
                 engine.submit(request_for(dict(candidate=candidate, snapshot=sample['snapshot'], signal_at=sample['signal_at']), sample['sample_id']))
         close = bar.timestamp+timedelta(minutes=5)
         # Calendar-only rule: no future prices required and no weekend swaps assumed away.
-        ending = not slot_tradable(close) or not sessions.identify(close).active_sessions
+        ending = not slot_tradable(close) or not sessions.identify(close+timedelta(minutes=session_buffer_minutes)).active_sessions
         engine.advance(bar, data_valid=not gap, active_sessions=active, force_close_reason='KNOWN_SESSION_END' if ending else None)
         previous = bar
     result = engine.summary()
@@ -59,6 +65,8 @@ def simulate(samples, candles, *, start, end, stress=False, holding_bars=24, pur
         risk_reasons=dict(Counter(r for e in engine.events if e['status']=='rejected' for r in e.get('risk',{}).get('reasons',[]))),
         filled_sides=dict(Counter(e['side'] for e in trades)),
         trades=[{k:e[k] for k in ('decision_id','side','entry_at','observed_at','reason','financial_result')} for e in trades])
+    if session_buffer_minutes:
+        result['session_buffer_skips'] = buffer_skips
     return result
 
 

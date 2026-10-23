@@ -44,3 +44,22 @@ class TimeframeExperimentTests(unittest.TestCase):
         self.assertEqual(result['closed_trades'],1)
         self.assertEqual(result['trades'][0]['reason'],'STOP_FIRST_AMBIGUOUS')
         self.assertLess(result['net_pnl'],0)
+
+    def test_uniform_session_buffer_closes_before_missing_last_slot(self):
+        at=datetime(2026,8,19,20,45,tzinfo=timezone.utc)
+        sample=dict(sample_id='buffer',signal_at=at.isoformat(),entry_at=at.isoformat(),
+            snapshot=dict(snapshot_id='buffer',session=['new_york'],regime='RESEARCH'),
+            candidate=dict(side='long',entry=1.1,stop=1.099,target=1.104,expires_at=(at+timedelta(hours=1)).isoformat(),evidence=[]))
+        bars=[Candle(at+timedelta(minutes=i),1.1,1.1001,1.0999,1.1,100,1.2) for i in (0,5,85)]
+        args=dict(start=at,end=at+timedelta(days=2),holding_bars=288,purge_hours=24)
+        original=simulate([sample],bars,**args)
+        protected=simulate([sample],bars,session_buffer_minutes=5,**args)
+        self.assertEqual(original['censored_trades'],1)
+        self.assertEqual(protected['censored_trades'],0)
+        self.assertEqual(protected['trades'][0]['observed_at'],(at+timedelta(minutes=10)).isoformat())
+        self.assertEqual(protected['trades'][0]['reason'],'KNOWN_SESSION_END')
+        late=dict(sample,entry_at=(at+timedelta(minutes=10)).isoformat(),signal_at=(at+timedelta(minutes=10)).isoformat())
+        last=Candle(at+timedelta(minutes=10),1.1,1.1001,1.0999,1.1,100,1.2)
+        skipped=simulate([late],[last],session_buffer_minutes=5,**args)
+        self.assertEqual(skipped['closed_trades'],0)
+        self.assertEqual(skipped['session_buffer_skips'],1)

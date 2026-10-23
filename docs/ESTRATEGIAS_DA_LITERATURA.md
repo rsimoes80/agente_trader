@@ -207,3 +207,5 @@ não alteram pesos do Timestral, limites de risco ou a política do gateway.
 - Verificações de integridade: `agent_literature_verification`, pela chave do
   relatório; hashes dos arquivos de código, dos oito PDFs e do registro no
   PostgreSQL conferidos. O manifesto atual coincide com o registrado no protocolo.
+
+Continuação: [pesquisa dos mesmos conceitos em M15 e H1](PESQUISA_M15_H1.md).
