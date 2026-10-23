@@ -153,3 +153,5 @@ Nenhuma dessas hipóteses seguintes foi calibrada neste experimento.
 
 O agente permaneceu na mesma sessão e geração, em execução. A política de
 entrada, o hash do regime e a configuração Timestral foram preservados.
+
+O estudo seguinte está em [investigação de gatilho e política de saída](INVESTIGACAO_GATILHO_E_SAIDA.md).

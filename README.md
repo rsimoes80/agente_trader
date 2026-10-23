@@ -108,3 +108,4 @@ instruções antigas não representam o fluxo atual.
 - [Replicação em outro equipamento](docs/REPLICACAO_DO_AMBIENTE.md)
 - [Inventário de configuração sem segredos](config/environment.example.json)
 - [Experimento de tendência com correção](docs/EXPERIMENTO_TENDENCIA_COM_CORRECAO.md)
+- [Investigação de gatilho e política de saída](docs/INVESTIGACAO_GATILHO_E_SAIDA.md)
