@@ -109,3 +109,4 @@ instruções antigas não representam o fluxo atual.
 - [Inventário de configuração sem segredos](config/environment.example.json)
 - [Experimento de tendência com correção](docs/EXPERIMENTO_TENDENCIA_COM_CORRECAO.md)
 - [Investigação de gatilho e política de saída](docs/INVESTIGACAO_GATILHO_E_SAIDA.md)
+- [Investigação do contexto anterior à entrada](docs/INVESTIGACAO_CONTEXTO_DA_ENTRADA.md)

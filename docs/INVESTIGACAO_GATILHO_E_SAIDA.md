@@ -181,3 +181,5 @@ contexto ainda é uma hipótese, não uma conclusão causal demonstrada.
 - 18 testes direcionados de gatilho/saída, correção, tendência e expiração
   passaram. Hash da implementação e integridade do registro PostgreSQL conferidos.
 - Código operacional, modelos, configuração Timestral e regras de risco intactos.
+
+A continuação está na [investigação do contexto anterior à entrada](INVESTIGACAO_CONTEXTO_DA_ENTRADA.md).
