@@ -77,3 +77,79 @@ posição existente e risco continuam limitando a execução.
 
 Um resultado retrospectivo favorável é motivo para validação futura, não para
 promover automaticamente a alternativa. As regras em produção permanecem iguais.
+
+## Resultado concluído em 23/10/2026
+
+Fonte: 74.520 candles M5, 335 dias de análise e 30 dias de aquecimento.
+Período de análise: 19/11/2025 a 20/10/2026, em UTC. Lote 0,01.
+
+| Métrica — período completo | Atual | Atual + correção protegida |
+|---|---:|---:|
+| Sinais elegíveis | 1 | 107 |
+| Operações encerradas | 1 | 25 |
+| Ganhos / perdas líquidos | 0 / 1 | 8 / 17 |
+| Acerto observado | 0% | 32% |
+| Resultado líquido USD | -1,18 | -6,16 |
+| Resultado médio por operação USD | -1,18 | -0,25 |
+| Fator de lucro | 0 | 0,66 |
+| Drawdown máximo realizado | 0,0118% | 0,1291% |
+| Resultados censurados / posição pendente | 0 / não | 0 / não |
+
+Os 107 sinais incluem o sinal da regra atual e 106 adicionais. Na carteira
+alternativa, seis sinais encontraram exposição existente e 76 foram vetados
+pelo risco; os 25 restantes viraram operações encerradas.
+
+Uma reprodução exata da carteira confirmou os vetos: 71 por relação
+retorno/risco líquida insuficiente e cinco pelo limite diário de operações.
+As saídas foram 16 stops, seis por duração máxima e três por alvo. Essa
+verificação está registrada como `agent_correction_replay_check` no PostgreSQL.
+
+O resultado antes de custos da alternativa foi -0,66 USD. Spread de 2,81 USD,
+slippage de 0,94 USD e comissão de 1,75 USD levaram ao líquido de -6,16 USD.
+Não é uma estratégia lucrativa que se tornou inviável somente pelas taxas:
+o resultado bruto também foi negativo.
+
+### Estabilidade temporal da alternativa
+
+| Período original | Operações | Ganhos / perdas | Acerto | Líquido USD |
+|---|---:|---:|---:|---:|
+| Desenvolvimento | 14 | 6 / 8 | 42,9% | +1,31 |
+| Validação | 6 | 1 / 5 | 16,7% | -3,54 |
+| Janela final já conhecida | 5 | 1 / 4 | 20% | -3,93 |
+
+A regra atual teve uma operação no desenvolvimento e nenhuma nos outros dois
+períodos; ausência de operações não significa acerto de 0%. Cada período tem
+conta independente e exclusão de sinais na última hora, conforme protocolo.
+
+### Conclusão
+
+O bloqueio de regime é, de fato, um limitador forte da quantidade de entradas.
+A alternativa examinada aumentou as operações, mas não demonstrou vantagem
+financeira: perdeu no total e nas duas janelas posteriores ao desenvolvimento.
+
+O controle tem apenas uma operação. Portanto, 32% contra 0% não comprova uma
+melhora estatística de assertividade. O intervalo Wilson descritivo da
+alternativa é aproximadamente 17,2%–51,6%, sem pressupor independência temporal.
+
+**Não promover esta versão para o agente demo.** O próximo estudo deve separar
+qualidade do gatilho de retomada e política de saída/duração, alterando uma
+variável por vez, sem afrouxar o risco para fazer sinais rejeitados passarem.
+Nenhuma dessas hipóteses seguintes foi calibrada neste experimento.
+
+### Rastreabilidade e verificações
+
+- Código de reprodução: commit `d1934fe`.
+- Dataset de origem: `661f1b42-0b1d-4066-a145-85f8cd0334ae`.
+- Protocolo concluído: `c7e3c7b38c8427f1a4ee3b31b4b1ab4b2983c1c9972c2e78ce4f27487c9a8cef`.
+- Registro anterior ao cálculo: 23/10/2026, 11:49:32 UTC (08:49:32 de Brasília).
+- Relatório PostgreSQL: `6ba3f9946d64314f98f0d1181967b64e9a9ec2d675fe1967f37d78152caf392f`.
+- Arquivo local: `data/reports/correction-6ba3f9946d64.json`.
+- Hash dos três arquivos da implementação confere com o protocolo registrado.
+- 14 testes de correção, tendência e expiração passaram, incluindo direção,
+  pivôs futuros, preservação da estrutura, equivalência dos níveis e dos custos
+  de sinais comuns, censura por falhas de dados e regra de produção intacta.
+- Duas execuções de preparação foram interrompidas antes de resultados para
+  reduzir o custo do replay. Não houve seleção de parâmetros por desempenho.
+
+O agente permaneceu na mesma sessão e geração, em execução. A política de
+entrada, o hash do regime e a configuração Timestral foram preservados.
