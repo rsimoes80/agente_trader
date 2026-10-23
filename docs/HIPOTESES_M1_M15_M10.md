@@ -103,10 +103,12 @@ Os resultados de todos os perfis são preservados, inclusive perdas e censuras.
 
 ## Verificações já executadas
 
-- 58 testes automatizados passaram, incluindo dez novos testes específicos M1,
+- 61 testes automatizados passaram, incluindo dez novos testes específicos M1,
   duração real de 60 minutos e invariância dos sinais ao acrescentar dados futuros.
 - Cinco testes adicionais verificam os contextos nativos, ausência de dados
   futuros, horário de verão e bloqueios por contexto incompleto/atrasado e por lacunas M1.
+- Três testes do auditor detectam alteração de custos, exposição desconhecida,
+  contexto futuro e mudança de fonte, além de reconciliar os resultados pareados.
 - Amostra nativa: 100 candles por período M5/M10/M15, todos coincidentes em
   OHLC e volume com a agregação dos M1. O spread agregado não foi equiparado
   ao campo spread nativo de outro período, pois a amostragem pode diferir.
@@ -132,5 +134,57 @@ do Timestral. Uma eventual aprovação histórica ainda exigiria avaliação fut
 
 ## Resultados
 
-O processamento completo está em andamento. Nenhuma conclusão de desempenho
-foi tirada dos testes de integridade ou dos testes unitários.
+### Checagem conservadora concluída
+
+Relatório PostgreSQL `agent_m1_context_experiment`:
+`cad0945c77a3f307ca46e7757096d73f3312de7f514c1a3c99a663973402e9f8`.
+
+Cada célula mostra **operações encerradas / resultado líquido em USD**, no
+cenário normal, lote 0,01. São carteiras separadas por perfil e período.
+
+| Contexto e gatilho M1 | Desenvolvimento 2025 | Jan–jun/2026 | Jul–out/2026 |
+|---|---:|---:|---:|
+| M15/M10 — pullback | 641 / −156,09 | 639 / −123,82 | 395 / −103,90 |
+| M15/M10 — rompimento/reteste | 327 / −56,96 | 378 / −76,31 | 168 / −34,85 |
+| M10/M5 — pullback | 655 / −150,77 | 640 / −131,76 | 415 / −87,73 |
+| M10/M5 — rompimento/reteste | 465 / −105,33 | 442 / −87,86 | 220 / −45,68 |
+
+Nenhuma candidata passou no desenvolvimento; a seleção foi congelada como
+`null` antes das verificações. As quatro regras também tiveram resultado normal
+negativo nos dois períodos seguintes. A sensibilidade com comissão zero manteve
+perdas nessas quatro regras nos três períodos; spread e slippage continuam cobrados.
+
+O custo médio foi aproximadamente **2,19–2,21 pips por operação**. Por exemplo,
+M15/M10 com rompimento/reteste teve expectativa bruta de 0,44 pip no
+desenvolvimento e custo médio de 2,19 pips. A mediana das durações ficou entre
+7 e 18 minutos, conforme perfil e período: são efetivamente entradas curtas.
+
+Algumas carteiras sob estresse tiveram exposição censurada por lacuna e seu
+resultado total é indeterminado (`null`), sem substituição por zero nem soma
+de parcelas conhecidas como resultado completo. A frequência comparativa H4/H1
+será avaliada na versão nativa; o aquecimento insuficiente desse controle limita
+a comparação na versão conservadora.
+
+A auditoria verificou 96 arquivos declarados de implementação, 63.069 sinais,
+96 carteiras e 20.559 resultados encerrados **pareados**, incluindo cenários de
+custos do mesmo sinal. Essa contagem não representa 20.559 experiências
+independentes. Custos, saldo, duração de até 60 minutos, vínculo ao sinal,
+direção e ausência de contexto futuro foram conferidos. A dependência de
+seleção/estatística também coincide com o hash do estudo anterior selado.
+
+### Comparação principal com contextos nativos
+
+O replay do protocolo `35520ec…` está em andamento. A conclusão final sobre
+as hipóteses aguarda esse resultado. O resultado conservador não demonstra
+superioridade universal de H4/H1 nem justifica ativar uma nova regra.
+
+### Auditoria reproduzível
+
+```powershell
+.venv/Scripts/python.exe verify_m1_context_results.py cad0945c77a3f307ca46e7757096d73f3312de7f514c1a3c99a663973402e9f8
+# Quando o relatório nativo estiver disponível:
+.venv/Scripts/python.exe verify_m1_context_results.py NATIVE_REPORT_ID --native
+```
+
+O auditor lê registros selados e preserva seu resultado no PostgreSQL como
+`agent_m1_context_verification`. Os relatórios completos ficam em `data/reports/`.
