@@ -177,5 +177,8 @@ e nenhuma ordem enviada. A ausência de sinal nessa primeira barra é esperada.
 
 ## Referência da configuração MT5
 
+Continuação: [diagnóstico do contexto das entradas H1](CONTEXTO_DA_CANDIDATA_H1.md),
+com sessões, alinhamento e disponibilidade efetiva de D1 no instante do sinal.
+
 A API disponibiliza o histórico permitido pela configuração do terminal:
 [copy_rates_range — documentação oficial MQL5](https://www.mql5.com/pt/docs/python_metatrader5/mt5copyratesrange_py).

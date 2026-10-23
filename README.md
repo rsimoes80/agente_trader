@@ -65,6 +65,8 @@ A pesquisa histórica é separada do serviço de operação:
 A [validação H1 ampliada](docs/VALIDACAO_H1_AMPLIADA.md) testa a candidata fixa
 em 2021–2025 e mantém um observador prospectivo em simulação, sem ordens.
 Consulte os resultados com `.venv/Scripts/python.exe h1_research_status.py`.
+O [diagnóstico dos contextos H1](docs/CONTEXTO_DA_CANDIDATA_H1.md) separa
+sessões, alinhamento e falta de histórico diário no instante de cada entrada.
 
 Para comparar H1 com H4+H1 no maior catálogo histórico compatível já congelado,
 execute `python run_trend_experiment.py`. O relatório é gravado no PostgreSQL
