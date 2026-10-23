@@ -170,5 +170,7 @@ Execute na ordem, usando PostgreSQL e o histórico congelado existentes:
   resultado censurado ou posição pendente nos braços avaliados.
 - O período reservado do estudo prospectivo de 22–29/10 permanece fora desta fonte.
 - Nenhum modelo Timestral, limite de risco ou estado da sessão foi modificado.
-- Valida??o: 23 testes direcionados passaram; hashes dos registros no PostgreSQL
-  e dos arquivos de implementa??o conferidos com os relat?rios registrados.
+- Validação: 23 testes direcionados passaram; hashes dos registros no PostgreSQL
+  e dos arquivos de implementação conferidos com os relatórios registrados.
+
+Continuação: [recaptura do MT5 e testes no calendário de 2026](VALIDACAO_HISTORICA_2026.md).

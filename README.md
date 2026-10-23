@@ -110,3 +110,5 @@ instruções antigas não representam o fluxo atual.
 - [Experimento de tendência com correção](docs/EXPERIMENTO_TENDENCIA_COM_CORRECAO.md)
 - [Investigação de gatilho e política de saída](docs/INVESTIGACAO_GATILHO_E_SAIDA.md)
 - [Investigação do contexto anterior à entrada](docs/INVESTIGACAO_CONTEXTO_DA_ENTRADA.md)
+
+- [Validação das hipóteses no histórico de 2026](docs/VALIDACAO_HISTORICA_2026.md).
