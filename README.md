@@ -107,3 +107,4 @@ instruções antigas não representam o fluxo atual.
 - [Limpeza e criterios de preservacao](docs/LIMPEZA_DO_PROJETO.md)
 - [Replicação em outro equipamento](docs/REPLICACAO_DO_AMBIENTE.md)
 - [Inventário de configuração sem segredos](config/environment.example.json)
+- [Experimento de tendência com correção](docs/EXPERIMENTO_TENDENCIA_COM_CORRECAO.md)
