@@ -11,7 +11,8 @@ def main():
     memory = open_memory()
     try:
         report = {}
-        for kind in ('agent_h1_extended_experiment','agent_h1_shadow_cycle','agent_h1_shadow_protocol'):
+        for kind in ('agent_h1_extended_experiment','agent_h1_shadow_cycle','agent_h1_shadow_protocol',
+                     'agent_h1_hours_experiment','agent_h1_hours_shadow_cycle','agent_h1_family_experiment'):
             with memory.pool.connection() as connection:
                 row = connection.execute('SELECT record_key,payload_json,payload_sha256 FROM project_records WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1',(kind,)).fetchone()
             if not row:
@@ -29,8 +30,19 @@ def main():
             elif kind == 'agent_h1_shadow_cycle':
                 report[kind] = {field:value[field] for field in ('protocol_id','as_of','recorded_at','bars','timely_signals','late_signals_not_traded','mode')}
                 report[kind]['results'] = {field:value['results'][field] for field in ('closed_trades','net_pnl','censored_trades','unresolved_position')}
-            else:
+            elif kind == 'agent_h1_shadow_protocol':
                 report[kind] = {field:value[field] for field in ('protocol_id','start','mode','orders_sent')}
+            else:
+                def summary(pair):
+                    return dict(normal={field:pair['normal'][field] for field in ('closed_trades','net_pnl','profit_factor','censored_trades','account_locked')},
+                                stress_net=pair['stress']['net_pnl'])
+                report[kind] = dict(selected=value.get('selected_on_development',value.get('selected')),
+                    checks=value.get('selected_check_passed',value.get('checks')),
+                    report_id=value.get('report_id'),as_of=value.get('as_of'),mode=value.get('mode','historical_research'))
+                if kind=='agent_h1_hours_shadow_cycle':
+                    report[kind]['results']={arm:summary(pair) for arm,pair in value['results'].items()}
+                else:
+                    report[kind]['results']={period:{arm:summary(pair) for arm,pair in arms.items()} for period,arms in value['results'].items()}
         print(json.dumps(report,ensure_ascii=False,indent=2))
     finally:
         memory.close()

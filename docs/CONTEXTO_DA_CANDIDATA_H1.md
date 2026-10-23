@@ -124,6 +124,9 @@ agregado empregado nestes resultados.
 
 ## Uso no projeto
 
+Continuação: [carteiras completas por horário e família H1](TESTE_DE_HORARIOS_H1.md).
+Os resultados posteriores não aprovaram os novos filtros de horário.
+
 Esta entrega fornece diagnósticos e hipóteses de pesquisa, não uma permissão
 de operar. O observador H1 continua coletando preços novos com a regra congelada.
 As próximas comparações deverão ter regras e critérios registrados antes de

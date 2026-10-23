@@ -1,0 +1,199 @@
+# Pesquisa de horários e alternativas H1
+
+## Objetivo
+
+Encontrar evidência de vantagem após custos, comparando carteiras completas.
+A pesquisa usa as literaturas locais como fundamento conceitual e mede as
+regras concretas no histórico EUR/USD. Não há demonstração de uma estratégia
+globalmente ótima nem garantia de lucro futuro.
+
+## Fundamento nas referências
+
+Foram consultados novamente trechos do **Manual do Pullback** (páginas PDF 5,
+10 e 13), **Wyckoff 2.0** (32–33) e **Trading in the Zone** (130, 133–134).
+O manifesto `data/knowledge/literature_families.json` preserva as referências
+adicionais de Pring, Brooks, Livermore e SMC já usadas para as quatro famílias.
+Os oito arquivos foram verificados por SHA-256. A revisão é de seções
+selecionadas, não de todos os livros na íntegra.
+
+- Pullback: localização da entrada, estrutura preservada e retomada são
+  distintos de perseguir preço ou encurtar o stop para caber uma operação.
+- Wyckoff: comportamento posterior e contexto do desequilíbrio importam;
+  classificar um extremo isoladamente não estabelece uma vantagem.
+- Douglas: variáveis e risco devem ser definidos e os resultados avaliados
+  em séries. O exercício psicológico do livro não comprova rentabilidade de
+  uma regra técnica específica.
+
+Os horários Londres/Nova York, o limite de duas horas e os parâmetros
+EMA/ATR/alvo são hipóteses de engenharia. Não são prescrições exatas dos autores
+nem provas de que essas janelas sejam melhores para Forex.
+
+## Etapa 1 — quatro regras de horário
+
+| Regra | Novas entradas permitidas |
+|---|---|
+| Referência | Londres 08–17 ou Nova York 08–17 |
+| Excluir Nova York exclusiva | Londres ativa, incluindo a sobreposição |
+| Somente Londres | Londres ativa e Nova York inativa |
+| Evitar duas últimas horas | Ainda existe sessão ativa duas horas após a entrada |
+
+São horários locais de cada mercado, com seus fusos e horário de verão.
+O filtro atua **antes** da simulação de entrada. A posição já aberta mantém
+a saída original; não é encerrada quando termina a janela de novas entradas.
+Não foram removidas operações perdedoras de uma tabela pronta.
+
+Regras preservadas: lote 0,01, saldo inicial US$ 10 mil, limites de risco,
+spread máximo, número de operações, candidato H1, contexto H4, preços M5
+originais, entrada na abertura seguinte, stop primeiro em ambiguidade intrabar,
+alvo e encerramento cinco minutos antes do fim da sessão.
+
+Custos normais: spread histórico, slippage 0,2 pip e comissão assumida de
+US$ 35 por milhão por lado. Estresse: spread × 1,5 e slippage 0,4 pip,
+preservando os alvos. A API demo mostrou seis execuções EUR/USD, totalizando
+0,06 lote, com comissão, taxas e swap iguais a zero. É uma amostra pequena,
+não confirmação de tarifa futura; a comissão conservadora da pesquisa foi mantida.
+
+### Escolha congelada antes da checagem adicional
+
+Em 2021–2023, as alternativas precisavam de pelo menos 50 operações encerradas,
+líquido positivo, fator de lucro ≥ 1,1, resultado positivo sob estresse e
+ausência de censura/bloqueio/posição pendente. A escolha usa a maior expectativa
+líquida por operação, com desempate determinístico.
+
+| Regra em 2021–2023 | Encerradas | Líquido (US$) | Fator de lucro | Líquido estressado (US$) |
+|---|---:|---:|---:|---:|
+| Referência | 134 | +22,20 | 1,18 | +10,85 |
+| Excluir Nova York exclusiva | 94 | +37,89 | 1,39 | +30,45 |
+| Somente Londres | 45 | +27,19 | 1,58 | +23,78 |
+| Evitar duas últimas horas | 119 | +27,30 | 1,24 | +17,65 |
+
+**Escolhida no desenvolvimento: excluir Nova York exclusiva.** Somente Londres
+não cumpriu o mínimo de operações; seu fator de lucro maior não autorizou
+diminuir esse mínimo depois de ver os resultados.
+
+### Resultado dos períodos adicionais
+
+| Regra | 2020 maio–dezembro (US$) | 2024 (US$) | 2025 (US$) |
+|---|---:|---:|---:|
+| Referência | −6,70 | −18,98 | Indeterminado |
+| Excluir Nova York exclusiva | −4,58 | −14,77 | Indeterminado |
+| Somente Londres | −5,76 | −0,87 | −25,35 |
+| Evitar duas últimas horas | −7,14 | −16,61 | Indeterminado |
+
+A alternativa escolhida teve 23 operações em 2020, fator de lucro 0,82 e
+resultado estressado de −US$ 6,72. Em 2024, teve 38 operações, fator 0,60 e
+resultado estressado de −US$ 17,71. Ela reprovou os dois períodos mesmo com
+amostra suficiente para a checagem de pelo menos 20 operações.
+
+Em 2025, três regras mantêm uma posição censurada na lacuna de 05/09 e não
+têm resultado anual confiável. Somente Londres não carregou aquela posição,
+mas perdeu US$ 25,35 em 11 operações e não atingiu o mínimo de amostra.
+Evitar a lacuna por acaso não é critério de seleção.
+
+**Conclusão da etapa 1:** excluir Nova York exclusiva melhora alguns totais,
+mas não resolve a inconsistência da candidata. Nenhuma regra foi aprovada.
+
+![Comparação dos horários em desenvolvimento e checagens](audits/h1-hours-comparison.png)
+
+### Origem e limites
+
+- Protocolo registrado antes dos novos resultados:
+  `2be30ccf58ecdb26d43b1793b4a1201974d6822466004ee6e1f19a93769161a3`.
+- Relatório `agent_h1_hours_experiment`:
+  `4d07621604cee80a6f24e9c39015d6adb5ef325383f87a5445f3ef6639129078`.
+- Reserva 2020 congelada: 56.353 candles incluindo aquecimento em abril,
+  cobertura de 99,35% no calendário semanal. A escolha foi gravada antes dos
+  resultados de 2020. A reserva é uma checagem histórica anterior adicional,
+  não uma validação prospectiva ou garantia de independência estatística.
+- 2021–2026 já haviam orientado pesquisas e a escolha dessas janelas. Há
+  múltiplas comparações e risco de seleção. Os controles anuais e de
+  desenvolvimento reproduziram exatamente as carteiras originais.
+- Nenhum preço foi preenchido ou interpolado.
+
+## Etapa 2 — outras famílias da literatura
+
+O protocolo separa correção e retomada (`trend_pullback`), falha no extremo de
+faixa (`range_failure`) e reversão confirmada (`reversal_shift`). Cada uma é
+comparada no horário original e sem Nova York exclusiva, totalizando seis
+alternativas. Os parâmetros já existentes de cada família permanecem fixos.
+
+As definições admitem contextos diferentes de tendência, inclusive reversões
+contrárias ao contexto superior em pesquisa. Não há alteração do agente ativo.
+O limite de perda e os demais controles de risco continuam iguais.
+
+A seleção considera apenas 2021–2023, com mínimo de 50 operações, lucro líquido,
+fator ≥ 1,1, estresse positivo e carteira sem exposição desconhecida. Os demais
+períodos são checagens separadas. Para esta segunda etapa, 2020 já estava
+alocado à etapa de horários; não é apresentado como novo período independente.
+
+Protocolo `agent_h1_family_protocol`:
+`51d2f065899ac668246235d25c43a703a630836b63822c4673bd7dc62a0f5f03`.
+Relatório `agent_h1_family_experiment`:
+`f476ae44411ba1a47c5df9e064fc2a74adc067d793b4a9565040991d7bb40fd5`.
+
+| Família / horário em 2021–2023 | Encerradas | Líquido (US$) | Estresse (US$) |
+|---|---:|---:|---:|
+| Correção e retomada / original | 470 | −53,46 | −95,35 |
+| Correção e retomada / sem NY exclusiva | 394 | −30,22 | −67,91 |
+| Falha de faixa / original | 17 | −18,35 | −13,46 |
+| Falha de faixa / sem NY exclusiva | 13 | −16,96 | −11,79 |
+| Reversão / original | 9 | +17,44 | +16,60 |
+| Reversão / sem NY exclusiva | 8 | +17,34 | +16,59 |
+
+**Nenhuma alternativa foi selecionada.** As duas famílias mais frequentes
+ficaram negativas; as reversões positivas não atingiram o mínimo de 50
+operações. O fator de lucro alto da reversão não corrige essa insuficiência.
+
+Em 2024, correção/retomada continuou negativa (−US$ 32,46 no horário original),
+e reversão somou apenas +US$ 0,32 em seis entradas, passando a −US$ 0,19 sob
+estresse. Em 2025, reversão perdeu US$ 9,32 em cinco entradas; em 2020, perdeu
+US$ 8,90 em 11 entradas. Logo, não há confirmação de sua vantagem nos outros períodos.
+
+As carteiras de correção/retomada em 2020 e 2025 tiveram exposição censurada e
+líquido total indeterminado. Os resultados parciais não foram tratados como
+resultado anual. A faixa teve poucos negócios e não sustentou vantagem.
+O estresse pode vetar entradas pelo risco e, por isso, às vezes reduzir uma
+perda por mudar o conjunto executado; isso não é demonstração de robustez.
+
+Os sinais de rompimento/reteste dos cinco anos foram reproduzidos exatamente
+como controle. As quatro famílias H1 de 2026 também reproduziram integralmente
+os sinais do experimento original. Não houve alteração silenciosa da definição
+para fazer uma variante ganhar. O resultado se refere a essas implementações
+concretas; não invalida todas as estratégias possíveis dos autores.
+
+85 testes direcionados aprovados, incluindo horário de verão, permanência da
+posição após o fim da janela de entrada, seleção sem redução do mínimo de
+amostra e comparação futura sem inserir operações anteriores ao registro.
+
+## Observação prospectiva automática
+
+As quatro regras de horário foram registradas para comparação simulada em
+preços novos a partir de **23/10/2026 às 14:35 de Brasília** (17:35 UTC).
+A escolha do desenvolvimento fica fixa; não será substituída automaticamente
+pelo grupo que parecer melhor em poucos negócios futuros.
+
+A tarefa `AgenteTrader-H1HoursShadow` reutiliza o arquivo imutável de candles
+e os sinais capturados no prazo pelo observador H1 existente. Não abre outra
+conexão com o MT5 nem envia ordens. Mantém uma carteira por regra, com custos
+normais e estressados, posições e exposição censurada preservadas após reinício.
+
+Protocolo `agent_h1_hours_shadow_protocol`:
+`213e1df89e58d4fb12f285743992cd9f915941fca6303245142db984893a384c`.
+Os resultados são simulações com preços e custos modelados, não execuções
+confirmadas pela corretora. A coleta continua enquanto Windows, MT5, o
+observador H1 e PostgreSQL estiverem disponíveis; o navegador pode ficar fechado.
+
+## Consultar e reproduzir
+
+```powershell
+.venv/Scripts/python.exe h1_research_status.py
+.venv/Scripts/python.exe run_h1_hours_experiment.py
+.venv/Scripts/python.exe run_h1_family_validation.py
+.venv/Scripts/python.exe run_h1_hours_shadow.py
+```
+
+Os experimentos novos registram protocolos e resultados no PostgreSQL. Repetir
+o runner cria outra execução registrada; não acrescenta dados futuros por si só.
+O observador contínuo é a parte que acompanha preços novos. Os JSONs completos
+ficam em `data/reports/`, fora do Git. A coleta prospectiva não promove nenhuma
+estratégia nem altera pesos do Timestral.

@@ -67,6 +67,8 @@ em 2021–2025 e mantém um observador prospectivo em simulação, sem ordens.
 Consulte os resultados com `.venv/Scripts/python.exe h1_research_status.py`.
 O [diagnóstico dos contextos H1](docs/CONTEXTO_DA_CANDIDATA_H1.md) separa
 sessões, alinhamento e falta de histórico diário no instante de cada entrada.
+O [teste completo de horários e outras famílias H1](docs/TESTE_DE_HORARIOS_H1.md)
+refaz as carteiras e mantém comparação futura em simulação; nenhuma regra nova foi aprovada.
 
 Para comparar H1 com H4+H1 no maior catálogo histórico compatível já congelado,
 execute `python run_trend_experiment.py`. O relatório é gravado no PostgreSQL
