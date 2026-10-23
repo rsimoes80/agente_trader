@@ -1,5 +1,9 @@
 # Pesquisa em M15 e H1 — Agente Trader - IA
 
+Continuação: a [validação ampliada em 2021–2025](VALIDACAO_H1_AMPLIADA.md)
+não aprovou a candidata H1. O resultado positivo abaixo motivou a pesquisa,
+mas não se manteve consistentemente nos anos adicionais.
+
 ## Hipótese
 
 O estudo anterior em M5 encontrou movimentos brutos pequenos diante dos custos.

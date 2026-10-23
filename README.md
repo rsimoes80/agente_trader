@@ -62,6 +62,10 @@ incluindo comparação com o modelo em operação. A tarefa Windows
 
 A pesquisa histórica é separada do serviço de operação:
 
+A [validação H1 ampliada](docs/VALIDACAO_H1_AMPLIADA.md) testa a candidata fixa
+em 2021–2025 e mantém um observador prospectivo em simulação, sem ordens.
+Consulte os resultados com `.venv/Scripts/python.exe h1_research_status.py`.
+
 Para comparar H1 com H4+H1 no maior catálogo histórico compatível já congelado,
 execute `python run_trend_experiment.py`. O relatório é gravado no PostgreSQL
 (`agent_trend_experiment`) e em `data/reports/`. Esse comando não muda a política
