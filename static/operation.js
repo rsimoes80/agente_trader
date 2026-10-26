@@ -81,6 +81,10 @@
         const rules={CONTRADICTIONS:'evitar hipóteses com evidências contrárias',WEAK_BODY:'evitar candles com corpo menor que metade do ATR',FORECAST_DISAGREES:'exigir confirmação dos dois horizontes do Timestral',FORECAST_BELOW_COST:'exigir deslocamento previsto maior que os custos estimados'};
         $("last-learning").textContent=`Revisão automática: ${review.reviewed} simulações da estratégia base avaliadas. ${labels[review.last_review?.assessment]||'Aguardando resultado de uma hipótese com crítica registrada.'} ${p?`Proposta: ${rules[p.rule]||p.rule}. ${stages[p.status]||p.status} · ${review.future_samples}/${p.minimum_samples} resultados mínimos · fim da coleta: ${date(p.ends_at)} UTC. Nenhuma ativação automática por esta pesquisa.`:'Buscando evidência para formular uma melhoria; nenhuma proposta criada ainda.'}`;
       }
+      const exploration=learning.exploratory;
+      if(exploration){
+        $("last-learning").textContent+=` Laboratório exploratório: ${exploration.candidates} hipóteses técnicas, ${exploration.closed} simulações encerradas e ${number(exploration.net_pnl)} USD líquidos simulados. Inclui cenários bloqueados para entrada; não envia ordens nem altera a estratégia em uso.`;
+      }
       $("training-state").textContent=learning.evidence_status==='VALIDATED_ALTERNATIVE'?'Alternativa validada em uso':'Aprendendo e comparando';
       $("training-detail").textContent=learning.last_change?`Última mudança automática: ${learning.last_change.previous} → ${learning.last_change.selected}. Memória preservada no PostgreSQL. O retreinamento do Timestral funciona em segundo plano.`:'O agente atualiza a memória após cada resultado. Uma alternativa precisa de pelo menos 7 dias, 20 operações por versão e evidência favorável para substituir a base. O Timestral recebe retreino automático com dados novos.';
       if(current.desired!=='running'||!data.worker.available){$("training-state").textContent='Memória preservada';$("training-detail").textContent='A observação contínua retorna quando o agente estiver iniciado e o serviço Windows disponível.';}

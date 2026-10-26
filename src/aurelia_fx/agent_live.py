@@ -21,6 +21,7 @@ from .historical.core import closed_rows, readiness, utc
 from .operation_control import LOCK
 from .sessions import SessionEngine
 from . import continual_learning as continual
+from . import exploratory_learning
 
 
 def checkpoint(control, session_id):
@@ -449,6 +450,7 @@ def run_paper(
                         except (RuntimeError,ValueError,KeyError,OSError) as exc:
                             account.data['lab_state'].setdefault('model_study',{})['error']=type(exc).__name__
                             study.close()
+                    output = None
                     if setup and (not reason or (research_policy and reason=='POSITION_ALREADY_OPEN')):
                         context = prepare(
                             session.history,
@@ -557,6 +559,21 @@ def run_paper(
                             decision["reason"] = (
                                 reason or (hypothesis['reason'] if research_policy else "O filtro aprendido não aprovou esta oportunidade.")
                             )
+                    if research_policy:
+                        # Research follows the broker decision, so extra inference
+                        # cannot delay its freshness checks or change its setup.
+                        exploratory_learning.observe(
+                            account.data['lab_state']['continual'], snapshot,
+                            session.history, session.aggregator.history['D1'],
+                            at=utc(quote['at']),
+                            ready=not history_block and not expired
+                                and not account.data.get('model_reload_pending') and 0 <= age <= 90,
+                            source=account.data['clock_id'], model=config.fingerprint,
+                            forecast=lambda: output if output is not None else cached_forecast(
+                                control.memory,
+                                prepare(session.history, utc(latest['timestamp'])+timedelta(minutes=5), config),
+                                config, adapter)[1],
+                        )
                     account.data["last_candle"] = latest["timestamp"]
                     account.event(
                         "decision",

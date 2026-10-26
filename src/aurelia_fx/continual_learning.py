@@ -15,7 +15,7 @@ from .historical.core import utc
 from .sessions import SessionEngine
 from .broker_calendar import unexpected_broker_gap
 from .entry_trend import entry_blocker
-from . import hypothesis_review
+from . import hypothesis_review, exploratory_learning
 
 VERSION='continual-context-v1'
 VARIANTS={
@@ -159,6 +159,7 @@ def advance(lab,rows,at):
             prior=Candle(utc(previous),bar.open,bar.open,bar.open,bar.open)
             valid=not unexpected_broker_gap(prior,bar,300)
         hypothesis_review.advance_portfolios(state,bar,valid,sessions.identify(bar.timestamp).active_sessions)
+        exploratory_learning.advance(state,bar,at,sessions.identify(bar.timestamp).active_sessions)
         for variant,sim in portfolios.items():
             fresh=sim.advance(bar,data_valid=valid,active_sessions=sessions.identify(bar.timestamp).active_sessions)
             for event in fresh:
@@ -240,4 +241,5 @@ def summary(lab):
         last_result=state.get('last_real_result'),last_change=state['last_change'],changes=state['changes'][-5:],
         min_days=7,min_trades=20,censored=state.get('censored',0),suspended_contexts=len(state.get('suspended',{})),
         hypothesis_review=hypothesis_review.summary(state),
+        exploratory=exploratory_learning.summary(state),
         model_study={k:study.get(k) for k in ('run_id','registered_at','forecast_count','status','closed','error')} if study else None)

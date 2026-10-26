@@ -79,3 +79,37 @@ completo, custos, encerramento de sessão conhecido e mesma purga de uma hora.
 Só pode ser selecionado filtro positivo com pelo menos 50 operações e PF 1,1
 na descoberta. Perdas menores continuam sendo perdas: não há vencedor negativo.
 O universo ampliado é pesquisa; não altera a política de entradas em produção.
+
+## Coleta prospectiva de hipóteses bloqueadas
+
+O teste encontrou apenas uma oportunidade elegível pela política de produção
+entre 1.421 candidatos técnicos. Para estudar esse limitador sem liberar ordens,
+`exploratory_learning.py` mantém uma carteira simulada separada em
+`continual.exploratory`, persistida pelo mesmo checkpoint do PostgreSQL.
+
+A cada candle M5 fechado, com histórico pronto e sinal recente, o agente procura
+o padrão técnico existente com `research=True`. Isso permite avaliar padrões em
+RANGE, TRANSITION e contexto ainda não confirmado. Não é uma nova estratégia de
+reversão ou lateralização: é o pullback técnico existente sob outros contextos.
+Os vetos de dados inválidos, spread alto e ausência de gatilho continuam presentes.
+O motivo que impediria a entrada real acompanha cada hipótese.
+
+A simulação usa lote, custos, risco, entrada na barra posterior e prazo de 12
+candles do simulador existente. A revisão objetiva e suas propostas futuras
+ficam exclusivamente nesse namespace. Não alimentam a promoção das variantes
+de produção, não alteram pesos do Timestral e não acionam o broker. Resultados
+exploratórios e resultados da conta demo nunca são somados como uma amostra única.
+
+O Timestral reutiliza a previsão já calculada para o mesmo contexto ou o cache
+existente; uma nova inferência só ocorre com gatilho técnico, depois da decisão
+operacional. Se a previsão falhar, a evidência fica explicitamente ausente e a
+simulação pode avaliar apenas o contexto técnico. Não se inventa confirmação.
+Reiniciar não duplica sinais ou resultados; candles incompletos não geram rótulos.
+
+Lacunas com exposição censuram a amostra, invalidam propostas em coleta e
+reiniciam a carteira de pesquisa. Os totais exibidos somam apenas operações
+encerradas válidas; não representam uma curva contínua de capital através de
+lacunas. Uma carteira ocupada ou limitada pelo risco não recebe outra posição.
+O painel informa quantidade de hipóteses e resultados simulados, identificando
+explicitamente que essa pesquisa não envia ordens. Nenhuma lucratividade é
+inferida apenas do aumento de cobertura.
