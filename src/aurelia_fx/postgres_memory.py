@@ -124,6 +124,10 @@ class PostgresMemory(ExperienceMemory):
                 payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL,
                 recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 PRIMARY KEY(record_type, record_key, payload_sha256))""")
+            # Existing large deployments install this concurrently with
+            # ensure_project_indexes.py before upgrading. New tables are empty.
+            db.execute("""CREATE INDEX IF NOT EXISTS ix_project_records_type_recorded
+                ON project_records(record_type, recorded_at DESC)""")
             db.execute(
                 "INSERT INTO metadata(key,value) VALUES('schema_version',?) ON CONFLICT DO NOTHING",
                 (str(self.SCHEMA_VERSION),),

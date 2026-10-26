@@ -85,3 +85,18 @@ dos registros usa o relógio do PostgreSQL. Quando o chamador fornece um corte
 histórico explícito, esse corte é respeitado. O período de preço continua sendo
 delimitado pelos timestamps UTC dos candles. Isso evita esconder uma revisão
 recém-gravada por diferença entre os relógios do cliente e do banco.
+
+## Índice para consultas operacionais
+
+`project_records` tem um índice por tipo e data de gravação para consultar o
+estado, heartbeat e outros registros recentes sem varrer todo o journal.
+Na VM, o teste SQL caiu de 3.361 ms para 0,05 ms; a leitura completa do estado
+pelo cliente Python foi medida em cerca de 2 ms após a criação. São medições pontuais,
+não garantia de latência futura. O índice ocupa aproximadamente 53 MB.
+
+Em um banco existente, executar `python ensure_project_indexes.py` antes de
+atualizar os serviços. Ele verifica a propriedade da tabela no banco isolado
+`agente_trader`, cria o índice concorrentemente, verifica sua validade e registra
+os planos de execução no PostgreSQL. Não exclui registros nem interrompe escritas.
+Em bancos novos, a inicialização normal do schema também cria esse índice.
+O backup PostgreSQL inclui a definição do índice.
