@@ -126,3 +126,7 @@ instruções antigas não representam o fluxo atual.
 - [Validação das hipóteses no histórico de 2026](docs/VALIDACAO_HISTORICA_2026.md).
 - [Estratégias da literatura: famílias, filtros e resultados](docs/ESTRATEGIAS_DA_LITERATURA.md).
 - [Pesquisa M15/H1: horizontes maiores e custos](docs/PESQUISA_M15_H1.md).
+- [Crítica e revisão automática de hipóteses](docs/REVISAO_AUTOMATICA_HIPOTESES.md).
+- [Resultados da validação do ciclo de revisão](docs/RESULTADOS_REVISAO_HIPOTESES.md).
+- [Diagnóstico Timestral e prova M5/M15/H1](docs/DIAGNOSTICO_PREVISOES_TIMESTRAL.md).
+- [Aprendizado do resultado líquido por hipótese](docs/APRENDIZADO_RESULTADO_LIQUIDO.md).

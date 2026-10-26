@@ -15,6 +15,7 @@ from .historical.core import utc
 from .sessions import SessionEngine
 from .broker_calendar import unexpected_broker_gap
 from .entry_trend import entry_blocker
+from . import hypothesis_review
 
 VERSION='continual-context-v1'
 VARIANTS={
@@ -157,6 +158,7 @@ def advance(lab,rows,at):
             # Calendar gaps are allowed; unexpected missing exposure bars are not.
             prior=Candle(utc(previous),bar.open,bar.open,bar.open,bar.open)
             valid=not unexpected_broker_gap(prior,bar,300)
+        hypothesis_review.advance_portfolios(state,bar,valid,sessions.identify(bar.timestamp).active_sessions)
         for variant,sim in portfolios.items():
             fresh=sim.advance(bar,data_valid=valid,active_sessions=sessions.identify(bar.timestamp).active_sessions)
             for event in fresh:
@@ -165,9 +167,15 @@ def advance(lab,rows,at):
                     result=dict(variant=variant,context=key,entry_at=event['entry_at'],exit_at=event['observed_at'],
                         net_pnl=f['net_pnl'],result_in_r=f['result_in_r'],scope='prospective_shadow_not_broker',event_id=event['event_id'])
                     state['outcomes'].append(result)
+                    hypothesis_review.review(state,event,result)
                     add_stats(state['contexts'].setdefault(key,{}).setdefault(variant,{}),f['net_pnl'],f['result_in_r'])
                     events.append(result)
                 elif event['status']=='censored':
+                    research=hypothesis_review.state_for(state)
+                    research['censored']+=1
+                    if research['proposal'] and research['proposal']['status']=='COLLECTING_FUTURE':
+                        research['proposal']['status']='INVALIDATED_DATA_GAP'
+                    research['reviews']=[]
                     state['censored']=state.get('censored',0)+1
                     state['registered_at']=(bar.timestamp+timedelta(seconds=300)).isoformat()
                     state['outcomes']=[];state['champion']='baseline';state['evidence_status']='RESTARTED_AFTER_DATA_GAP'
@@ -179,6 +187,7 @@ def advance(lab,rows,at):
     state['outcomes']=[o for o in state['outcomes'] if o['exit_at']>=cutoff][-2000:]
     state['portfolios']={k:encode_sim(s) for k,s in portfolios.items()}
     promote(state,at)
+    hypothesis_review.evaluate(state,at)
     return events
 
 def consider(lab,setup,features):
@@ -186,10 +195,12 @@ def consider(lab,setup,features):
     if utc(signal)<=utc(state['registered_at']) or signal==state['last_signal']:return
     if entry_blocker(setup['snapshot'],setup['candidate'].side):return
     state['last_signal']=signal;state['eligible_signals']+=1;key=context(setup)
+    hypothesis_review.consider_portfolios(state,setup,features,key)
     for variant in VARIANTS:
         sim=decode_sim(state['portfolios'].get(variant),state['units'])
         if not sim.busy and not sim.account_locked and accepts(variant,features):
-            modified=apply(setup,variant);modified['snapshot']={**setup['snapshot'],'learning_context':key}
+            modified=apply(setup,variant);modified['snapshot']={**setup['snapshot'],'learning_context':key,
+                'hypothesis_critique':hypothesis_review.critique(setup,features)}
             sim.submit(request_for(modified,fingerprint(dict(study=state['registered_at'],signal=signal,variant=variant))))
         state['portfolios'][variant]=encode_sim(sim)
 
@@ -228,4 +239,5 @@ def summary(lab):
         champion_name=VARIANTS[state['champion']]['name'],variants=variants,real_results=sum(v.get('n',0) for cell in state['real'].values() for v in cell.values()),
         last_result=state.get('last_real_result'),last_change=state['last_change'],changes=state['changes'][-5:],
         min_days=7,min_trades=20,censored=state.get('censored',0),suspended_contexts=len(state.get('suspended',{})),
+        hypothesis_review=hypothesis_review.summary(state),
         model_study={k:study.get(k) for k in ('run_id','registered_at','forecast_count','status','closed','error')} if study else None)
