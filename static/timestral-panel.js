@@ -2,6 +2,8 @@
 (() => {
   const root = document.getElementById("timestral-panel");
   if (!root) return;
+  const symbol=new URLSearchParams(location.search).get('symbol')||'EURUSD';
+  if(symbol!=='EURUSD'){window.aureliaTimestral=[];root.textContent='As previsões operacionais deste ativo serão exibidas após a preparação de seu ciclo de análise. Previsões de EURUSD não são reutilizadas neste gráfico.';return;}
   const el = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; return n; };
   const price = n => Number.isFinite(n) ? n.toFixed(5) : "—";
   const pct = n => Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : "—";

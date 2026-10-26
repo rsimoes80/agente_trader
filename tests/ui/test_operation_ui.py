@@ -5,7 +5,7 @@ import os
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse,parse_qs
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -35,13 +35,17 @@ class OperationBrowserTests(unittest.TestCase):
 
     def route(self, route):
         path = urlparse(route.request.url).path
+        symbol=parse_qs(urlparse(route.request.url).query).get('symbol',['EURUSD'])[0]
         if path.startswith("/api/diagnostics/agent"):
             if path.endswith("/command"):
                 self.commands.append(route.request.post_data_json)
                 self.assertEqual(route.request.headers["x-diagnostics-csrf"], "browser-fixture-csrf")
                 self.state.update(state="QUEUED", desired="running", lot=self.commands[-1].get("lot", "0.01"))
-            route.fulfill(json=dict(ok=True, state=self.state,
-                                    csrf="browser-fixture-csrf", worker=dict(available=True)))
+            state=self.state if symbol=='EURUSD' else dict(symbol=symbol,state='STOPPED',desired='stopped',message='Configuração multiativo pendente.')
+            route.fulfill(json=dict(ok=True, state=state,execution_ready=symbol=='EURUSD',
+                                    csrf="browser-fixture-csrf", worker=dict(available=symbol=='EURUSD')))
+        elif path=='/api/diagnostics/instruments':
+            route.fulfill(json=dict(ok=True,instruments=[dict(symbol='EURUSD',lot='0.01',state=self.state['state'],desired=self.state['desired'],execution_ready=True),dict(symbol='XAUUSD',lot='0.01',state='STOPPED',desired='stopped',execution_ready=False)]))
         elif path == '/api/diagnostics/decisions':
             route.fulfill(json=dict(ok=True,session_id=self.state['session_id'],decisions=[dict(
                 event_id='actual-worker-fixture',status='decision',clock_id='browser-clock',
@@ -56,7 +60,7 @@ class OperationBrowserTests(unittest.TestCase):
                 return
             rows = [dict(timestamp=(self.clock - timedelta(minutes=5*i)).isoformat(),
                          open=1.1, high=1.101, low=1.099, close=1.1005) for i in range(119, -1, -1)]
-            route.fulfill(json=dict(ok=True, candles=rows, source_clock=dict(clock_id="browser-clock"),
+            route.fulfill(json=dict(ok=True,symbol=symbol,digits=5, candles=rows, source_clock=dict(clock_id="browser-clock"),
                                     quote=dict(bid=1.1005, ask=1.1006, time=self.now.isoformat())))
         elif path in ("/", "/operation.css", "/operation.js",'/diagnostico','/diagnostics.js','/diagnostics.css'):
             filename = "operation.html" if path == "/" else 'diagnostics.html' if path=='/diagnostico' else path[1:]
@@ -73,13 +77,22 @@ class OperationBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#password").count(),0)
         self.page.locator("#start").click()
         self.page.wait_for_function("document.getElementById('state-title').textContent==='Início solicitado'")
-        self.assertEqual(self.commands, [dict(action="START", mode="demo", lot="0.02")])
+        self.assertEqual(self.commands, [dict(action="START",symbol='EURUSD', mode="demo", lot="0.02")])
         self.assertTrue(self.page.locator("#lot").is_disabled())
         self.state.update(state="WAITING_SOURCE", desired="running", message="Aguardando MT5; nova tentativa automática.")
         self.page.wait_for_function("document.getElementById('state-title').textContent==='Aguardando conexão com o MT5'")
         self.assertTrue(self.page.locator("#pause").is_enabled())
         self.assertTrue(self.page.locator("#stop").is_enabled())
         self.assertEqual(self.errors, [])
+
+    def test_gold_view_never_starts_or_displays_euro_session(self):
+        self.state.update(state='ANALYZING',desired='running',session_id='euro-session')
+        self.page.goto('http://127.0.0.1:37771/?symbol=XAUUSD')
+        self.page.locator('#instrument-label').filter(has_text='XAUUSD').wait_for()
+        self.assertTrue(self.page.locator('#start').is_disabled())
+        self.assertIn('preparação',self.page.locator('#asset-readiness').inner_text())
+        self.assertEqual(self.page.locator('#state-title').inner_text(),'Agente parado')
+        self.assertEqual(self.commands,[]);self.assertEqual(self.errors,[])
 
     def test_diagnostics_shows_actual_decisions_without_manual_session_controls(self):
         self.page.goto('http://127.0.0.1:37771/diagnostico')

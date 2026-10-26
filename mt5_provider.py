@@ -117,7 +117,8 @@ def inspect_instrument(symbol):
 def _resolve_symbol(requested: str) -> str:
     compact = re.sub(r"[^A-Z0-9]", "", requested.upper())
     symbols = mt5.symbols_get() or ()
-    exact = [
+    exact_name=[symbol.name for symbol in symbols if symbol.name==requested]
+    exact = exact_name or [
         symbol.name
         for symbol in symbols
         if re.sub(r"[^A-Z0-9]", "", symbol.name.upper()) == compact

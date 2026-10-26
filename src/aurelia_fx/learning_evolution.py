@@ -101,7 +101,9 @@ def collection_health(state, worker, now=None):
     last = evolution.get('last_bar') or (state.get('last_decision') or {}).get('candle')
     result = dict(checked_at=now.isoformat(), last_closed_bar=last, alerts=[], status='OK')
     if state.get('desired') != 'running':
-        result.update(status='PAUSED', message='Coleta pausada ou agente parado por solicitação.')
+        if state.get('desired')=='stopped' and not state.get('session_id'):
+            result.update(status='NOT_STARTED',message='Este ativo ainda não foi iniciado. Consultar o gráfico não significa que a análise esteja ativa.')
+        else:result.update(status='PAUSED', message='Coleta pausada ou agente parado por solicitação.')
     elif not worker.get('available'):
         result.update(status='ERROR', message='O serviço Windows não confirma atividade. A coleta pode estar interrompida.')
     elif state.get('state') in {'WAITING_SOURCE', 'ERROR', 'INSUFFICIENT_DATA'}:

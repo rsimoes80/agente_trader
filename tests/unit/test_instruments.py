@@ -41,6 +41,14 @@ class InstrumentsTests(unittest.TestCase):
         with self.assertRaises(ValueError):inspect_contract(sdk,'XAUUSD',broker='b',server='s')
         sdk.order_calc_profit.assert_not_called()
 
+    def test_quote_resolver_preserves_exact_broker_punctuation(self):
+        import mt5_provider
+        from unittest.mock import patch
+        sdk=Mock();sdk.symbols_get.return_value=[SimpleNamespace(name='AB.CD'),SimpleNamespace(name='ABCD')]
+        sdk.symbol_select.return_value=True
+        with patch.object(mt5_provider,'mt5',sdk):self.assertEqual(mt5_provider._resolve_symbol('AB.CD'),'AB.CD')
+        sdk.symbol_select.assert_called_once_with('AB.CD',True)
+
     def test_missing_quote_is_not_permission_to_trade(self):
         sdk=self.sdk();sdk.symbol_info_tick.return_value=None
         r=inspect_contract(sdk,'XAUUSD',broker='b',server='s')

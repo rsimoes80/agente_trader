@@ -2,14 +2,23 @@
 
 const canvas = document.getElementById("chart");
 const ctx = canvas.getContext("2d");
-const state = { timeframe: "M5", candles: [], quote: null, digits: 5, visible: 110, ema: true, timer: null, loading: false, crosshair: null };
+const state = { symbol:new URLSearchParams(location.search).get('symbol')||'EURUSD',timeframe: "M5", candles: [], quote: null, digits: 5, visible: 110, ema: true, timer: null, loading: false, crosshair: null };
+document.title=state.symbol+' · Gráfico MT5 | Agente Trader - IA';
+document.querySelector('.chart-title').firstChild.textContent=state.symbol+' ';
+document.querySelector('.instrument b').textContent=state.symbol;
+document.querySelector('.pair-icon').textContent=state.symbol.slice(0,3);
+document.querySelector('.chart-legend').replaceChildren(Object.assign(document.createElement('span'),{className:'candle-legend'}),' '+state.symbol+' ',Object.assign(document.createElement('span'),{className:'ema-legend'}),' EMA 21');
+document.querySelector('.statusbar a[href*="diagnostico"]').href='/diagnostico?symbol='+encodeURIComponent(state.symbol);
+document.querySelector('.statusbar a[href="/"]').href='/?symbol='+encodeURIComponent(state.symbol);
 const fmt = (value) => Number.isFinite(value) ? value.toFixed(state.digits) : "—";
+canvas.setAttribute('aria-label','Candles de '+state.symbol+' e média móvel exponencial');
+document.querySelector('.chart-shell').setAttribute('aria-label','Gráfico de candles '+state.symbol);
 
 async function loadChart() {
   if (state.loading) return;
   state.loading = true;
   try {
-    const response = await fetch(`/api/mt5/chart?timeframe=${encodeURIComponent(state.timeframe)}&count=600`, { cache: "no-store" });
+    const response = await fetch(`/api/mt5/chart?symbol=${encodeURIComponent(state.symbol)}&timeframe=${encodeURIComponent(state.timeframe)}&count=600`, { cache: "no-store" });
     let data;
     try {
       data = await response.json();
@@ -17,15 +26,16 @@ async function loadChart() {
       throw new Error("Resposta inválida do servidor de cotações.");
     }
     if (!response.ok || !data.ok) throw new Error(data.error || "Não foi possível carregar o histórico do MT5.");
+    if(data.symbol!==state.symbol)throw new Error('A ponte retornou outro ativo.');
     state.candles = data.candles || [];
     state.quote = data.quote;
-    state.digits = data.digits || 5;
+    state.digits = data.digits ?? 5;
     document.getElementById("symbol-name").textContent = data.symbol;
     document.getElementById("bid").textContent = fmt(state.quote?.bid);
     document.getElementById("ask").textContent = fmt(state.quote?.ask);
-    document.getElementById("spread").textContent = state.quote ? `${((state.quote.ask - state.quote.bid) / data.pip_size).toFixed(1)} pips` : "—";
+    document.getElementById("spread").textContent = state.quote ? `${((state.quote.ask - state.quote.bid) / data.pip_size).toFixed(1)} unid.` : "—";
     document.getElementById("last-close").textContent = fmt(state.candles.at(-1)?.close);
-    document.getElementById("market-meta").textContent = `EUR/USD · ${state.timeframe} · ${state.candles.length} candles · UTC · ${data.broker || "MT5"}`;
+    document.getElementById("market-meta").textContent = `${state.symbol} · ${state.timeframe} · ${state.candles.length} candles · unidade ${data.pip_size} · UTC · ${data.broker || "MT5"}`;
     document.getElementById("updated-at").textContent = `Atualizado ${new Date().toLocaleTimeString("pt-BR")} · próximo em 3 s`;
     document.getElementById("connection-label").textContent = "MT5 conectado";
     document.querySelector(".connection").classList.add("connected");
@@ -66,6 +76,7 @@ function draw() {
   const plotW = w - left - right, plotH = h - top - bottom;
   const visible = state.candles.slice(-state.visible);
   const forecast = state.timeframe === "M5" ? (window.aureliaTimestral || []).filter(p =>
+    p.symbol===state.symbol &&
     Date.now() - new Date(p.as_of).getTime() < 360000 &&
     visible.some(c => c.timestamp === p.reference_time)) : [];
   const extra = forecast.length ? 12 : 0;

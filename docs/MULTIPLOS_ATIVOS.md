@@ -13,9 +13,12 @@ limites conjuntos de risco e margem. O projeto continua exclusivamente em demo.
    financeira usando `order_calc_profit`, arquivos históricos separados por
    símbolo e unidade de preço própria. A ponte deixa de substituir silenciosamente
    todo pedido de gráfico por EURUSD. As novas rotas continuam autenticadas pela ponte.
-2. **Configuração e ciclos por ativo — pendente.** Seletor no painel, estados e
-   comandos independentes, persistência de contratos/configurações, carregamento
-   de 30 dias e retomada por ativo. Não basta acrescentar uma opção ao gráfico.
+2. **Configuração e controles implementados; novos ciclos ainda pendentes.**
+   Seletor no painel, lote persistente por ativo, estados e comandos independentes,
+   contratos verificados pela ponte, gráficos e diagnósticos identificados pelo
+   símbolo. A sessão EURUSD legada conserva suas chaves. Ainda falta o coordenador
+   iniciar e retomar os ciclos de análise dos demais ativos. Enquanto isso, o painel
+   informa a preparação pendente e bloqueia o botão de início desses ciclos.
 3. **Análise e aprendizado por ativo — pendente.** Parametrizar leitura técnica,
    unidades, custos, sessões/calendário, simulação, memória e treinamento. Compartilhar
    a inferência do Timestral e manter um treinamento pesado por vez. Não transferir
@@ -68,3 +71,22 @@ os treinos ainda precisam receber a mesma parametrização antes da ativação.
 Rotas somente leitura: `/api/mt5/instruments?q=XAU` e
 `/api/mt5/instrument?symbol=XAUUSD`. A segunda verifica o nome exato e calcula
 sondas financeiras pelo SDK; não chama `order_send`.
+
+## Configuração e interface
+
+`AssetRegistry` grava `asset_configuration` e audita comandos idempotentes. O
+cliente informa apenas símbolo e lote; o servidor busca o contrato na ponte.
+Remover ou alterar o lote de um ativo em execução é recusado. O lote efetivamente
+usado ao iniciar é lembrado, sem permitir que uma resposta de sessão antiga
+sobrescreva uma configuração posterior.
+
+`OperationControl(memory, symbol)` separa estados, comandos, gerações e sinais
+de atividade por ativo. A trava de comandos continua conjunta; ela não autoriza
+enviar duas ordens nem substitui a futura reserva de risco agregado. Consultar
+XAUUSD não pausa, retoma ou redefine a sessão EURUSD.
+
+A página aceita `?symbol=XAUUSD`, usa cache de gráfico por ativo e confere o
+símbolo retornado pela API antes de mostrar dados ou habilitar controles. As
+previsões do EURUSD são explicitamente excluídas dos gráficos de outros ativos.
+O selo de execução de novos símbolos dependerá de um serviço multiativo válido;
+configurar um símbolo no catálogo não concede autorização de envio.

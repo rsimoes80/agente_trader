@@ -44,18 +44,24 @@ def validate_lot(value, contract=None):
 
 
 class OperationControl:
-    def __init__(self, memory):
-        self.memory = memory
+    def __init__(self, memory, symbol='EURUSD'):
+        from .instruments import symbol_name
+        self.memory=memory;self.symbol=symbol_name(symbol)
 
-    @staticmethod
-    def latest(connection):
+    def record_type(self,kind):
+        return kind if self.symbol=='EURUSD' else kind+':'+self.symbol
+
+    def latest(self,connection):
         row = connection.execute("""SELECT payload_json FROM project_records
-            WHERE record_type='agent_operation_state' ORDER BY recorded_at DESC LIMIT 1""").fetchone()
+            WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1""",(self.record_type('agent_operation_state'),)).fetchone()
+        if row and json.loads(row['payload_json']).get('symbol','EURUSD')!=self.symbol:
+            raise ValueError('Estado operacional pertence a outro ativo.')
         return (
             json.loads(row["payload_json"])
             if row
             else dict(
                 session_id=None,
+                symbol=self.symbol,
                 state="STOPPED",
                 desired="stopped",
                 sequence=0,
@@ -66,8 +72,10 @@ class OperationControl:
         )
 
     def append(self, connection, state):
+        if state.get('symbol',self.symbol)!=self.symbol:raise ValueError('Estado de outro ativo recusado.')
         state = {
             **state,
+            'symbol':self.symbol,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "orders_enabled": state.get("mode")=="demo" and bool(state.get("demo_authorization")),
         }
@@ -75,8 +83,8 @@ class OperationControl:
         connection.execute(
             """INSERT INTO project_records
             (record_type,record_key,payload_json,payload_sha256,recorded_at)
-            VALUES('agent_operation_state',%s,%s,%s,clock_timestamp())""",
-            (str(uuid4()), text, digest),
+            VALUES(%s,%s,%s,%s,clock_timestamp())""",
+            (self.record_type('agent_operation_state'),str(uuid4()), text, digest),
         )
         return state
 
@@ -86,6 +94,8 @@ class OperationControl:
 
 
     def command(self, payload, key, *, actor):
+        if payload.get('symbol',self.symbol)!=self.symbol:
+            raise ValueError('O comando pertence a outro ativo. Atualize o painel.')
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{16,128}", key):
             raise ValueError("Identificador de comando inválido. Atualize a página.")
         action = payload.get("action")
@@ -98,6 +108,7 @@ class OperationControl:
             )
         lot = validate_lot(payload.get("lot")) if action == "START" else None
         request = dict(action=action, lot=lot, mode=mode, actor=actor)
+        if self.symbol!='EURUSD':request['symbol']=self.symbol
         fingerprint = hashlib.sha256(
             json.dumps(request, sort_keys=True).encode()
         ).hexdigest()
@@ -105,8 +116,8 @@ class OperationControl:
             c.execute("SELECT pg_advisory_xact_lock(%s)", (LOCK,))
             old = c.execute(
                 """SELECT payload_json FROM project_records
-                WHERE record_type='agent_operation_command' AND record_key=%s LIMIT 1""",
-                (key,),
+                WHERE record_type=%s AND record_key=%s LIMIT 1""",
+                (self.record_type('agent_operation_command'),key),
             ).fetchone()
             if old:
                 cached = json.loads(old["payload_json"])
@@ -121,11 +132,12 @@ class OperationControl:
                     SELECT DISTINCT ON (record_key) record_key,payload_json::jsonb AS p
                     FROM project_records WHERE record_type='agent_demo_intent'
                     ORDER BY record_key,(payload_json::jsonb ->> 'sequence')::bigint DESC
-                    ) latest WHERE NOT (p #> '{request,broker}' ? 'position')
+                    ) latest WHERE COALESCE(p #>> '{request,broker,symbol}','EURUSD')=%s
+                    AND NOT (p #> '{request,broker}' ? 'position')
                     AND (p->>'status' NOT IN ('CLOSED','REJECTED','CANCELLED')
                     OR (p->>'status'='CLOSED' AND NOT EXISTS (
                         SELECT 1 FROM project_records applied WHERE applied.record_type='agent_demo_applied'
-                        AND applied.record_key=latest.record_key||':closed'))) LIMIT 1""").fetchone()
+                        AND applied.record_key=latest.record_key||':closed'))) LIMIT 1""",(self.symbol,)).fetchone()
                 if unresolved:
                     raise ValueError('Há uma execução demo pendente de reconciliação. Retome a sessão existente.')
                 if state.get("position") or state.get("pending_execution"):
@@ -149,7 +161,7 @@ class OperationControl:
                             mode=mode,
                             execution_profile="autonomous_"+mode,
                             lot=lot,
-                            symbol="EURUSD",
+                            symbol=self.symbol,
                             timeframe="M5",
                             actor=actor,
                             created_at=datetime.now(timezone.utc).isoformat(),
@@ -201,8 +213,8 @@ class OperationControl:
             text, digest = self.memory._encode(record)
             c.execute(
                 """INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256)
-                VALUES('agent_operation_command',%s,%s,%s)""",
-                (key, text, digest),
+                VALUES(%s,%s,%s,%s)""",
+                (self.record_type('agent_operation_command'),key, text, digest),
             )
             return state
 
@@ -235,17 +247,19 @@ class OperationControl:
                 c, {**state, **changes, "sequence": state["sequence"] + 1}
             )
 
-    def heartbeat(self, worker_id):
+    def heartbeat(self, worker_id, *, engine_version=None):
         import psutil
         self.memory.record_project_data(
-            "agent_worker_heartbeat",
+            self.record_type("agent_worker_heartbeat"),
             worker_id,
             dict(
                 worker_id=worker_id,
+                symbol=self.symbol,
                 at=datetime.now(timezone.utc).isoformat(),
                 pid=os.getpid(),host=socket.gethostname(),
                 process_created_at=psutil.Process().create_time(),
                 mode="paper",
+                **({'engine_version':engine_version} if engine_version else {}),
             ),
         )
         if os.environ.get('AURELIA_AGENT_SUPERVISED')=='1':
@@ -256,7 +270,7 @@ class OperationControl:
             row = c.execute("""SELECT payload_json,
                 EXTRACT(EPOCH FROM (clock_timestamp()-recorded_at)) AS heartbeat_age_seconds
                 FROM project_records
-                WHERE record_type='agent_worker_heartbeat' ORDER BY recorded_at DESC LIMIT 1""").fetchone()
+                WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1""",(self.record_type('agent_worker_heartbeat'),)).fetchone()
         data = json.loads(row["payload_json"]) if row else None
         # Liveness is measured on receipt by the database, on one clock. A host
         # clock difference must not hide a worker that is actively checking in.

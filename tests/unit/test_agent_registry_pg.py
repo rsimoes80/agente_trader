@@ -212,7 +212,8 @@ class AgentRegistryTests(unittest.TestCase):
             def log_message(self, *args): pass
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
-        server.app = SimpleNamespace(operation=self.control)
+        from aurelia_fx.asset_registry import AssetRegistry
+        server.app = SimpleNamespace(operation=self.control,memory=self.memory,assets=AssetRegistry(self.memory))
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(thread.join, 3)

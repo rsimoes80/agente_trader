@@ -2,6 +2,7 @@
 (() => {
   const root = document.getElementById("history-panel");
   if (!root) return;
+  const symbol=new URLSearchParams(location.search).get('symbol')||'EURUSD';
   const node = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; return n; };
   const heading = node("summary", "Histórico e estatísticas — consultando PostgreSQL…"), content = node("div");
   root.append(heading, content);
@@ -9,7 +10,7 @@
   const utc = t => t ? new Date(t).toLocaleString("pt-BR", { timeZone: "UTC" }) : "—";
   async function refresh() {
     try {
-      const response = await fetch("/api/diagnostics/history", { cache: "no-store" }), data = await response.json();
+      const response = await fetch('/api/diagnostics/history?symbol='+encodeURIComponent(symbol), { cache: "no-store" }), data = await response.json();
       if (!response.ok || !data.ok) throw new Error("Histórico indisponível para análise.");
       const baseline = data.baseline;
       heading.textContent = `Histórico antes da análise · ${baseline?.days || 30} dias · ${data.blocker ? "Aguardando histórico válido" : "Disponível no PostgreSQL"}`;
@@ -18,7 +19,7 @@
       content.append(node("p", `${utc(baseline.start)} a ${utc(baseline.as_of)} UTC · fonte ${baseline.source_clock.server} · ${data.blocker || "Cobertura validada"}`));
       const wrap = node("div"), table = node("table"), head = node("tr"), body = node("tbody");
       wrap.className = "history-scroll";
-      ["Período", "Candles", "Cobertura", "Amplitude média (pips)", "Spread médio (pips)", "Qualidade"].forEach(t => head.append(node("th", t)));
+      ["Período", "Candles", "Cobertura", "Amplitude média (unid.)", "Spread médio (unid.)", "Qualidade"].forEach(t => head.append(node("th", t)));
       for (const [tf, info] of Object.entries(baseline.timeframes)) {
         const tr = node("tr");
         [tf, info.statistics.bars.toLocaleString("pt-BR"), `${(info.coverage * 100).toFixed(1)}%`, number(info.statistics.mean_range_pips), number(info.statistics.mean_spread_pips), info.ready ? "Disponível" : "Insuficiente"].forEach(t => tr.append(node("td", t)));

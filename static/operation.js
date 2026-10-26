@@ -1,12 +1,13 @@
 "use strict";
 (() => {
   const $=id=>document.getElementById(id);
+  const selectedSymbol=new URLSearchParams(location.search).get('symbol')||'EURUSD';
   const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",ERROR:"Aguardando recuperação",INSUFFICIENT_DATA:"Histórico insuficiente"};
-  let current=null, csrf="", busy=false, pending=null, chartData=null, polling=false;
+  let current=null, csrf="", busy=false, pending=null, chartData=null, polling=false,lotDirty=false;
   let quotePending=false,chartStale=true;
-  const chartCacheKey="aurelia-eurusd-m5-chart-v1";
-  function cacheChart(data){try{localStorage.setItem(chartCacheKey,JSON.stringify({saved_at:Date.now(),data:{candles:data.candles.slice(-120),quote:data.quote,source_clock:data.source_clock}}));}catch{}}
-  function restoreChart(){try{const cached=JSON.parse(localStorage.getItem(chartCacheKey));if(cached && Date.now()-cached.saved_at>=0 && Date.now()-cached.saved_at<7*86400000 && validChart(cached.data)){chartData=cached.data;showQuote();$("chart-message").textContent="Último gráfico salvo, desatualizado. Aguardando conexão para atualizar.";draw();}}catch{}}
+  const chartCacheKey="agente-trader-chart-v2:"+selectedSymbol;
+  function cacheChart(data){try{localStorage.setItem(chartCacheKey,JSON.stringify({saved_at:Date.now(),data:{symbol:data.symbol,digits:data.digits,candles:data.candles.slice(-120),quote:data.quote,source_clock:data.source_clock}}));}catch{}}
+  function restoreChart(){try{const raw=localStorage.getItem(chartCacheKey)||(selectedSymbol==='EURUSD'?localStorage.getItem('aurelia-eurusd-m5-chart-v1'):null),cached=JSON.parse(raw);if(cached && (cached.data.symbol||'EURUSD')===selectedSymbol && Date.now()-cached.saved_at>=0 && Date.now()-cached.saved_at<7*86400000 && validChart(cached.data)){chartData=cached.data;showQuote();$("chart-message").textContent="Último gráfico salvo, desatualizado. Aguardando conexão para atualizar.";draw();}}catch{}}
   function validChart(data){return Array.isArray(data?.candles) && data.candles.length>0 && data.candles.every(row=>[row.open,row.high,row.low,row.close].every(p=>Number.isFinite(p)&&p>0)&&Number.isFinite(Date.parse(row.timestamp))) && Number.isFinite(data.quote?.bid) && Number.isFinite(data.quote?.ask) && Number.isFinite(Date.parse(data.quote?.time));}
   function showQuote(){if(!chartData)return;$("quote").textContent=`${chartStale?"Última cotação (desatualizada) · ":""}Compra (ask): ${number(chartData.quote.ask)} · Venda (bid): ${number(chartData.quote.bid)}`;$("chart-time").textContent=`${date(chartData.quote.time)} UTC`;}
   labels.ANALYSIS_WARMUP="Preparando o contexto ao vivo";
@@ -20,8 +21,8 @@
   const number=value=>typeof value==="number"?value.toLocaleString("pt-BR",{maximumFractionDigits:5}):"—";
   async function api(path,payload,key){
     const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),12000);
-    try{const response=await fetch(`/api/diagnostics/agent${path}`,{signal:controller.signal,cache:"no-store",...(payload?{method:"POST",headers:{"Content-Type":"application/json","X-Diagnostics-CSRF":csrf,...(key?{"Idempotency-Key":key}:{})},body:JSON.stringify(payload)}:{})});
-    const result=await response.json(); if(!response.ok || !result.ok)throw new Error(result.error || "Não foi possível consultar o agente."); return result;}finally{clearTimeout(deadline);}
+    try{const response=await fetch(`/api/diagnostics/agent${path}${payload?'':'?symbol='+encodeURIComponent(selectedSymbol)}`,{signal:controller.signal,cache:"no-store",...(payload?{method:"POST",headers:{"Content-Type":"application/json","X-Diagnostics-CSRF":csrf,...(key?{"Idempotency-Key":key}:{})},body:JSON.stringify(payload)}:{})});
+    const result=await response.json(); if(!response.ok || !result.ok)throw new Error(result.error || "Não foi possível consultar o agente.");if(result.state&&(result.state.symbol||'EURUSD')!==selectedSymbol)throw Error('O servidor retornou outro ativo. Aguarde a atualização do serviço.'); return result;}finally{clearTimeout(deadline);}
   }
   function error(message){$("error").textContent=message;$("error").hidden=!message;}
   function evolutionTable(id, headers, rows){
@@ -56,6 +57,12 @@
   }
   function render(data){
     current=data.state;csrf=data.csrf;
+    $("instrument-label").textContent=selectedSymbol;
+    $("market-link").href='/mercado?symbol='+encodeURIComponent(selectedSymbol);
+    document.querySelector('nav a[href^="/diagnostico"]').href='/diagnostico?symbol='+encodeURIComponent(selectedSymbol);
+    document.querySelector('#operation .eyebrow').textContent='AGENTE '+selectedSymbol;
+    $("chart").setAttribute('aria-label','Candles '+selectedSymbol+' em M5');
+    $("asset-readiness").textContent=data.asset?.selected===false?'Este ativo foi removido da lista. Adicione novamente para configurá-lo.':data.execution_ready?'Controles e resultados pertencem a '+selectedSymbol+'.':'Ativo em configuração. O gráfico pode ser consultado; execução e aprendizado deste ativo ainda aguardam a preparação do motor multiativo.';
     const trend=current.last_decision?.trend_context,dir=t=>t?.direction==='bullish'?'alta':t?.direction==='bearish'?'baixa':'indefinida';
     $("trend-status").textContent=current.autonomy?.entry_policy==='trend-only-h4-h1-confirmed-v1'?`Filtro obrigatório ativo · H4: ${dir(trend?.macro_trend)} · H1: ${dir(trend?.context_trend)}. Confirmação estrutural exigida nos dois períodos.`:"Aguardando confirmação do processo com a política de tendência atualizada.";
     $("state-title").textContent=labels[current.state] || current.state;
@@ -66,15 +73,18 @@
       $("state-message").textContent="O serviço Windows não está confirmando atividade. Último estado registrado: "+(labels[current.state] || current.state)+". Aguardando reconexão automática.";
     }
     const terminal=["STOPPED","ERROR","INSUFFICIENT_DATA","TRAINING_UNAVAILABLE","TRAINING_BLOCKED"].includes(current.state);
-    $("start").disabled=busy || !terminal;$("pause").disabled=busy || terminal || current.desired!=="running";
+    $("start").disabled=busy || !terminal || data.execution_ready===false || data.asset?.selected===false;$("pause").disabled=busy || terminal || current.desired!=="running";
+    $("save-asset-lot").disabled=busy||!terminal||assetSaving;
     $("stop").disabled=busy || terminal || current.desired==="stopped";
     $("resume").hidden=current.desired!=="paused";$("resume").disabled=busy;
     $("lot").disabled=!terminal || busy;
     $("execution-mode").disabled=!terminal || busy;
     if(!terminal)$("execution-mode").value=current.mode || "paper";
     $("account-basis").textContent=current.mode==="demo"?"Resultados confirmados pelo MT5 Demo, com comissão e swap. Saldo e equidade são os da corretora.":"Simulador local: preenchimentos estimados por cotações observadas; não são negócios enviados ao MT5.";
-    if(!terminal && current.lot)$("lot").value=current.lot;
-    if(current.symbol_contract){$("lot").min=current.symbol_contract.volume_min;$("lot").max=current.symbol_contract.volume_max;$("lot").step=current.symbol_contract.volume_step;}
+    if(!terminal && current.lot){$("lot").value=current.lot;lotDirty=false;}
+    if(terminal&&data.asset?.lot&&!lotDirty)$("lot").value=data.asset.lot;
+    const contract=current.symbol_contract||data.asset?.contract;
+    if(contract){$("lot").min=contract.volume_min;$("lot").max=contract.volume_max;$("lot").step=contract.volume_step;}
     const stages=["connection","history","analysis"],index=stages.indexOf(current.stage);
     for(const step of $("steps").children){const i=stages.indexOf(step.dataset.stage);step.classList.toggle("current",i===index);step.classList.toggle("done",index>=0 && i<index);}
     const history=current.history;
@@ -135,9 +145,10 @@
   }
   async function refresh(){if(polling)return;polling=true;try{render(await api(""));}catch(e){error(e.message);}finally{polling=false;}}
   async function command(action){
+    if(!current||(current.symbol||'EURUSD')!==selectedSymbol){error('Aguarde o estado confirmado deste ativo antes de enviar comandos.');return;}
     if(busy)return;
     busy=true;
-    const payload={action,mode:action==="START"?$("execution-mode").value:(current.mode || "paper"),...(action==="START"?{lot:$("lot").value}:{})},signature=JSON.stringify(payload);
+    const payload={action,symbol:selectedSymbol,mode:action==="START"?$("execution-mode").value:(current.mode || "paper"),...(action==="START"?{lot:$("lot").value}:{})},signature=JSON.stringify(payload);
     if(!pending || pending.signature!==signature)pending={signature,key:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,"0")).join("")};
     for(const id of ["start","pause","resume","stop"])$(id).disabled=true;
     try{await api("/command",payload,pending.key);pending=null;error("");}catch(e){error(e.message);}finally{busy=false;await refresh();}
@@ -146,7 +157,7 @@
   async function quote(){
     if(quotePending)return;quotePending=true;
     const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),12000);
-    try{const response=await fetch("/api/mt5/chart?timeframe=M5&count=120",{cache:"no-store",signal:controller.signal}),data=await response.json();if(!response.ok || !data.ok || !validChart(data))throw new Error("Cotação indisponível.");chartData=data;chartStale=Math.abs(Date.now()-Date.parse(data.quote.time))>60000;cacheChart(data);showQuote();$("chart-message").textContent=chartStale?"Última cotação disponível no MT5, sem tick recente. Aguardando atualização.":"Preço do MT5. O último candle ainda pode estar em formação.";draw();}
+    try{const response=await fetch('/api/mt5/chart?timeframe=M5&count=120&symbol='+encodeURIComponent(selectedSymbol),{cache:"no-store",signal:controller.signal}),data=await response.json();if(!response.ok || !data.ok || data.symbol!==selectedSymbol || !validChart(data))throw new Error("Cotação indisponível.");chartData=data;chartStale=Math.abs(Date.now()-Date.parse(data.quote.time))>60000;cacheChart(data);showQuote();$("chart-message").textContent=chartStale?"Última cotação disponível no MT5, sem tick recente. Aguardando atualização.":"Preço do MT5. O último candle ainda pode estar em formação.";draw();}
     catch{chartStale=true;showQuote();$("chart-message").textContent="Ponte de dados indisponível; reconectando automaticamente."+(chartData?" Último gráfico preservado e desatualizado; não é cotação em tempo real.":"");draw();}
     finally{clearTimeout(deadline);quotePending=false;}
   }
@@ -154,13 +165,13 @@
     const canvas=$("chart"),box=canvas.getBoundingClientRect(),ratio=window.devicePixelRatio || 1,ctx=canvas.getContext("2d");canvas.width=box.width*ratio;canvas.height=box.height*ratio;ctx.scale(ratio,ratio);ctx.fillStyle="#0b151c";ctx.fillRect(0,0,box.width,box.height);
     const rows=chartData?.candles?.slice(-100);if(!rows?.length)return;
     const forecast=current?.last_decision?.forecast, now=Date.now();
-    const usable=!chartStale && forecast && forecast.symbol==="EURUSD" && forecast.timeframe==="M5" && forecast.clock_id===chartData.source_clock?.clock_id && now>=Date.parse(forecast.reference_at) && now<Date.parse(forecast.valid_until) && Math.abs(now-Date.parse(chartData.quote?.time))<60000 && forecast.points?.length===12;
+    const usable=!chartStale && forecast && forecast.symbol===selectedSymbol && forecast.timeframe==="M5" && forecast.clock_id===chartData.source_clock?.clock_id && now>=Date.parse(forecast.reference_at) && now<Date.parse(forecast.valid_until) && Math.abs(now-Date.parse(chartData.quote?.time))<60000 && forecast.points?.length===12;
     const points=usable?[{at:forecast.reference_at,low:forecast.reference_price,median:forecast.reference_price,high:forecast.reference_price},...forecast.points]:[];
     $("forecast-note").textContent=usable?`Timestral · estimativa avaliada nesta oportunidade · referência ${date(forecast.reference_at)} UTC · faixa Q10–Q90 nominal, sem garantia de cobertura.`:forecast?"A previsão da última oportunidade está antiga ou pertence a outra fonte. Aguardando nova avaliação.":"A previsão aparece quando uma oportunidade técnica é avaliada pelo modelo. Ainda não há previsão operacional atual.";
     const position=current?.position, levels=!chartStale && position && current.history?.clock_id===chartData.source_clock?.clock_id?[position.entry,position.stop,position.target]:[];
     let low=Math.min(...rows.map(c=>c.low),...points.map(p=>p.low),...levels),high=Math.max(...rows.map(c=>c.high),...points.map(p=>p.high),...levels);const pad=(high-low || .0001)*.1;low-=pad;high+=pad;
     const right=box.width-65,bottom=box.height-22,step=(right-10)/(rows.length+(usable?12:0)),y=p=>bottom-(p-low)*(bottom-14)/(high-low);ctx.font="10px system-ui";
-    for(let i=0;i<=4;i++){const price=low+(high-low)*i/4;ctx.strokeStyle="#233440";ctx.beginPath();ctx.moveTo(10,y(price));ctx.lineTo(right,y(price));ctx.stroke();ctx.fillStyle="#9bb0bf";ctx.fillText(price.toFixed(5),right+5,y(price)+3);}
+    for(let i=0;i<=4;i++){const price=low+(high-low)*i/4;ctx.strokeStyle="#233440";ctx.beginPath();ctx.moveTo(10,y(price));ctx.lineTo(right,y(price));ctx.stroke();ctx.fillStyle="#9bb0bf";ctx.fillText(price.toFixed(chartData.digits??5),right+5,y(price)+3);}
     rows.forEach((bar,i)=>{const x=10+(i+.5)*step;ctx.fillStyle=ctx.strokeStyle=bar.close>=bar.open?"#49d6a4":"#ec778e";ctx.beginPath();ctx.moveTo(x,y(bar.high));ctx.lineTo(x,y(bar.low));ctx.stroke();ctx.fillRect(x-step*.3,Math.min(y(bar.open),y(bar.close)),Math.max(1,step*.6),Math.max(1,Math.abs(y(bar.open)-y(bar.close))));if(i%25===0){ctx.fillStyle="#9bb0bf";ctx.fillText(new Date(bar.timestamp).toLocaleTimeString("pt-BR",{timeZone:"UTC",hour:"2-digit",minute:"2-digit"}),x,box.height-4);}});
     if(usable){
       const lastClose=Date.parse(rows.at(-1).timestamp)+300000,x=p=>10+(rows.length-.5+(Date.parse(p.at)-lastClose)/300000)*step;
@@ -169,6 +180,32 @@
     if(levels.length){ctx.save();ctx.setLineDash([4,4]);for(const [label,price,color] of [["Entrada",position.entry,"#9bb0bf"],["Stop",position.stop,"#ec778e"],["Alvo",position.target,"#49d6a4"]]){ctx.strokeStyle=ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(10,y(price));ctx.lineTo(right,y(price));ctx.stroke();ctx.fillText(label,14,y(price)-4);}ctx.restore();}
 
   }
+  let assetsLoading=false,assetSaving=false,assetPending=null,catalog=[];
+  const assetKey=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
+  async function refreshAssets(){
+    if(assetsLoading)return;assetsLoading=true;
+    try{const response=await fetch('/api/diagnostics/instruments',{cache:'no-store',signal:AbortSignal.timeout(12000)}),data=await response.json();if(!response.ok||!data.ok)throw Error('Não foi possível consultar os ativos configurados.');
+      const select=$("asset-select");select.replaceChildren();const assets=data.instruments||[];
+      for(const a of assets){const o=document.createElement('option');o.value=a.symbol;o.textContent=a.symbol;o.selected=a.symbol===selectedSymbol;select.append(o);}
+      if(!assets.some(a=>a.symbol===selectedSymbol)){const o=document.createElement('option');o.value=selectedSymbol;o.textContent=selectedSymbol+' (consulta)';o.selected=true;select.append(o);}
+      const root=$("assets-summary");root.replaceChildren();const table=document.createElement('table'),head=document.createElement('tr');for(const label of ['Ativo','Lote','Estado','Preparo','A\u00e7\u00f5es']){const th=document.createElement('th');th.textContent=label;head.append(th);}table.append(head);
+      for(const a of assets){const tr=document.createElement('tr');for(const value of [a.symbol,'Lote '+a.lot,labels[a.state]||a.state,a.execution_ready?'Motor disponível':'Preparação multiativo pendente']){const td=document.createElement('td');td.textContent=value;tr.append(td);}const td=document.createElement('td'),link=document.createElement('a');link.href='/?symbol='+encodeURIComponent(a.symbol);link.textContent='Ver ativo';td.append(link);const remove=document.createElement('button');remove.type='button';remove.className='quiet';remove.textContent='Remover';remove.disabled=a.desired==='running'||a.desired==='paused'||a.has_exposure;remove.title=remove.disabled?'Pare este ativo e conclua a reconciliação antes de remover.':'Retirar da lista de ativos';remove.onclick=()=>configureAsset({action:'REMOVE',symbol:a.symbol});td.append(remove);tr.append(td);table.append(tr);}root.append(table);
+    }catch(e){$("asset-message").textContent=e.message;}finally{assetsLoading=false;}
+  }
+  async function configureAsset(payload){
+    if(assetSaving)return;assetSaving=true;
+    const signature=JSON.stringify(payload);if(!assetPending||assetPending.signature!==signature)assetPending={signature,key:assetKey()};
+    $("asset-add").disabled=true;$("asset-message").textContent='Salvando configuração do ativo…';
+    try{const response=await fetch('/api/diagnostics/instruments/command',{method:'POST',headers:{'Content-Type':'application/json','X-Diagnostics-CSRF':csrf,'Idempotency-Key':assetPending.key},body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)}),data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||'Não foi possível salvar.');assetPending=null;$("asset-message").textContent='Configuração salva. Cada ativo mantém lote, sessão e resultados próprios.';await refreshAssets();if(payload.action==='SELECT')location.href='/?symbol='+encodeURIComponent(payload.symbol);
+    }catch(e){$("asset-message").textContent=e.message+' Consulte a lista antes de repetir.';}finally{assetSaving=false;$("asset-add").disabled=!catalog.length;}
+  }
+  $("asset-select").onchange=()=>{location.href='/?symbol='+encodeURIComponent($("asset-select").value);};
+  $("asset-search-form").onsubmit=async e=>{e.preventDefault();$("asset-message").textContent='Consultando contratos disponíveis no MT5…';try{const response=await fetch('/api/mt5/instruments?q='+encodeURIComponent($("asset-search").value),{cache:'no-store',signal:AbortSignal.timeout(12000)}),data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||'Catálogo indisponível.');catalog=data.symbols||[];$("asset-add-symbol").replaceChildren();for(const a of catalog){const o=document.createElement('option');o.value=a.symbol;o.textContent=a.symbol+' · '+a.description+' · contrato '+a.contract_size;$("asset-add-symbol").append(o);}$("asset-add").disabled=!catalog.length;$("asset-add-symbol").onchange();$("asset-message").textContent=catalog.length+' contratos encontrados. Escolha o nome exato da corretora.';}catch(e){$("asset-message").textContent=e.message;}};
+  $("asset-add-symbol").onchange=()=>{const a=catalog.find(r=>r.symbol===$("asset-add-symbol").value);if(a){$("asset-add-lot").min=a.volume_min;$("asset-add-lot").step=a.volume_step;$("asset-add-lot").value=a.volume_min;}};
+  $("asset-add").onclick=()=>configureAsset({action:'SELECT',symbol:$("asset-add-symbol").value,lot:$("asset-add-lot").value});
+  $("save-asset-lot").onclick=()=>configureAsset({action:'SELECT',symbol:selectedSymbol,lot:$("lot").value});
+  $("lot").addEventListener('input',()=>{lotDirty=true;});
+  refreshAssets();setInterval(refreshAssets,15000);
   new ResizeObserver(draw).observe($("chart"));restoreChart();refresh();quote();setInterval(refresh,5000);setInterval(quote,10000);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden){refresh();quote();}});
 })();
