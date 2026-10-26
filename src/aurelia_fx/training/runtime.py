@@ -53,6 +53,7 @@ def learning_summary(state):
         source_net=(arms.get('source') or {}).get('net_pnl'),candidate_net=(arms.get('candidate') or {}).get('net_pnl'),
         financial_status=sim.get('status'),reasons=decision.get('reasons',[]),
         conclusion=('Interrompido antes da conclusão: não há evidência de melhora.' if state.get('status')=='FAILED' else
+                    'Treino cancelado; esta tentativa não será retomada automaticamente.' if state.get('status')=='CANCELLED' else
                     'Aguardando recursos; resultado ainda não concluído.' if state.get('status')=='WAITING_RESOURCES' else
                     'Candidato não aprovado; modelo atual mantido.' if state.get('status')=='NOT_APPROVED' else
                     'Critérios retrospectivos atendidos; falta avaliação futura.' if state.get('status')=='AWAITING_PROSPECTIVE' else
