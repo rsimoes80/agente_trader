@@ -11,9 +11,12 @@ def worker(repo,state):
     run_id=state['run_id'];output=ROOT/'data/training/runs'/run_id
     progress=lambda **kw:repo.publish(run_id,**kw)
     report_path=output/'forecast-report.json'
-    if not report_path.exists() and (output/'selection.json').exists():
+    sealed=(output/'selection.json').exists()
+    if not report_path.exists() and sealed and not (output/'sealed-report-seed.json').exists():
         raise RuntimeError('Sealed candidate without complete report: review artifacts before resuming; never retrain after test access')
-    report=json.loads(report_path.read_text()) if report_path.exists() else train(ROOT,ROOT/state['dataset_directory'],output,progress,lambda:repo.check(run_id),recipe=state.get('training_recipe','conservative'))
+    if report_path.exists():report=json.loads(report_path.read_text())
+    elif sealed:report={}
+    else:report=train(ROOT,ROOT/state['dataset_directory'],output,progress,lambda:repo.check(run_id),recipe=state.get('training_recipe','conservative'))
     if not report.get('evaluation_path'):
         from aurelia_fx.training.evaluation import evaluate
         report=evaluate(ROOT,ROOT/state['dataset_directory'],output,progress,lambda:repo.check(run_id))
@@ -67,9 +70,13 @@ def main():
             repo.check(args.run_id);worker(repo,state);return
         import psutil
         from run_training_proof import stop_owned
+        from aurelia_fx.training.runtime import sample,resource_reason,deferred,MIN_START_MB
         with memory.pool.connection() as lease:
             if not lease.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(RUN_LOCK,)).fetchone()['acquired']:return
             state=repo.latest()
+            sample(memory,state)
+            if state['status']=='FAILED' and str(state.get('message','')).startswith('RESOURCE_LIMIT'):
+                state=repo.publish(state['run_id'],**deferred(state,'LEGACY_RESOURCE_LIMIT'))
             if state['status']=='AWAITING_PROSPECTIVE':
                 if state.get('cancel_requested'):repo.finish_cancel(state['run_id'])
                 return  # The live worker drives forward observations.
@@ -92,6 +99,12 @@ def main():
             if state['status'] not in ACTIVE:return
             run_id=state['run_id']
             if state.get('cancel_requested'):repo.finish_cancel(run_id);return
+            from aurelia_fx.historical.core import utc
+            from datetime import datetime,timezone
+            if state.get('retry_not_before') and datetime.now(timezone.utc)<utc(state['retry_not_before']):return
+            if psutil.virtual_memory().available<MIN_START_MB*1024**2:
+                repo.publish(run_id,status='WAITING_RESOURCES',message='Aguardando pelo menos 384 MB de RAM livre. Checkpoint preservado; a fila verifica novamente automaticamente.')
+                return
             if not state.get('dataset_directory'):
                 from aurelia_fx.training.dataset import export,export_rolling
                 repo.publish(run_id,status='DATASET',stage='dataset',message='Exportando historico congelado.')
@@ -100,17 +113,17 @@ def main():
                 state=repo.publish(run_id,dataset_directory=str(folder.relative_to(ROOT)),dataset=manifest)
             from aurelia_fx.training.protocol import register
             protocol_id=state.get('protocol_id') or register(memory,run_id,state['dataset']['dataset_id'],state.get('training_recipe','conservative'))
-            if psutil.virtual_memory().available<384*1024**2:
+            if psutil.virtual_memory().available<MIN_START_MB*1024**2:
                 repo.publish(run_id,status='WAITING_RESOURCES',stage='training',protocol_id=protocol_id,
                     message='Aguardando pelo menos 384 MB de RAM livre. O agente continua independente.')
                 return
             output=ROOT/'data/training/runs'/run_id;output.mkdir(parents=True,exist_ok=True)
-            repo.publish(run_id,status='TRAINING',stage='features',protocol_id=protocol_id,message='Iniciando prova CPU com dados reais.')
+            repo.publish(run_id,status='TRAINING',stage='features',protocol_id=protocol_id,retry_not_before=None,message='Iniciando ou retomando prova CPU com dados reais.')
             env={**os.environ,'HF_HOME':str(ROOT/'data/training/hf-home'),'HF_XET_CACHE':str(ROOT/'data/training/cache/xet')}
-            with (output/'worker.log').open('w',encoding='utf-8') as log:
+            with (output/'worker.log').open('a',encoding='utf-8') as log:
                 child=subprocess.Popen([str(ROOT/'.venv-training/Scripts/python.exe'),'-u',str(Path(__file__).resolve()),'--worker','--run-id',run_id],
                     cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-            birth=psutil.Process(child.pid).create_time();started=time.monotonic();peak=0
+            birth=psutil.Process(child.pid).create_time();started=time.monotonic();peak=0;last_runtime=0
             try:
                 while child.poll() is None:
                     repo.check(run_id)
@@ -119,10 +132,19 @@ def main():
                         rss=sum(p.memory_info().rss for p in [process,*process.children(recursive=True)] if p.is_running())
                     except psutil.NoSuchProcess:rss=0
                     peak=max(peak,rss)
-                    if rss>768*1024**2 or psutil.virtual_memory().available<128*1024**2 or time.monotonic()-started>7200:
-                        stop_owned(child,birth);raise RuntimeError('RESOURCE_LIMIT: isolated worker stopped; trading unchanged')
+                    elapsed=time.monotonic()-started;available=psutil.virtual_memory().available/1024**2
+                    if elapsed-last_runtime>=15 or not last_runtime:
+                        sample(memory,state,worker_rss_mb=round(rss/1024**2,1),elapsed_seconds=round(elapsed,1),available_mb=available);last_runtime=max(elapsed,.001)
+                    reason=resource_reason(rss/1024**2,available,elapsed)
+                    if reason:
+                        stop_owned(child,birth)
+                        current=repo.latest()
+                        repo.publish(run_id,**deferred(current,reason),resources=dict(last_attempt_peak_mb=round(peak/1024**2,1),wall_seconds=round(elapsed,1)))
+                        sample(memory,current)
+                        return
                     time.sleep(1)
                 if child.wait(timeout=15)!=0:raise RuntimeError('WORKER_FAILED: inspect the run worker.log')
+                sample(memory,repo.latest())
                 with memory.pool.connection() as c:
                     previous=c.execute("SELECT MAX((payload_json::jsonb->'resources'->>'peak_process_tree_rss_mb')::float8) AS peak FROM project_records WHERE record_type='agent_training_lab_state' AND payload_json::jsonb->>'run_id'=%s",(run_id,)).fetchone()['peak'] or 0
                 repo.publish(run_id,resources=dict(peak_process_tree_rss_mb=max(previous,round(peak/1024**2,1)),

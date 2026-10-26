@@ -30,10 +30,17 @@ class TrainingRepository:
         return state
 
     def summary(self):
+        from .runtime import learning_summary
         with self.memory.pool.connection() as c:
             state=self.latest(c)
             row=c.execute("SELECT EXTRACT(EPOCH FROM(clock_timestamp()-recorded_at)) AS age FROM project_records WHERE record_type='agent_training_lab_state' ORDER BY recorded_at DESC LIMIT 1").fetchone()
-        return {**state,'received_age_seconds':float(row['age']) if row else None}
+            runtime=c.execute("SELECT payload_json,payload_sha256,EXTRACT(EPOCH FROM(clock_timestamp()-recorded_at)) AS age FROM project_records WHERE record_type='agent_training_runtime' ORDER BY recorded_at DESC LIMIT 1").fetchone()
+        resources=json.loads(runtime['payload_json']) if runtime else None
+        if runtime and self.memory._encode(resources)[1]!=runtime['payload_sha256']:raise ValueError('Training runtime integrity failure')
+        if resources:resources={**resources,'received_age_seconds':float(runtime['age']),
+            'matches_run':resources.get('run_id')==state.get('run_id')}
+        return {**state,'received_age_seconds':float(row['age']) if row else None,
+            'runtime':resources,'learning_summary':learning_summary(state)}
 
     def command(self,action,key):
         if action not in {'START','CANCEL'} or not isinstance(key,str) or not 16<=len(key)<=128:raise ValueError('Invalid training command')
@@ -60,6 +67,8 @@ class TrainingRepository:
             c.execute('SELECT pg_advisory_xact_lock(%s)',(LOCK,))
             state=self.latest(c)
             if state.get('run_id')!=run_id or state.get('cancel_requested'):raise Cancelled('Training cancelled')
+            if any(k in changes for k in ('completed','partition','epoch','selection','forecast_report','financial_report')):
+                changes['last_progress_at']=datetime.now(timezone.utc).isoformat()
             return self.append(c,{**state,**changes})
 
     def check(self,run_id):

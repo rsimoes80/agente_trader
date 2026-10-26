@@ -16,6 +16,8 @@ def status(memory):
             latest=c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_training_lab_state' ORDER BY recorded_at DESC LIMIT 1").fetchone()
         run=json.loads(latest['payload_json']) if latest else {}
         if latest and memory._encode(run)[1]!=latest['payload_sha256']:raise ValueError('Automatic training result integrity failure')
+        if run.get('run_id')==result['run_id'] and run['status'] in ACTIVE:
+            result={**result,'status':run['status'],'message':'Pesquisa automática: '+run.get('message',run['status'])}
         if run.get('run_id')==result['run_id'] and run['status'] not in ACTIVE:
             result={**result,'last_result_status':run['status'],'status':'WAITING_NEW_DATA',
                 'message':('Último treino interrompido. Não há treino em execução nessa tentativa. ' if run['status']=='FAILED' else 'Último ciclo encerrado. ')+

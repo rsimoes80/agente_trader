@@ -9,15 +9,25 @@ def evaluate(root,folder,output,progress,check):
     from huggingface_hub import snapshot_download
     from .proof import SOURCE_MODEL,SOURCE_REVISION,file_hash
     from .metrics import forecast_metrics,paired_day_interval,forecast_gate
+    from .checkpoints import atomic_json,digest
+    from aurelia_fx.agent_model import fingerprint
     torch.set_num_threads(1);root,folder,output=Path(root),Path(folder),Path(output)
     raw_path=output/'raw-head-report.json'
-    if not raw_path.exists():raw_path.write_bytes((output/'forecast-report.json').read_bytes())
+    if not raw_path.exists():
+        original_report=output/'forecast-report.json'
+        if not original_report.exists():original_report=output/'sealed-report-seed.json'
+        atomic_json(raw_path,json.loads(original_report.read_text()))
     report=json.loads(raw_path.read_text());sealed=json.loads((output/'selection.json').read_text())
     if file_hash(output/'candidate/model.safetensors')!=sealed['candidate_sha256']:raise ValueError('Sealed candidate changed')
     from .dataset import validate_dataset
     manifest,data=validate_dataset(folder)
+    identity=fingerprint(dict(dataset=manifest,candidate=sealed['candidate_sha256'],source=report['source_sha256'],path='public-sdk-v1'))
+    progress_path=output/'public-evaluation-progress.json'
+    completed=json.loads(progress_path.read_text()) if progress_path.exists() else dict(identity=identity,arrays={})
+    if completed['identity']!=identity:raise ValueError('Public evaluation checkpoint identity mismatch')
     source=snapshot_download(SOURCE_MODEL,revision=SOURCE_REVISION,local_files_only=True,token=False,
         cache_dir=str(root/'data/training/cache'),allow_patterns=['config.json','model.safetensors','LICENSE'])
+    if file_hash(Path(source)/'model.safetensors')!=report['source_sha256']:raise ValueError('Evaluation source changed')
     f=TimestralForecaster.from_pretrained(source,device='cpu',max_context=256)
     original={k:t.detach().clone() for k,t in f.model.head.state_dict().items()}
     from safetensors.torch import load_file
@@ -32,18 +42,33 @@ def evaluate(root,folder,output,progress,check):
         target=data[indices[:,None]+np.arange(12)[None,:],4];reference=data[indices-1,4]
         results={};losses={}
         for name,head in (('source',original),('candidate',candidate)):
-            f.model.head.load_state_dict(head);predicted=np.empty((len(indices),12,len(f.quantile_levels)),dtype=np.float32)
-            for offset in range(0,len(indices),8):
+            f.model.head.load_state_dict(head);key=phase+':'+name
+            array_path=output/(phase+'-'+name+'-public-predictions.npy')
+            saved_hash=completed['arrays'].get(key)
+            if saved_hash:
+                if digest(array_path)!=saved_hash:raise ValueError('Completed public predictions changed')
+                predicted=np.load(array_path,allow_pickle=False)
+                if predicted.shape!=(len(indices),12,len(f.quantile_levels)):raise ValueError('Public prediction shape mismatch')
+            else:predicted=np.empty((len(indices),12,len(f.quantile_levels)),dtype=np.float32)
+            for offset in (() if saved_hash else range(0,len(indices),8)):
                 check();batch=indices[offset:offset+8]
                 x=np.asarray(data[batch[:,None]+np.arange(-256,0)[None,:],4],dtype=np.float32)
                 predicted[offset:offset+len(batch)]=f.forecast(x,prediction_length=12).quantiles[:,0].numpy()
                 if offset%160==0:progress(status='VALIDATING',stage='validation',message='Conferindo previsoes pelo SDK publico',partition=phase+':'+name,completed=offset,total=len(indices))
             results[name],losses[name]=forecast_metrics(predicted,target,reference,f.quantile_levels)
-            np.save(output/(phase+'-'+name+'-public-predictions.npy'),predicted,allow_pickle=False)
+            if not saved_hash:
+                import os
+                temporary=array_path.with_suffix('.tmp')
+                with temporary.open('wb') as stream:
+                    np.save(stream,predicted,allow_pickle=False);stream.flush();os.fsync(stream.fileno())
+                os.replace(temporary,array_path)
+                completed['arrays'][key]=digest(array_path);atomic_json(progress_path,completed)
+            progress(status='VALIDATING',stage='validation',partition=key,completed=len(indices),total=len(indices),
+                message='Avaliação concluída preservada',saved_checkpoint=dict(stage='validation',partition=key,completed=len(indices),total=len(indices)))
         constant=np.broadcast_to(reference[:,None,None],predicted.shape)
         results['constant'],_=forecast_metrics(constant,target,reference,f.quantile_levels)
         for h in results['constant']['horizons'].values():h['direction_accuracy_pct']=None
         interval=paired_day_interval(losses['source'],losses['candidate'],data[indices-1,0]+300)
         report['partitions'][phase]=dict(**results,uncertainty=interval,gate=forecast_gate(results['source'],results['candidate'],interval))
-    (output/'forecast-report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    atomic_json(output/'forecast-report.json',report)
     return report

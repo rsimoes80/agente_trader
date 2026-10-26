@@ -31,17 +31,19 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     initial_head={n:t.detach().clone() for n,t in model.head.state_dict().items()}
     output.mkdir(parents=True,exist_ok=True);cache=output/'features';cache.mkdir(exist_ok=True)
     levels=model.config.quantile_knots;dimension=model.config.d_model
+    from .checkpoints import FeatureCheckpoint,save_epoch,load_epoch,atomic_json
+    from aurelia_fx.agent_model import fingerprint
+    identity=fingerprint(dict(dataset=manifest,source=source_hash,sdk=SDK_REVISION,recipe=recipe,settings=settings))
     captured={}
     hook=model.head.register_forward_pre_hook(lambda module,args:captured.update(hidden=args[0].detach()))
     for phase in ('train','validation','test'):
         indices=np.load(folder/(phase+'.npy'),allow_pickle=False);n=len(indices)
-        arrays={
-            'hidden':np.lib.format.open_memmap(cache/(phase+'-hidden.npy'),mode='w+',dtype='float32',shape=(n,1,dimension)),
-            'loc':np.lib.format.open_memmap(cache/(phase+'-loc.npy'),mode='w+',dtype='float32',shape=(n,1,1)),
-            'scale':np.lib.format.open_memmap(cache/(phase+'-scale.npy'),mode='w+',dtype='float32',shape=(n,1,1)),
-            'source':np.lib.format.open_memmap(cache/(phase+'-source.npy'),mode='w+',dtype='float32',shape=(n,12,len(levels))),
-            'target':np.lib.format.open_memmap(cache/(phase+'-target.npy'),mode='w+',dtype='float32',shape=(n,12))}
-        for offset in range(0,n,8):
+        checkpoint=FeatureCheckpoint(cache,phase,identity,dict(hidden=(n,1,dimension),loc=(n,1,1),
+            scale=(n,1,1),source=(n,12,len(levels)),target=(n,12)))
+        arrays=checkpoint.arrays
+        progress(status='TRAINING',stage='features',partition=phase,completed=checkpoint.completed,total=n,
+            message='Retomando contextos validados' if checkpoint.completed else 'Extraindo contexto congelado')
+        for offset in range(checkpoint.completed,n,8):
             check();batch=indices[offset:offset+8];size=len(batch)
             x=torch.from_numpy(np.asarray(data[batch[:,None]+np.arange(-256,0)[None,:],4],dtype=np.float32))
             mask=torch.ones_like(x,dtype=torch.bool)
@@ -55,9 +57,11 @@ def train(root,folder,output,progress,check,recipe='conservative'):
             arrays['scale'][offset:offset+size]=scale[:,-32].reshape(size,1,1).numpy()
             arrays['source'][offset:offset+size]=predicted.numpy()
             arrays['target'][offset:offset+size]=data[batch[:,None]+np.arange(12)[None,:],4]
-            if offset%160==0:progress(status='TRAINING',stage='features',message='Extraindo contexto congelado',partition=phase,completed=offset,total=n)
-        for array in arrays.values():array.flush()
-        del arrays
+            if (offset+size)%160==0 or offset+size==n:
+                checkpoint.commit(offset+size)
+                progress(status='TRAINING',stage='features',message='Contextos salvos para retomada',partition=phase,completed=offset+size,total=n,
+                    saved_checkpoint=dict(stage='features',partition=phase,completed=offset+size,total=n))
+        del arrays,checkpoint
     hook.remove();captured.clear();gc.collect()
     def arrays(phase):return {name:np.load(cache/(phase+'-'+name+'.npy'),mmap_mode='r',allow_pickle=False) for name in ('hidden','loc','scale','source','target')}
     train_data=arrays('train');validation=arrays('validation')
@@ -77,7 +81,15 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     for p in model.head.parameters():p.requires_grad_(True)
     optimizer=torch.optim.AdamW(model.head.parameters(),lr=settings['learning_rate'],weight_decay=0)
     rng=np.random.default_rng(31)
-    for epoch in range(1,settings['epochs']+1):
+    epoch_path=output/'epoch.pt';resume=load_epoch(epoch_path,identity)
+    start_epoch=1
+    if resume:
+        model.head.load_state_dict(resume['head']);optimizer.load_state_dict(resume['optimizer'])
+        rng.bit_generator.state=resume['numpy_rng'];torch.set_rng_state(resume['torch_rng'])
+        best=resume['best'];best_epoch=resume['best_epoch'];history=resume['history']
+        save_file(resume['best_head'],best_path);start_epoch=resume['epoch']+1
+        progress(status='TRAINING',stage='training',message='Retomando após a última época concluída',epoch=resume['epoch'],epochs=settings['epochs'])
+    for epoch in range(start_epoch,settings['epochs']+1):
         order=rng.permutation(len(train_data['hidden']));losses=[]
         for offset in range(0,len(order),32):
             check();idx=order[offset:offset+32];optimizer.zero_grad(set_to_none=True)
@@ -95,6 +107,11 @@ def train(root,folder,output,progress,check,recipe='conservative'):
         history.append(dict(epoch=epoch,training_normalized_pinball=float(np.mean(losses)),validation_pinball_pips=value*10000))
         if value<best:
             best=value;best_epoch=epoch;save_file({n:t.detach().contiguous() for n,t in model.head.state_dict().items()},best_path)
+        save_epoch(epoch_path,dict(epoch=epoch,head=model.head.state_dict(),optimizer=optimizer.state_dict(),
+            numpy_rng=rng.bit_generator.state,torch_rng=torch.get_rng_state(),best=best,best_epoch=best_epoch,
+            history=history,best_head=load_file(best_path)),identity)
+        progress(status='TRAINING',stage='training',epoch=epoch,epochs=settings['epochs'],completed=len(order),total=len(order),
+            saved_checkpoint=dict(stage='training',epoch=epoch,epochs=settings['epochs']),message='Época concluída e salva')
     save_file({n:t.detach().contiguous() for n,t in model.head.state_dict().items()},output/'last-trained-head.safetensors')
     model.head.load_state_dict(load_file(best_path));model.eval()
     if tensor_hash((n,p) for n,p in model.named_parameters() if not n.startswith('head.'))!=frozen_before:raise ValueError('Frozen backbone changed')
@@ -103,7 +120,13 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     save_file({n:t.detach().contiguous() for n,t in model.state_dict().items()},candidate/'model.safetensors')
     if (source/'LICENSE').exists():(candidate/'LICENSE').write_bytes((source/'LICENSE').read_bytes())
     sealed=dict(selected_epoch=best_epoch,selected_by='validation only',candidate_sha256=file_hash(candidate/'model.safetensors'),sealed_at=datetime.now(timezone.utc).isoformat())
-    (output/'selection.json').write_text(json.dumps(sealed,indent=2))
+    # From this point on the head is immutable. A restart evaluates this same
+    # candidate; it cannot return to fitting after seeing the test period.
+    atomic_json(output/'sealed-report-seed.json',dict(dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,
+        source_revision=SOURCE_REVISION,sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,
+        epochs=history,partitions={},prior_market_data_seen=True,backbone_unchanged=True,
+        live_model_changed=False,recipe=recipe,training_settings=settings))
+    atomic_json(output/'selection.json',sealed)
     progress(status='VALIDATING',stage='validation',message='Avaliando o teste cronologico apos congelar o candidato',selection=sealed)
     report=dict(dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,source_revision=SOURCE_REVISION,
                 sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,epochs=history,partitions={},
@@ -130,5 +153,5 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     if not torch.equal(expected,actual):raise ValueError('Export/reload prediction mismatch')
     if file_hash(source/'model.safetensors')!=source_hash:raise ValueError('Original source changed')
     report['reload_predictions_equal']=True
-    (output/'forecast-report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    atomic_json(output/'forecast-report.json',report)
     return report
