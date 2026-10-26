@@ -3,3 +3,5 @@
 :is(#training-metrics,#hypotheses-table){overflow:auto;font-size:13px}:is(#training-metrics,#hypotheses-table) table{border-collapse:collapse;width:100%}:is(#training-metrics,#hypotheses-table) th,:is(#training-metrics,#hypotheses-table) td{text-align:left;padding:9px;border-bottom:1px solid var(--line);white-space:nowrap}
 
 .training-grid b,.decision p,#model-version{overflow-wrap:anywhere}
+
+.evolution-table{overflow:auto;font-size:13px}.evolution-table table{border-collapse:collapse;width:100%}.evolution-table th,.evolution-table td{text-align:left;padding:9px;border-bottom:1px solid var(--line);white-space:nowrap}#collection-status{padding:10px 14px;border-left:3px solid var(--green);margin:12px 0;background:#122a27}#collection-status[data-status="ERROR"],#collection-status[data-status="WARNING"]{border-color:#f4b166;background:#34291d}#collection-status p{margin:3px 0}details{margin:14px 0}summary{cursor:pointer;color:var(--blue)}#evaluation-progress p{padding:8px 0;border-bottom:1px solid var(--line)}

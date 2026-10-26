@@ -24,6 +24,36 @@
     const result=await response.json(); if(!response.ok || !result.ok)throw new Error(result.error || "Não foi possível consultar o agente."); return result;}finally{clearTimeout(deadline);}
   }
   function error(message){$("error").textContent=message;$("error").hidden=!message;}
+  function evolutionTable(id, headers, rows){
+    const target=$(id);target.replaceChildren();
+    if(!rows.length){target.textContent='Ainda não há resultados nesta janela.';return;}
+    const table=document.createElement('table'),head=document.createElement('tr');
+    for(const label of headers){const cell=document.createElement('th');cell.scope='col';cell.textContent=label;head.append(cell);}table.append(head);
+    for(const row of rows){const tr=document.createElement('tr');for(const value of row){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}target.append(table);
+  }
+  function renderEvolution(data){
+    const health=data.collection_health;
+    const box=$("collection-status");box.replaceChildren();
+    if(health){box.dataset.status=health.status;const line=document.createElement('p');line.textContent=health.message;box.append(line);for(const alert of health.alerts){const p=document.createElement('p');p.textContent=alert;box.append(p);}}
+    const learning=data.state.autonomy?.continual,e=learning?.evolution;
+    if(!e)return;
+    const active=e.portfolios.find(r=>r.active),exploration=learning.exploratory;
+    $("evolution-overview").replaceChildren();
+    for(const [label,value] of [['Candles analisados desde o novo acompanhamento',e.diagnostics?.analyzed??'Preparando'],['Hipóteses técnicas exploratórias',exploration?.candidates??0],['Resultado da alternativa em uso · simulado',`${number(active?.net_pnl)} USD`]]){const div=document.createElement('div'),span=document.createElement('span'),b=document.createElement('b');span.textContent=label;b.textContent=value;div.append(span,b);$("evolution-overview").append(div);}
+    evolutionTable('hypotheses-table',['Alternativa','Encerradas','Ganho médio USD','Perda média USD','Líquido USD','Queda realizada USD','Diferença para base USD'],e.portfolios.map(r=>[r.name+(r.active?' · Em uso':''),r.closed,number(r.average_gain),number(r.average_loss),number(r.net_pnl),number(r.realized_drawdown),number(r.delta_baseline)]));
+    $("evolution-basis").textContent=`${e.coverage} ${e.drawdown_basis} ${e.comparison}`;
+    const stages={DISCOVERY:'Descoberta de uma melhoria',COLLECTING_FUTURE:'Coleta futura em andamento',INSUFFICIENT_FUTURE_SAMPLE:'Amostra futura insuficiente',NOT_SUPPORTED:'Proposta não sustentada',INVALIDATED_DATA_GAP:'Experimento invalidado por lacuna',PROMISING_REQUIRES_INDEPENDENT_CONFIRMATION:'Indicação favorável; requer confirmação independente',PORTFOLIO_BENEFIT_NOT_ESTABLISHED:'Benefício na carteira não estabelecido'};
+    const progress=$("evaluation-progress");progress.replaceChildren();
+    for(const [label,p] of [['Revisão da base',e.production_review],['Revisão exploratória',e.exploratory_review]]){const line=document.createElement('p');line.textContent=`${label}: ${stages[p.stage]||p.stage}. ${p.samples}/${p.minimum} resultados ${p.stage==='DISCOVERY'?'no contexto com maior amostra; também são necessárias críticas comparáveis. Não há data definida antes de formar uma proposta.':`na janela futura. Fim da coleta: ${date(p.collection_ends_at)} UTC. Avaliação a partir de ${date(p.evaluation_not_before)} UTC; atingir a data não garante amostra suficiente.`}`;progress.append(line);}
+    const line=document.createElement('p');line.textContent=`Alternativas: mínimo de ${e.variant_minimum} operações por versão e 7 dias. Prazo mínimo: ${date(e.variant_evaluation_not_before)} UTC. Os demais critérios de validação continuam obrigatórios.`;progress.append(line);
+    const reasons=e.diagnostics?.reasons||{},blocked=exploration?.policy_blocks||{};
+    const reasonLabel=code=>({ENTRY_SENT:'Entrada enviada',PRODUCTION_ELIGIBLE:'Permitida pela política',OTHER_WAIT:'Outro motivo de espera'}[code]||decisionReason(code));
+    evolutionTable('evolution-blocks',['Origem','Motivo','Quantidade'],[...Object.entries(reasons).map(([k,v])=>['Decisão final por candle',reasonLabel(k),v]),...Object.entries(blocked).map(([k,v])=>['Hipótese exploratória',reasonLabel(k),v])]);
+    const cols=['Alternativa','Contexto','Encerradas','Ganho médio USD','Perda média USD','Líquido USD','Queda realizada USD'];
+    const values=rows=>rows.map(r=>[r.strategy,r.context,r.closed,number(r.average_gain),number(r.average_loss),number(r.net_pnl),number(r.realized_drawdown)]);
+    evolutionTable('evolution-contexts',cols,values(e.contexts));evolutionTable('exploration-contexts',cols,values(e.exploratory_contexts));
+    $("last-learning").textContent='Resultados demo ficam na seção da conta. As tabelas acima são simulações após custos; a pesquisa exploratória não ativa estratégias automaticamente.';
+  }
   function render(data){
     current=data.state;csrf=data.csrf;
     const trend=current.last_decision?.trend_context,dir=t=>t?.direction==='bullish'?'alta':t?.direction==='bearish'?'baixa':'indefinida';
@@ -99,6 +129,7 @@
     $("pnl-open").textContent=number(current.account?.unrealized_pnl);
     $("closed-trades").textContent=current.account?.closed_trades ?? "—";
     $("decision-time").textContent=decision?`Decisão: ${date(decision.at)} UTC · candle de referência: ${date(decision.candle)} UTC`:"";
+    renderEvolution(data);
     draw();
     $("updated").textContent=`Estado registrado: ${date(current.updated_at)} UTC`;
   }

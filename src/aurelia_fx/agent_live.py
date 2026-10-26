@@ -575,6 +575,9 @@ def run_paper(
                                 config, adapter)[1],
                         )
                     account.data["last_candle"] = latest["timestamp"]
+                    if research_policy:
+                        from .learning_evolution import record_decision
+                        record_decision(account.data['lab_state']['continual'], latest['timestamp'], decision)
                     account.event(
                         "decision",
                         decision["at"],

@@ -69,8 +69,11 @@ class Handler(BaseHTTPRequestHandler):
                 from aurelia_fx.training.automatic import status as automatic_status
                 self.send(200,dict(ok=True,csrf=CSRF,state=app.training.summary(),automatic=automatic_status(app.memory)));return
             if path=='/api/diagnostics/agent':
-                self.send(200,dict(ok=True,csrf=CSRF,state=app.operation.status(),
-                    worker=app.operation.worker_status(),authenticated=True,access_mode='single_user'));return
+                from aurelia_fx.learning_evolution import collection_health
+                state=app.operation.status();worker=app.operation.worker_status()
+                self.send(200,dict(ok=True,csrf=CSRF,state=state,
+                    worker=worker,collection_health=collection_health(state,worker),
+                    authenticated=True,access_mode='single_user'));return
             if path=='/api/diagnostics/decisions':
                 state=app.operation.status()
                 self.send(200,dict(ok=True,session_id=state.get('session_id'),

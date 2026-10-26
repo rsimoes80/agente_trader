@@ -227,6 +227,7 @@ def choose(lab,setup,features,protocol_id):
         selection_score=local.get('recent_mean_r',0),wait=False)
 
 def summary(lab):
+    from .learning_evolution import summary as evolution_summary
     state=lab.get('continual')
     if not state:return None
     variants=[]
@@ -242,4 +243,5 @@ def summary(lab):
         min_days=7,min_trades=20,censored=state.get('censored',0),suspended_contexts=len(state.get('suspended',{})),
         hypothesis_review=hypothesis_review.summary(state),
         exploratory=exploratory_learning.summary(state),
+        evolution=evolution_summary(state, VARIANTS),
         model_study={k:study.get(k) for k in ('run_id','registered_at','forecast_count','status','closed','error')} if study else None)
