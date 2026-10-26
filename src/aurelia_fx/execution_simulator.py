@@ -107,12 +107,15 @@ class ExecutionSimulator:
             self.balance, self.peak_equity, self.daily_start, self.daily_entries
         )
 
-    def submit(self, request: EntryRequest) -> None:
+    def validate_request_scope(self, request: EntryRequest) -> None:
         if self.instrument_context and any(
             request.intelligence_context.get(key) != self.instrument_context[key]
             for key in ('symbol', 'profile_id')
         ):
             raise ValueError('SIMULATION_INSTRUMENT_MISMATCH')
+
+    def submit(self, request: EntryRequest) -> None:
+        self.validate_request_scope(request)
         if self.busy or self.account_locked:
             raise ValueError("Simulator cannot queue another exposure.")
         self.request = request

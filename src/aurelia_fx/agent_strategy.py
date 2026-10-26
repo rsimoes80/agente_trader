@@ -71,6 +71,22 @@ SPEC = dict(
 SPEC_HASH = hashlib.sha256(json.dumps(SPEC, sort_keys=True).encode()).hexdigest()
 
 
+def strategy_spec(profile=None):
+    if profile is None:
+        return SPEC
+    result={**SPEC, 'symbol':profile.symbol, 'calendar':profile.calendar.version,
+            'research_profile':profile.as_dict(), 'price_unit':profile.price_unit,
+            'max_spread_units':profile.max_spread_units, 'quantity_unit':'lots',
+            'slippage_pips':profile.costs.slippage_price/profile.price_unit if profile.costs else None,
+            'commission_per_lot_side':profile.costs.commission_per_lot_side if profile.costs else None}
+    result.pop('commission_per_million_side')
+    return result
+
+
+def strategy_hash(profile=None):
+    return hashlib.sha256(json.dumps(strategy_spec(profile),sort_keys=True,allow_nan=False).encode()).hexdigest()
+
+
 def propose_pullback(
     snapshot, history, *, daily_history=None, pip_size=0.0001, research=False, profile=None
 ):
@@ -203,7 +219,7 @@ def propose_pullback(
         snapshot={**snapshot.as_dict(), 'symbol': profile.symbol, 'profile_id': profile.fingerprint} if profile else snapshot.as_dict(),
         strategy_id=STRATEGY_ID,
         strategy_version=VERSION,
-        spec_hash=hashlib.sha256((SPEC_HASH + ':' + profile.fingerprint).encode()).hexdigest() if profile else SPEC_HASH,
+        spec_hash=strategy_hash(profile),
         entry_policy=POLICY_ID if not research else "offline_counterfactual",
         production_eligible=snapshot.regime == "TREND" and h1_known,
         candidate_scope="counterfactual_research"

@@ -19,10 +19,11 @@ limites conjuntos de risco e margem. O projeto continua exclusivamente em demo.
    símbolo. A sessão EURUSD legada conserva suas chaves. Ainda falta o coordenador
    iniciar e retomar os ciclos de análise dos demais ativos. Enquanto isso, o painel
    informa a preparação pendente e bloqueia o botão de início desses ciclos.
-3. **Contratos de pesquisa parametrizados; ciclo integrado ainda pendente.**
-   Perfis explícitos já parametrizam a leitura técnica, unidades, limite de spread,
-   calendário semanal, custos e simulador. Ainda falta integrar memória, revisão,
-   treinamento e coordenação contínua por ativo. Compartilhar
+3. **Ciclo de pesquisa parametrizado; serviço e treino de pesos ainda pendentes.**
+   Perfis explícitos parametrizam a leitura técnica, unidades, limite de spread,
+   calendário semanal, sessões de análise, custos, simulador, memória contínua,
+   crítica de hipóteses e geração de exemplos históricos. Ainda falta conectar
+   esses caminhos ao coordenador ao vivo e ao treinamento dos pesos por ativo. Compartilhar
    a inferência do Timestral e manter um treinamento pesado por vez. Não transferir
    resultados ou modelos ajustados de EURUSD para XAUUSD como se fossem equivalentes.
 4. **Risco e execução conjunta — pendente.** Substituir o bloqueio de toda posição
@@ -116,10 +117,25 @@ Uma sonda financeira atual do MT5 não demonstra uma conversão constante no pas
 Faixas de volatilidade também precisam ser calibradas por ativo: sem faixas
 declaradas, o contexto fica sem essa classificação, sem reutilizar cortes do euro.
 
-Essa infraestrutura ainda **não liga o XAUUSD ao aprendizado contínuo nem à execução**.
-O portfólio legado recusa propostas de outro instrumento. A integração do ciclo
-completo, a revisão de hipóteses, os treinos e os limites agregados permanecem
-necessários antes da liberação no painel.
+O núcleo de aprendizado contínuo, a pesquisa exploratória e a revisão automática
+agora aceitam perfis separados. Calendário e sessões próprios são usados durante
+a simulação; críticas de custo convertem comissão por lote em distância equivalente
+de preço usando o valor financeiro do contrato. Os portfólios de comparação,
+os prazos de avaliação e os resultados permanecem vinculados ao perfil original.
+Alterar custos ou contrato exige uma nova identidade de pesquisa. Trocar o lote
+não pode descartar exposições simuladas em aberto.
+
+A geração de exemplos históricos grava manifestos e amostras em tipos próprios
+por perfil. O aprendizado inicial consulta somente esse conjunto, confere símbolo,
+hash e partição de desenvolvimento e não importa experiências do EURUSD para o ouro.
+As referências de memória no PostgreSQL também são conferidas contra o ativo e
+perfil da conta que as carrega, além da verificação de integridade já existente.
+
+Essa infraestrutura ainda **não liga o XAUUSD ao serviço contínuo nem à execução**.
+O portfólio legado recusa propostas de outro instrumento. O coordenador ao vivo,
+o treinamento dos pesos por ativo e os limites agregados ainda precisam ser
+integrados antes da liberação no painel. O EURUSD existente não foi migrado ou
+reiniciado nesta etapa.
 
 Referência de horários: [especificações da corretora](https://www.thinkmarkets.com/en/contract-specifications/).
 O calendário efetivo deve ser conferido com o contrato e os dados da conta utilizada;
@@ -133,3 +149,14 @@ ausência de erros JavaScript ou transbordamento horizontal na largura de 390 px
 Nenhum comando operacional ou ordem foi enviado nessa conferência. O EURUSD
 permaneceu na sessão existente. As evidências locais ficam em
 `.tools/asset-selector-browser-verification.json` e capturas correspondentes.
+
+## Validação do núcleo de aprendizado
+
+`tests/unit/test_multi_instrument_learning.py` percorre sinais, entradas e saídas
+simuladas dos dois instrumentos, retomada por JSON, custos em escalas distintas,
+rejeição de sinais/resultados do outro ativo e formação de coortes futuras de
+revisão. Inclui geração de benchmark histórico com o calendário do perfil e
+testes PostgreSQL em esquemas isolados com rollback: recuperação de snapshots,
+recusa de referências trocadas e isolamento das experiências de desenvolvimento.
+Esses resultados sintéticos verificam implementação; não demonstram rentabilidade
+nem significam que XAUUSD já esteja operando no serviço ao vivo.

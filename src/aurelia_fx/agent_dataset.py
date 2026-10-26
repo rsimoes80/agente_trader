@@ -20,6 +20,8 @@ from .agent_strategy import (
     VERSION,
     attach_forecast,
     propose_pullback,
+    strategy_spec,
+    strategy_hash,
 )
 from .domain import Candidate, Candle
 from .forecasting.config import SDK_REVISION
@@ -28,16 +30,16 @@ from .historical.core import utc
 from .sessions import SessionEngine
 
 
-def forecast_contexts(memory, contexts, config, adapter, *, progress, check):
+def forecast_contexts(memory, contexts, config, adapter, *, progress, check, profile=None):
     indexed = {}
     for index, context in contexts.items():
-        key = fingerprint(
-            dict(
+        identity=dict(
                 configuration=config.fingerprint,
                 sdk_revision=SDK_REVISION,
                 context=[c.as_dict() for c in context],
             )
-        )
+        if profile:identity['instrument']=profile.learning_namespace
+        key=fingerprint(identity)
         indexed[index] = (key, context)
     unique = {key: context for key, context in indexed.values()}
     output = {}
@@ -53,7 +55,10 @@ def forecast_contexts(memory, contexts, config, adapter, *, progress, check):
             else []
         )
     for row in stored:
-        output[row["record_key"]] = json.loads(row["payload_json"])["output"]
+        payload=json.loads(row["payload_json"])
+        if payload.get('symbol','EURUSD')!=(profile.symbol if profile else 'EURUSD') or payload.get('profile_id')!=(profile.fingerprint if profile else None):
+            raise ValueError('FORECAST_DATASET_INSTRUMENT_MISMATCH')
+        output[row["record_key"]] = payload["output"]
     missing = [(key, context) for key, context in unique.items() if key not in output]
     for offset in range(0, len(missing), 8):
         check()
@@ -80,6 +85,8 @@ def forecast_contexts(memory, contexts, config, adapter, *, progress, check):
                 key,
                 dict(
                     cache_key=key,
+                    symbol=profile.symbol if profile else 'EURUSD',
+                    profile_id=profile.fingerprint if profile else None,
                     configuration=config.fingerprint,
                     sdk_revision=SDK_REVISION,
                     input_hash=fingerprint([c.as_dict() for c in context]),
@@ -92,7 +99,11 @@ def forecast_contexts(memory, contexts, config, adapter, *, progress, check):
     return {index: (key, output[key]) for index, (key, _) in indexed.items()}
 
 
-def benchmark_setup(snapshot, history, output):
+def benchmark_setup(snapshot, history, output, *, profile=None):
+    if profile:
+        if snapshot.get('symbol')!=profile.symbol:
+            raise ValueError('BENCHMARK_INSTRUMENT_MISMATCH')
+        snapshot={**snapshot,'profile_id':profile.fingerprint}
     last = history[-1]
     change = output["quantiles"][2][1] - last.close
     if abs(change) < 1e-12:
@@ -134,18 +145,19 @@ def label(
     features,
     cache_id,
     units,
+    profile=None,
 ):
-    sample_id = fingerprint(
-        dict(
+    identity=dict(
             experiment=experiment_hash,
             at=setup["signal_at"],
             side=setup["candidate"].side,
             kind=kind,
         )
-    )
-    simulation = simulator(units)
+    if profile:identity['instrument']=profile.learning_namespace
+    sample_id=fingerprint(identity)
+    simulation = simulator(units,profile=profile)
     simulation.submit(request_for(setup, sample_id))
-    sessions = SessionEngine(SESSIONS)
+    sessions = SessionEngine(profile.session_windows() if profile else SESSIONS)
     for bar in following:
         simulation.advance(
             bar,
@@ -166,6 +178,7 @@ def label(
     candidate["expires_at"] = candidate["expires_at"].isoformat()
     sample = dict(
         sample_id=sample_id,
+        **(dict(symbol=profile.symbol,profile_id=profile.fingerprint) if profile else {}),
         run_id=run_id,
         features=features,
         forecast_cache_id=cache_id,
@@ -179,14 +192,14 @@ def label(
         execution=closed,
         label_scope="counterfactual_candidate_not_portfolio",
         dependence="overlapping_labels_not_independent",
-        spec_hash=SPEC_HASH,
+        spec_hash=strategy_hash(profile),
         strategy_id=STRATEGY_ID if kind == "technical" else "timestral_fixed_baseline",
         strategy_version=VERSION,
         production_eligible=setup["production_eligible"],
         kind=kind,
     )
     memory.record_project_data(
-        "agent_training_sample" if kind == "technical" else "agent_benchmark_sample",
+        profile.record_type("agent_training_sample" if kind == "technical" else "agent_benchmark_sample") if profile else "agent_training_sample" if kind == "technical" else "agent_benchmark_sample",
         sample_id,
         sample,
     )
@@ -194,8 +207,16 @@ def label(
 
 
 def build_samples(
-    memory, rows, *, baseline, lot, contract, forecast_config, adapter, progress, check
+    memory, rows, *, baseline, lot, contract, forecast_config, adapter, progress, check, profile=None
 ):
+    symbol=profile.symbol if profile else 'EURUSD'
+    if baseline.get('symbol','EURUSD')!=symbol or any(row.get('symbol',symbol)!=symbol for row in rows):
+        raise ValueError('TRAINING_DATASET_INSTRUMENT_MISMATCH')
+    if profile:
+        profile.execution_config(lot)
+        expected=profile.contract.as_dict()
+        if any(contract.get(k)!=expected[k] for k in ('symbol','contract_size','currency_profit','digits','point')):
+            raise ValueError('TRAINING_DATASET_CONTRACT_MISMATCH')
     candles = [
         Candle(
             utc(r["timestamp"]),
@@ -219,7 +240,8 @@ def build_samples(
     ]
     manifest = dict(
         run_id=run_id,
-        strategy=SPEC,
+        strategy=strategy_spec(profile),
+        **(dict(symbol=profile.symbol,profile_id=profile.fingerprint) if profile else {}),
         protocol=PROTOCOL,
         baseline_id=baseline["baseline_id"],
         dataset_hash=fingerprint([b.as_dict() for b in candles]),
@@ -239,7 +261,7 @@ def build_samples(
         source_tree_sha256=fingerprint(
             {
                 p.name: p.read_text(encoding="utf-8")
-                for p in sorted(Path(__file__).parent.glob("agent_*.py"))
+                for p in sorted(Path(__file__).parent.glob("*.py" if profile else "agent_*.py"))
             }
         ),
         created_at=datetime.now(timezone.utc).isoformat(),
@@ -266,8 +288,8 @@ def build_samples(
         manifest["code_version"] = "unknown"
         manifest["dirty_worktree"] = True
     manifest["experiment_hash"] = fingerprint(manifest)
-    memory.record_project_data("agent_training_manifest", run_id, manifest)
-    session = intelligence_session()
+    memory.record_project_data(profile.record_type("agent_training_manifest") if profile else "agent_training_manifest", run_id, manifest)
+    session = intelligence_session(profile=profile)
     counts = Counter()
     candidates = {}
     benchmarks = {}
@@ -302,6 +324,7 @@ def build_samples(
             session.history,
             daily_history=session.aggregator.history["D1"],
             research=True,
+            profile=profile,
         )
         benchmark = (
             bar.timestamp.minute == 0
@@ -309,7 +332,7 @@ def build_samples(
             and snapshot.session
             and not snapshot.invalidating_evidence
             and bar.spread_pips is not None
-            and bar.spread_pips <= 2
+            and bar.spread_pips <= (profile.max_spread_units if profile else 2)
         )
         if reason:
             counts[reason] += 1
@@ -337,11 +360,11 @@ def build_samples(
         if benchmark:
             benchmarks[index] = (snapshot.as_dict(), tuple(session.history[-15:]))
     predictions = forecast_contexts(
-        memory, contexts, forecast_config, adapter, progress=progress, check=check
+        memory, contexts, forecast_config, adapter, progress=progress, check=check,profile=profile
     )
     samples = []
     benchmark_samples = []
-    units = float(lot) * contract["contract_size"]
+    units = float(lot) if profile else float(lot) * contract["contract_size"]
     for number, index in enumerate(sorted(contexts)):
         if number % 24 == 0:
             check()
@@ -364,7 +387,7 @@ def build_samples(
             pairs.append((setup, "technical", attach_forecast(setup, output)))
         if index in benchmarks:
             snapshot, history = benchmarks[index]
-            benchmark = benchmark_setup(snapshot, history, output)
+            benchmark = benchmark_setup(snapshot, history, output,profile=profile)
             if benchmark:
                 pairs.append((benchmark, "timestral", benchmark["features"]))
         for proposal, kind, features in pairs:
@@ -378,6 +401,7 @@ def build_samples(
                 features=features,
                 cache_id=cache_id,
                 units=units,
+                profile=profile,
             )
             if sample:
                 (samples if kind == "technical" else benchmark_samples).append(sample)
@@ -400,6 +424,6 @@ def build_samples(
         benchmark_sample_ids=[s["sample_id"] for s in benchmark_samples],
         status="dataset_prepared",
     )
-    memory.record_project_data("agent_training_dataset", run_id, report)
+    memory.record_project_data(profile.record_type("agent_training_dataset") if profile else "agent_training_dataset", run_id, report)
     partitions.update({"benchmark_" + k: v for k, v in benchmark_partitions.items()})
     return report, partitions, candles

@@ -26,7 +26,15 @@ SPEC = dict(version=VERSION, discovery_min=20, subgroup_min=8,
 SPEC_HASH = fingerprint(SPEC)
 
 
-def critique(setup, features):
+def spec_for(profile):
+    return fingerprint(dict(base=SPEC_HASH,profile=profile.fingerprint)) if profile else SPEC_HASH
+
+
+def critique(setup, features, *, profile=None):
+    expected_profile=profile.fingerprint if profile else None
+    if setup['snapshot'].get('profile_id')!=expected_profile or setup['snapshot'].get('symbol','EURUSD')!=(profile.symbol if profile else 'EURUSD'):
+        raise ValueError('CRITIQUE_INSTRUMENT_MISMATCH')
+    config=profile.execution_config(profile.contract.volume_min) if profile else None
     candidate = setup["candidate"]
     concerns = []
     contradictions=list(candidate.contradictions)+list(setup['snapshot'].get('conflicting_evidence') or [])
@@ -40,21 +48,25 @@ def critique(setup, features):
     if known and not all(v > 0 for v in forecasts):
         concerns.append("FORECAST_DISAGREES")
     costs=SPEC['estimated_costs'];missing=[] if known else ['forecast']
-    # EURUSD/USD research convention. Features are side-oriented and use only
-    # the closed signal candle. This median screen is NOT expected net P&L.
+    # Side-oriented, closed-bar features. The price-equivalent cost screen is
+    # descriptive; it is not expected P&L or an entry authorization.
     stop_atr=features.get('stop_atr');spread_stop=features.get('spread_stop')
     cost_evidence=None
     if (known and isinstance(stop_atr,(int,float)) and math.isfinite(stop_atr) and stop_atr>0
             and isinstance(spread_stop,(int,float)) and math.isfinite(spread_stop) and spread_stop>=0):
         distance=abs(candidate.entry-candidate.stop);atr=distance/stop_atr
-        estimated_cost=(spread_stop*distance+2*costs['slippage_pips_per_side']*costs['pip_size']
-                        +2*costs['commission_per_million_side']/1_000_000)
+        execution_cost=(2*config.slippage_pips*config.pip_size+
+                        2*config.commission_per_million_side/1_000_000/config.value_per_price_unit) if config else (
+                        2*costs['slippage_pips_per_side']*costs['pip_size']+
+                        2*costs['commission_per_million_side']/1_000_000)
+        estimated_cost=spread_stop*distance+execution_cost
         projected_move=forecasts[1]*atr
         cost_evidence=dict(projected_move=projected_move,estimated_round_trip_cost=estimated_cost,
-                           source='closed_signal_features_and_frozen_research_cost_assumptions',horizon_minutes=30)
+                           source=profile.costs.source if profile else 'closed_signal_features_and_frozen_research_cost_assumptions',horizon_minutes=30)
         if projected_move<=estimated_cost:concerns.append('FORECAST_BELOW_COST')
     else:missing.append('forecast_cost_comparison')
-    return dict(version=VERSION, spec_hash=SPEC_HASH, signal_at=utc(setup["signal_at"]).isoformat(),
+    return dict(version=VERSION, spec_hash=spec_for(profile), signal_at=utc(setup["signal_at"]).isoformat(),
+                **(dict(symbol=profile.symbol,profile_id=profile.fingerprint) if profile else {}),
                 evidence=list(candidate.evidence), contradictions=contradictions,
                 concerns=concerns, missing=missing, cost_comparison=cost_evidence,
                 expectation="Atingir o alvo antes do stop, após custos e dentro do prazo do simulador.",
@@ -63,11 +75,13 @@ def critique(setup, features):
 
 
 def state_for(state):
+    from .continual_learning import profile_for
+    spec_hash=spec_for(profile_for(state))
     old=state.get('hypothesis_review')
-    if old and old.get('spec_hash')!=SPEC_HASH:
+    if old and old.get('spec_hash')!=spec_hash:
         state['previous_hypothesis_review']=dict(spec_hash=old.get('spec_hash'),reviewed=old.get('reviewed'))
         state.pop('hypothesis_review')
-    return state.setdefault("hypothesis_review", dict(spec_hash=SPEC_HASH, reviews=[],
+    return state.setdefault("hypothesis_review", dict(spec_hash=spec_hash, reviews=[],
                            proposal=None, reviewed=0, censored=0))
 
 
@@ -75,8 +89,15 @@ def review(state, event, result):
     """Only baseline results: parallel variants are not independent observations."""
     if result["variant"] != "baseline":
         return
-    facts = event.get("intelligence_context", {}).get("hypothesis_critique")
-    if not facts or facts.get("spec_hash") != SPEC_HASH:
+    from .continual_learning import profile_for
+    profile=profile_for(state)
+    scope=event.get('intelligence_context',{})
+    if scope.get('symbol','EURUSD')!=(profile.symbol if profile else 'EURUSD') or scope.get('profile_id')!=(profile.fingerprint if profile else None):
+        raise ValueError('REVIEW_INSTRUMENT_MISMATCH')
+    if profile and (result.get('symbol')!=profile.symbol or result.get('profile_id')!=profile.fingerprint):
+        raise ValueError('REVIEW_RESULT_INSTRUMENT_MISMATCH')
+    facts = scope.get("hypothesis_critique")
+    if not facts or facts.get("spec_hash") != spec_for(profile):
         return
     research = state_for(state)
     if any(r["event_id"] == result["event_id"] for r in research["reviews"]):
@@ -129,7 +150,8 @@ def review(state, event, result):
         research['history']=(research.get('history',[])+[
             {k:v for k,v in proposal.items() if k not in {'validation','portfolios','portfolio_results'}}])[-30:]
     research.setdefault('attempted',[]).append([record['context'],code])
-    research["proposal"] = dict(id=fingerprint(dict(spec=SPEC_HASH, event=record["event_id"], code=code)),
+    research["proposal"] = dict(id=fingerprint(dict(spec=research['spec_hash'], event=record["event_id"], code=code)),
+        **(dict(symbol=profile.symbol,profile_id=profile.fingerprint) if profile else {}),
         context=record["context"], rule=code, formed_at=formed.isoformat(),
         ends_at=(formed+timedelta(days=SPEC["validation_days"])).isoformat(),
         status="COLLECTING_FUTURE", discovery_n=len(cohort), validation=[],
@@ -176,11 +198,12 @@ def evaluate(state, at):
 
 def advance_portfolios(state, bar, valid, active_sessions):
     """Replay two independent accounts, including opportunities freed by skipped trades."""
-    from .continual_learning import decode_sim, encode_sim
+    from .continual_learning import decode_sim, encode_sim, profile_for
+    profile=profile_for(state)
     research=state_for(state);proposal=research['proposal']
     if not proposal or proposal['status']!='COLLECTING_FUTURE':return
     for arm in ('base','filtered'):
-        sim=decode_sim(proposal['portfolios'].get(arm),state['units'])
+        sim=decode_sim(proposal['portfolios'].get(arm),state['units'],profile=profile)
         for event in sim.advance(bar,data_valid=valid,active_sessions=active_sessions):
             if event['status']=='censored':
                 proposal['status']='INVALIDATED_DATA_GAP'
@@ -193,14 +216,15 @@ def advance_portfolios(state, bar, valid, active_sessions):
 
 
 def consider_portfolios(state, setup, features, key):
-    from .continual_learning import decode_sim, encode_sim
+    from .continual_learning import decode_sim, encode_sim, profile_for, check_scope
+    check_scope(state,setup);profile=profile_for(state)
     from .agent_research import request_for
     proposal=state_for(state)['proposal']
     if not proposal or proposal['status']!='COLLECTING_FUTURE':return
     if key!=proposal['context'] or not (utc(proposal['formed_at'])<utc(setup['signal_at'])<utc(proposal['ends_at'])):return
-    facts=critique(setup,features)
+    facts=critique(setup,features,profile=profile)
     for arm in ('base','filtered'):
-        sim=decode_sim(proposal['portfolios'].get(arm),state['units'])
+        sim=decode_sim(proposal['portfolios'].get(arm),state['units'],profile=profile)
         if not sim.busy and not sim.account_locked and (arm=='base' or proposal['rule'] not in facts['concerns']):
             modified={**setup,'snapshot':{**setup['snapshot'],'hypothesis_critique':facts,'learning_context':key}}
             sim.submit(request_for(modified,fingerprint(dict(proposal=proposal['id'],arm=arm,signal=setup['signal_at']))))

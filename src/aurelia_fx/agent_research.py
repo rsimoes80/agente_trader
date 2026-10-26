@@ -34,7 +34,7 @@ def intelligence_session(*, profile=None):
             extra_periods={"D1": 86400}
         ),
         gap_detector=profile.calendar.unexpected_gap if profile else unexpected_broker_gap,
-        sessions=SESSIONS,
+        sessions=profile.session_windows() if profile else SESSIONS,
         max_spread_pips=profile.max_spread_units if profile else 2,
         pip_size=profile.price_unit if profile else 0.0001,
     )

@@ -4,7 +4,7 @@ Cost assumptions and market hours belong to a frozen profile, never to a name
 such as 'XAU'. Native discovery alone does not validate historical conversions.
 """
 from dataclasses import asdict, dataclass
-from datetime import timedelta, timezone
+from datetime import time, timedelta, timezone
 import hashlib
 import json
 import math
@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from .execution_simulator import ExecutionConfig
 from .instruments import InstrumentContract
+from .sessions import SessionWindow
 
 
 def digest(value):
@@ -82,6 +83,26 @@ class WeeklySchedule:
 
 
 @dataclass(frozen=True)
+class ResearchSession:
+    name: str
+    timezone: str
+    opens_minute: int
+    closes_minute: int
+    weekdays: tuple[int, ...] = (0, 1, 2, 3, 4)
+
+    def __post_init__(self):
+        object.__setattr__(self, 'weekdays', tuple(self.weekdays))
+        if any(type(v) is not int or not 0 <= v < 1440 for v in (self.opens_minute, self.closes_minute)):
+            raise ValueError('Research session hours must be minutes within a day.')
+        self.window()
+
+    def window(self):
+        return SessionWindow(self.name, self.timezone,
+                             time(self.opens_minute//60, self.opens_minute%60),
+                             time(self.closes_minute//60, self.closes_minute%60), self.weekdays)
+
+
+@dataclass(frozen=True)
 class ResearchCosts:
     """Declared per-lot, per-side account-currency commission and price slippage."""
     commission_per_lot_side: float
@@ -105,9 +126,13 @@ class InstrumentResearchProfile:
     value_per_price_per_lot: float | None = None
     costs: ResearchCosts | None = None
     volatility_bands_units: tuple[float, float] | None = None
+    sessions: tuple[ResearchSession, ...] = ()
     version: str = 'instrument-research-v1'
 
     def __post_init__(self):
+        object.__setattr__(self, 'sessions', tuple(self.sessions))
+        if any(not isinstance(s, ResearchSession) for s in self.sessions) or len({s.name for s in self.sessions}) != len(self.sessions):
+            raise ValueError('Research sessions must be typed and uniquely named.')
         if not isinstance(self.contract, InstrumentContract) or not isinstance(self.calendar, WeeklySchedule) or (self.costs is not None and not isinstance(self.costs, ResearchCosts)):
             raise ValueError('Research profile requires typed contract, calendar and costs.')
         if not self.account_currency or not self.version:
@@ -137,8 +162,16 @@ class InstrumentResearchProfile:
     def learning_namespace(self):
         return 'instrument:' + self.contract.key + ':' + self.fingerprint
 
+    def record_type(self, kind):
+        return kind + ':' + self.fingerprint
+
+    def session_windows(self):
+        if not self.sessions:
+            raise ValueError('INSTRUMENT_RESEARCH_SESSIONS_REQUIRED')
+        return tuple(s.window() for s in self.sessions)
+
     def as_dict(self):
-        return {**asdict(self), 'profile_id': self.fingerprint}
+        return json.loads(json.dumps({**asdict(self), 'profile_id': self.fingerprint}, allow_nan=False))
 
     @classmethod
     def from_dict(cls, data):
@@ -148,6 +181,7 @@ class InstrumentResearchProfile:
         fields['calendar'] = WeeklySchedule(**fields['calendar'])
         if fields.get('costs') is not None:
             fields['costs'] = ResearchCosts(**fields['costs'])
+        fields['sessions'] = tuple(ResearchSession(**s) for s in fields.get('sessions', ()))
         result = cls(**fields)
         if result.fingerprint != expected:
             raise ValueError('RESEARCH_PROFILE_INTEGRITY_ERROR')

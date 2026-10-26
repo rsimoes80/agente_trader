@@ -17,7 +17,13 @@ VERSION = 'exploratory-pullback-v1'
 
 
 def initialize(parent, at):
+    from .continual_learning import profile_for
+    profile=profile_for(parent)
+    old=parent.get('exploratory')
+    if old and old.get('profile_id')!=(profile.fingerprint if profile else None):
+        raise ValueError('EXPLORATORY_INSTRUMENT_MISMATCH')
     return parent.setdefault('exploratory', dict(
+        **(dict(symbol=profile.symbol,profile_id=profile.fingerprint,research_profile=profile.as_dict()) if profile else {}),
         version=VERSION, units=parent['units'], registered_at=utc(at).isoformat(),
         last_bar=None, last_signal=None, candidates=0, submitted=0, busy=0,
         closed=0, censored=0, rejected=0, net_pnl=0., wins=0,
@@ -25,7 +31,8 @@ def initialize(parent, at):
 
 
 def advance(parent, bar, at, active_sessions):
-    from .continual_learning import decode_sim, encode_sim
+    from .continual_learning import decode_sim, encode_sim, profile_for
+    profile=profile_for(parent)
     if bar.timestamp + timedelta(minutes=5) > utc(at):
         return
     state = initialize(parent, at)
@@ -36,14 +43,15 @@ def advance(parent, bar, at, active_sessions):
     valid = True
     if state['last_bar']:
         from .domain import Candle
-        valid = not unexpected_broker_gap(
+        valid = not (profile.calendar.unexpected_gap if profile else unexpected_broker_gap)(
             Candle(utc(state['last_bar']), bar.open, bar.open, bar.open, bar.open), bar, 300)
     hypothesis_review.advance_portfolios(state, bar, valid, active_sessions)
-    sim = decode_sim(state['portfolio'], state['units'])
+    sim = decode_sim(state['portfolio'], state['units'],profile=profile)
     for event in sim.advance(bar, data_valid=valid, active_sessions=active_sessions):
         if event['status'] == 'closed':
             f = event['financial_result']
             result = dict(variant='baseline', context=event['intelligence_context']['learning_context'],
+                **(dict(symbol=profile.symbol,profile_id=profile.fingerprint) if profile else {}),
                 entry_at=event['entry_at'], exit_at=event['observed_at'],
                 net_pnl=f['net_pnl'], result_in_r=f['result_in_r'],
                 scope='exploratory_shadow_not_broker', event_id=event['event_id'])
@@ -69,7 +77,8 @@ def advance(parent, bar, at, active_sessions):
 
 
 def consider(parent, setup, features):
-    from .continual_learning import context, decode_sim, encode_sim
+    from .continual_learning import context, decode_sim, encode_sim, profile_for, check_scope
+    check_scope(parent,setup);profile=profile_for(parent)
     state = parent.get('exploratory')
     if not state or utc(setup['signal_at']) <= utc(state['registered_at']):
         return
@@ -81,7 +90,7 @@ def consider(parent, setup, features):
     state['policy_blocks'][block] = state['policy_blocks'].get(block, 0) + 1
     key = VERSION + '|' + context(setup)
     hypothesis_review.consider_portfolios(state, setup, features, key)
-    sim = decode_sim(state['portfolio'], state['units'])
+    sim = decode_sim(state['portfolio'], state['units'],profile=profile)
     if sim.busy or sim.account_locked:
         state['busy'] += 1
         return
@@ -91,7 +100,7 @@ def consider(parent, setup, features):
         modified['candidate'] = replace(setup['candidate'], evidence=tuple(
             fact for fact in setup['candidate'].evidence if fact != 'confirmed_trend_context'
         ) + ('technical_pattern_only_not_confirmed_entry',))
-    modified['snapshot']['hypothesis_critique'] = hypothesis_review.critique(modified, features)
+    modified['snapshot']['hypothesis_critique'] = hypothesis_review.critique(modified, features,profile=profile)
     sim.submit(request_for(modified, fingerprint(dict(
         scope=VERSION, registered_at=state['registered_at'], context=key, signal=setup['signal_at']))))
     state['submitted'] += 1
@@ -107,8 +116,10 @@ def observe(parent, snapshot, history, daily_history, *, at, ready, source, mode
     from .agent_strategy import propose_pullback, attach_forecast
     if not ready:
         return
+    from .continual_learning import profile_for
+    profile=profile_for(parent)
     state = initialize(parent, at)
-    setup, _ = propose_pullback(snapshot, history, daily_history=daily_history, research=True)
+    setup, _ = propose_pullback(snapshot, history, daily_history=daily_history, research=True,profile=profile)
     if not setup or utc(setup['signal_at']) <= utc(state['registered_at']):
         return
     if state['last_signal'] and utc(setup['signal_at']) <= utc(state['last_signal']):
@@ -129,5 +140,6 @@ def summary(parent):
         return None
     return {**{k: state[k] for k in ('version', 'registered_at', 'candidates', 'submitted',
         'busy', 'closed', 'censored', 'rejected', 'net_pnl', 'wins', 'policy_blocks', 'forecast_errors')},
+        **(dict(symbol=state['symbol'],profile_id=state['profile_id']) if state.get('profile_id') else {}),
         'hypothesis_review': hypothesis_review.summary(state),
         'scope': 'exploratory_shadow_not_broker', 'automatic_activation': False}

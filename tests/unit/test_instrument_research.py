@@ -10,7 +10,7 @@ from aurelia_fx.agent_research import cached_forecast, intelligence_session, req
 from aurelia_fx.agent_strategy import propose_pullback
 from aurelia_fx.continual_learning import context, decode_sim, encode_sim, check_scope
 from aurelia_fx.domain import Candle, Candidate
-from aurelia_fx.instrument_research import InstrumentResearchProfile, ResearchCosts, WeeklySchedule
+from aurelia_fx.instrument_research import InstrumentResearchProfile, ResearchCosts, ResearchSession, WeeklySchedule
 from aurelia_fx.instruments import InstrumentContract
 
 
@@ -21,7 +21,8 @@ def profile(symbol='XAUUSD'):
     return InstrumentResearchProfile(contract, 'USD', .01, 40.,
         WeeklySchedule('fixture-v1', 'America/New_York',
                        tuple((d*1440+8*60, d*1440+17*60) for d in range(5)), 'synthetic fixture'),
-        100., ResearchCosts(3., .02, 'synthetic research assumption'))
+        100., ResearchCosts(3., .02, 'synthetic research assumption'),
+        sessions=(ResearchSession('london', 'Europe/London', 8*60, 17*60),))
 
 
 class InstrumentResearchTests(unittest.TestCase):
