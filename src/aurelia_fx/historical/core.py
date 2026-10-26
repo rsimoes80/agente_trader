@@ -94,6 +94,23 @@ def describe(rows):
     )
 
 
+def trading_age_seconds(start, end):
+    """Elapsed open-market time under the existing NY weekly calendar.
+
+    This does not excuse holidays or unexplained gaps. Live quote freshness is
+    checked separately by source_clock and is never changed by this function.
+    """
+    stamp, end = utc(start), utc(end)
+    total = 0.0
+    while stamp < end:
+        boundary = stamp.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        following = min(boundary, end)
+        if market_open(stamp):
+            total += (following - stamp).total_seconds()
+        stamp = following
+    return total
+
+
 def summarize(rows, timeframe, *, start, as_of, days=30):
     start, as_of = utc(start), utc(as_of)
     seconds = SECONDS[timeframe]
@@ -137,9 +154,11 @@ def summarize(rows, timeframe, *, start, as_of, days=30):
     complete_start = first is not None and (first - start).total_seconds() <= max(
         3 * 86400, seconds * 2
     )
+    freshness_limit = max(6 * 3600, seconds * 2)
     fresh = last is not None and (
-        as_of - last - timedelta(seconds=seconds)
-    ).total_seconds() <= max(6 * 3600, seconds * 2)
+        (as_of - last - timedelta(seconds=seconds)).total_seconds() <= freshness_limit
+        or trading_age_seconds(last + timedelta(seconds=seconds), as_of) <= freshness_limit
+    )
     ready = (
         coverage >= 0.95
         and complete_start
@@ -159,6 +178,7 @@ def summarize(rows, timeframe, *, start, as_of, days=30):
         expected_bars=expected,
         coverage=coverage,
         calendar="FX weekly New York 17:00; holidays not modeled",
+        freshness_basis="elapsed FX weekly trading time; original tolerance unchanged",
         gaps=gaps,
         gaps_truncated=len(gaps) == 100,
         ready=ready,

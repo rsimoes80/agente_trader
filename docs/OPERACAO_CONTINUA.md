@@ -52,3 +52,15 @@ estar disponível. Conta real permanece bloqueada.
 O painel detecta perda de atividade pelo horário de recebimento do heartbeat
 no PostgreSQL, sem comparar relógios de máquinas distintas. A última decisão
 registrada não é prova de que o processo ainda está executando.
+
+## Histórico diário na segunda-feira
+
+A atualidade do histórico usa tempo de mercado aberto no calendário semanal
+de Nova York. Na segunda-feira, o candle D1 em formação ainda não pode substituir
+o último diário fechado na sexta-feira. O fim de semana, inclusive mudanças de
+horário de verão, não deve ser contado como atraso do feed.
+
+A correção de 26/10/2026 preserva a cobertura mínima de 95%, as tolerâncias de
+atualidade e o hash dos preços. Lacunas em horário de mercado e feriados sem
+calendário confirmado continuam sujeitos à validação. A verificação de cotação
+ao vivo permanece separada; histórico válido não autoriza operar com tick antigo.
