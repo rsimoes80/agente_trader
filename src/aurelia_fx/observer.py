@@ -210,7 +210,8 @@ class MarketObserver:
         validity_seconds: float = 300,
         histories_by_timeframe: dict | None = None,
         data_reference: str = "",
-    ) -> MarketSnapshot:
+        warmup_only: bool = False,
+    ) -> MarketSnapshot | None:
         now = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
         latest = quality.latest_timestamp
         freshness = (now - latest).total_seconds() if latest else None
@@ -235,6 +236,12 @@ class MarketObserver:
             for tf in set((*histories, regime_tf))
         }
         regime_state = regime_states[regime_tf]
+        if warmup_only:
+            # Regimes and trend hierarchy are the stateful components. Price
+            # action, levels, evidence and narrative are derived reports, rebuilt
+            # in full on the final warmup candle before any live decision.
+            self.trends.evaluate(histories, as_of=now)
+            return None
         structure: StructureSnapshot = (
             analyze_structure(candles, self.swing_window)
             if candles

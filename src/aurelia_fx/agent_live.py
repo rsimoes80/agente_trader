@@ -299,6 +299,7 @@ def run_paper(
             [row],
             spread_pips=row.get("spread_pips"),
             observed_at=utc(row["timestamp"]) + timedelta(minutes=5),
+            warmup_only=index < len(rows) - 1,
         )
     adapter = TimestralAdapter(config)
     from .training.online_study import OnlineStudy

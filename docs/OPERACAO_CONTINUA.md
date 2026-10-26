@@ -64,3 +64,24 @@ A correção de 26/10/2026 preserva a cobertura mínima de 95%, as tolerâncias 
 atualidade e o hash dos preços. Lacunas em horário de mercado e feriados sem
 calendário confirmado continuam sujeitos à validação. A verificação de cotação
 ao vivo permanece separada; histórico válido não autoriza operar com tick antigo.
+
+## Reconstrução do contexto após reinício
+
+A inicialização percorre todos os candles necessários e atualiza os estados de
+regime e tendência em cada barra. Ela evita montar relatórios intermediários de
+price action, níveis e evidências, que são funções derivadas sem estado. No último
+candle, o relatório completo é obrigatório; a análise operacional seguinte usa
+o caminho normal. O modo interno de preparação não retorna snapshot operacional.
+
+A equivalência foi verificada em 7.000 candles reais: estados internos iguais e
+41 snapshots completos idênticos, incluindo observações após a preparação.
+Na mesma execução, o consumo de CPU caiu de 206,9 para 48,6 segundos (4,26 vezes).
+Isso não reduz o histórico, não muda parâmetros e não comprova lucratividade.
+O registro `agent_warmup_equivalence` no PostgreSQL tem chave
+`454f1605e746eb8a74b191771a3441f8085b661a908b8a4c38454df7c7fec67a`.
+
+Ao consultar a última revisão de um candle ou a última baseline, a visibilidade
+dos registros usa o relógio do PostgreSQL. Quando o chamador fornece um corte
+histórico explícito, esse corte é respeitado. O período de preço continua sendo
+delimitado pelos timestamps UTC dos candles. Isso evita esconder uma revisão
+recém-gravada por diferença entre os relógios do cliente e do banco.

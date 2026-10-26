@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
+from unittest.mock import patch
 
 from aurelia_fx.experience_memory import ExperienceMemory
 from aurelia_fx.historical.repository import HistoricalRepository
@@ -76,6 +77,24 @@ class HistoricalPostgresTests(unittest.TestCase):
         )
         self.assertEqual(self.candles()[-1]["close"], 1.1005)
         self.assertEqual(self.candles(known_by=cutoff)[-1]["close"], data[-1]["close"])
+
+    def test_latest_revision_does_not_use_client_clock_for_ingestion_cutoff(self):
+        data=rows(100);self.repo.ingest(data,clock=self.clock,timeframe='M5')
+        self.repo.ingest([{**data[-1],'close':1.1005}],clock=self.clock,timeframe='M5')
+        server=self.c.execute('SELECT clock_timestamp() t').fetchone()['t']
+        with patch('aurelia_fx.historical.repository.datetime') as client:
+            client.now.return_value=server-timedelta(minutes=5)
+            self.assertEqual(self.candles()[-1]['close'],1.1005)
+
+    def test_latest_baseline_record_visibility_uses_database_clock(self):
+        from .test_historical_context import baseline
+        server=self.c.execute('SELECT clock_timestamp() t').fetchone()['t']
+        payload=baseline();payload['as_of']=(server-timedelta(days=1)).isoformat()
+        text,digest=self.memory._encode(payload)
+        self.c.execute("INSERT INTO project_records VALUES('historical_baseline','fixture',%s,%s,clock_timestamp())",(text,digest))
+        with patch('aurelia_fx.historical.repository.datetime') as client:
+            client.now.return_value=server-timedelta(minutes=5)
+            self.assertIsNotNone(self.repo.latest())
 
     def test_baseline_cannot_be_seen_before_its_actual_ingestion(self):
         from .test_historical_context import baseline

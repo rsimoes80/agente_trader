@@ -56,11 +56,12 @@ class HistoricalRepository:
             rows = c.execute(
                 """SELECT DISTINCT ON(record_key) payload_json FROM project_records
                 WHERE record_type='closed_candle' AND record_key>=%s AND record_key<=%s
-                AND recorded_at<=%s ORDER BY record_key,recorded_at DESC,payload_sha256 DESC""",
+                AND recorded_at<=COALESCE(%s::timestamptz,clock_timestamp())
+                ORDER BY record_key,recorded_at DESC,payload_sha256 DESC""",
                 (
                     prefix + utc(start).isoformat(),
                     prefix + utc(as_of).isoformat(),
-                    known_by or datetime.now(timezone.utc),
+                    known_by,
                 ),
             ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
@@ -72,14 +73,14 @@ class HistoricalRepository:
                 WHERE record_type='historical_baseline' AND payload_json::jsonb ->> 'version'=%s
                 AND (%s::text IS NULL OR payload_json::jsonb ->> 'clock_id'=%s)
                 AND (payload_json::jsonb ->> 'as_of')::timestamptz<=%s
-                AND recorded_at<=%s
+                AND recorded_at<=COALESCE(%s::timestamptz,clock_timestamp())
                 ORDER BY recorded_at DESC LIMIT 1""",
                 (
                     VERSION,
                     clock_id,
                     clock_id,
                     as_of or datetime.now(timezone.utc),
-                    as_of or datetime.now(timezone.utc),
+                    as_of,
                 ),
             ).fetchall()
         if not rows:

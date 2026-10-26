@@ -43,7 +43,7 @@ class MarketIntelligenceSession:
         self.last = None
         self.snapshot = None
 
-    def update(self, rows, *, spread_pips, observed_at=None):
+    def update(self, rows, *, spread_pips, observed_at=None, warmup_only=False):
         candles, quality = validate_candles(rows)
         if not quality.valid:
             raise ValueError("Invalid stream candles: " + "; ".join(quality.errors))
@@ -59,6 +59,7 @@ class MarketIntelligenceSession:
                 histories_by_timeframe=self.aggregator.history,
                 validity_seconds=self.seconds,
                 data_reference="live_closed_bars",
+                warmup_only=warmup_only,
             )
             return self.snapshot
         if self.last and candles[-1].timestamp < self.last.timestamp:
@@ -99,6 +100,7 @@ class MarketIntelligenceSession:
                 histories_by_timeframe=histories,
                 validity_seconds=self.seconds,
                 data_reference="live_closed_bars",
+                warmup_only=warmup_only,
             )
             self.last = bar
         return self.snapshot
