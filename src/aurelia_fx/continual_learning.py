@@ -48,10 +48,21 @@ def initialize(lab,at,units):
     return state
 
 def context(setup):
-    s=setup['snapshot'];vol=setup['atr']/1e-4
-    return '|'.join((VERSION,setup.get('learning_source','unversioned'),setup.get('learning_model','unversioned'),s.get('regime_config_hash','unknown'),s['regime'],
+    s=setup['snapshot'];vol=setup['atr']/setup.get('price_unit',1e-4)
+    if s.get('symbol','EURUSD')!='EURUSD' and not setup.get('learning_namespace'):
+        raise ValueError('INSTRUMENT_LEARNING_NAMESPACE_REQUIRED')
+    bands=setup.get('volatility_bands_units') if setup.get('learning_namespace') else (3,8)
+    volatility='unclassified' if bands is None else 'low' if vol<bands[0] else 'medium' if vol<bands[1] else 'high'
+    parts=(VERSION,setup.get('learning_source','unversioned'),setup.get('learning_model','unversioned'),s.get('regime_config_hash','unknown'),s['regime'],
         setup['candidate'].side,'+'.join(sorted(s.get('session',[]))),
-        'vol:'+('low' if vol<3 else 'medium' if vol<8 else 'high')))
+        'vol:'+volatility)
+    return '|'.join(((setup['learning_namespace'],) if setup.get('learning_namespace') else ())+parts)
+
+def check_scope(state,setup):
+    # A namespaced setup cannot enter legacy EUR portfolios while their full
+    # review/advancement pipeline still uses the legacy calendar and costs.
+    if state.get('profile_id')!=setup['snapshot'].get('profile_id') or state.get('symbol','EURUSD')!=setup['snapshot'].get('symbol','EURUSD'):
+        raise ValueError('LEARNING_PORTFOLIO_INSTRUMENT_MISMATCH')
 
 def accepts(variant,features):
     rule=VARIANTS[variant]['filter']
@@ -71,6 +82,9 @@ def encode_sim(sim):
     data['request']=asdict(sim.request) if sim.request else None
     data['position']=asdict(sim.position) if sim.position else None
     data['equity_curve']=sim.equity_curve[-1:]
+    if sim.instrument_context:
+        data['instrument_context']=sim.instrument_context
+        data['execution_config']=asdict(sim.config)
     return json.loads(json.dumps(data,default=lambda v:v.isoformat()))
 
 def decode_request(d):
@@ -78,9 +92,13 @@ def decode_request(d):
     d['submitted_at']=utc(d['submitted_at'])
     return EntryRequest(candidate=Candidate(**candidate),**d)
 
-def decode_sim(data,units):
-    sim=simulator(units)
+def decode_sim(data,units,*,profile=None):
+    if data and data.get('instrument_context') and profile is None:
+        raise ValueError('SIMULATION_CHECKPOINT_INSTRUMENT_MISMATCH')
+    sim=simulator(units,profile=profile)
     if not data:return sim
+    if data.get('instrument_context')!=sim.instrument_context or (sim.instrument_context and data.get('execution_config')!=asdict(sim.config)):
+        raise ValueError('SIMULATION_CHECKPOINT_INSTRUMENT_MISMATCH')
     for k in ('balance','peak_equity','daily_start','day','daily_entries','account_locked','equity_curve'):
         setattr(sim,k,copy.deepcopy(data[k]))
     sim.request=decode_request(data['request']) if data.get('request') else None
@@ -192,7 +210,7 @@ def advance(lab,rows,at):
     return events
 
 def consider(lab,setup,features):
-    state=lab['continual'];signal=setup['signal_at']
+    state=lab['continual'];check_scope(state,setup);signal=setup['signal_at']
     if utc(signal)<=utc(state['registered_at']) or signal==state['last_signal']:return
     if entry_blocker(setup['snapshot'],setup['candidate'].side):return
     state['last_signal']=signal;state['eligible_signals']+=1;key=context(setup)
@@ -206,7 +224,7 @@ def consider(lab,setup,features):
         state['portfolios'][variant]=encode_sim(sim)
 
 def choose(lab,setup,features,protocol_id):
-    state=lab['continual'];key=context(setup);variant=state['champion']
+    state=lab['continual'];check_scope(state,setup);key=context(setup);variant=state['champion']
     # A global winner also needs positive evidence in the current comparable context.
     local=state['contexts'].get(key,{}).get(variant,{})
     if variant!='baseline' and (local.get('n',0)<8 or local.get('recent_mean_r',0)<=0):variant='baseline'

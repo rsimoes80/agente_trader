@@ -6,7 +6,9 @@ from datetime import timedelta
 from .historical.core import utc
 
 
-def forecast_view(output, context, *, clock_id, configuration, generated_at):
+def forecast_view(output, context, *, clock_id, configuration, generated_at, symbol='EURUSD', profile_id=None):
+    from .instruments import symbol_name
+    symbol_name(symbol)
     quantiles = output["quantiles"]
     if len(quantiles) != 12 or any(
         len(row) != 3
@@ -19,7 +21,7 @@ def forecast_view(output, context, *, clock_id, configuration, generated_at):
     # of the next candle, not its opening timestamp.
     reference = context[-1].timestamp + timedelta(minutes=5)
     return dict(
-        symbol="EURUSD", timeframe="M5", clock_id=clock_id,
+        symbol=symbol, profile_id=profile_id, timeframe="M5", clock_id=clock_id,
         configuration=configuration, reference_at=reference.isoformat(),
         generated_at=utc(generated_at).isoformat(),
         valid_until=(reference + timedelta(minutes=5)).isoformat(),

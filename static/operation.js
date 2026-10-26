@@ -72,6 +72,12 @@
       $("state-title").textContent="Agente sem comunicação";
       $("state-message").textContent="O serviço Windows não está confirmando atividade. Último estado registrado: "+(labels[current.state] || current.state)+". Aguardando reconexão automática.";
     }
+    if(data.execution_ready===false && !current.session_id){
+      $("state-title").textContent="Ativo em preparação";
+      $("state-message").textContent="Configuração e gráfico disponíveis. A análise, o aprendizado e a execução deste ativo ainda precisam ser integrados ao motor multiativo.";
+      $("worker-label").textContent="Motor multiativo em preparação";
+    }
+    $("start").textContent=data.execution_ready===false?"Em preparação":"Iniciar agente";
     const terminal=["STOPPED","ERROR","INSUFFICIENT_DATA","TRAINING_UNAVAILABLE","TRAINING_BLOCKED"].includes(current.state);
     $("start").disabled=busy || !terminal || data.execution_ready===false || data.asset?.selected===false;$("pause").disabled=busy || terminal || current.desired!=="running";
     $("save-asset-lot").disabled=busy||!terminal||assetSaving;

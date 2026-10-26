@@ -72,9 +72,13 @@ SPEC_HASH = hashlib.sha256(json.dumps(SPEC, sort_keys=True).encode()).hexdigest(
 
 
 def propose_pullback(
-    snapshot, history, *, daily_history=None, pip_size=0.0001, research=False
+    snapshot, history, *, daily_history=None, pip_size=0.0001, research=False, profile=None
 ):
     """A closed trigger after a correction, eligible only in a confirmed trend."""
+    if profile:
+        if snapshot.symbol != profile.symbol:
+            raise ValueError('STRATEGY_INSTRUMENT_MISMATCH')
+        pip_size = profile.price_unit
     if len(history) < 64:
         return None, "INSUFFICIENT_CONTEXT"
     if daily_history is None or len(daily_history) < 20:
@@ -96,7 +100,7 @@ def propose_pullback(
     previous, current = history[-2:]
     if (current.timestamp - previous.timestamp).total_seconds() != 300:
         return None, "NONCONTIGUOUS_TRIGGER"
-    if current.spread_pips is None or current.spread_pips > 2:
+    if current.spread_pips is None or current.spread_pips > (profile.max_spread_units if profile else 2):
         return None, "SPREAD_UNAVAILABLE_OR_HIGH"
     recent = history[-100:]
     alpha = 2 / 22
@@ -188,15 +192,18 @@ def propose_pullback(
         regime_unknown=float(snapshot.regime == "UNKNOWN"),
     )
     return dict(
+        **(dict(symbol=profile.symbol, price_unit=profile.price_unit,
+                volatility_bands_units=profile.volatility_bands_units,
+                learning_namespace=profile.learning_namespace) if profile else {}),
         candidate=candidate,
         features=feature,
         atr=atr,
         reference_close=current.close,
         signal_at=(current.timestamp + timedelta(seconds=300)).isoformat(),
-        snapshot=snapshot.as_dict(),
+        snapshot={**snapshot.as_dict(), 'symbol': profile.symbol, 'profile_id': profile.fingerprint} if profile else snapshot.as_dict(),
         strategy_id=STRATEGY_ID,
         strategy_version=VERSION,
-        spec_hash=SPEC_HASH,
+        spec_hash=hashlib.sha256((SPEC_HASH + ':' + profile.fingerprint).encode()).hexdigest() if profile else SPEC_HASH,
         entry_policy=POLICY_ID if not research else "offline_counterfactual",
         production_eligible=snapshot.regime == "TREND" and h1_known,
         candidate_scope="counterfactual_research"

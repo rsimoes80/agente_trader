@@ -82,8 +82,9 @@ class Position:
 class ExecutionSimulator:
     """One exposure at a time. Missing exposure data freezes the simulated account."""
 
-    def __init__(self, config: ExecutionConfig, limits: RiskLimits):
+    def __init__(self, config: ExecutionConfig, limits: RiskLimits, *, instrument_context=None):
         self.config, self.limits = config, limits
+        self.instrument_context = dict(instrument_context) if instrument_context else None
         self.request: EntryRequest | None = None
         self.position: Position | None = None
         self.balance = self.peak_equity = config.initial_equity
@@ -107,6 +108,11 @@ class ExecutionSimulator:
         )
 
     def submit(self, request: EntryRequest) -> None:
+        if self.instrument_context and any(
+            request.intelligence_context.get(key) != self.instrument_context[key]
+            for key in ('symbol', 'profile_id')
+        ):
+            raise ValueError('SIMULATION_INSTRUMENT_MISMATCH')
         if self.busy or self.account_locked:
             raise ValueError("Simulator cannot queue another exposure.")
         self.request = request
@@ -125,6 +131,8 @@ class ExecutionSimulator:
             **payload,
         }
         event["intelligence_context"] = request.intelligence_context
+        if self.instrument_context:
+            event['instrument'] = dict(self.instrument_context)
         self.events.append(event)
         return event
 

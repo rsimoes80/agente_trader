@@ -24,29 +24,34 @@ SESSIONS = (
 )
 
 
-def intelligence_session():
+def intelligence_session(*, profile=None):
     hierarchy = HierarchyConfig("H4", "H1", "M15", "M5")
     return MarketIntelligenceSession(
-        symbol="EURUSD",
+        symbol=profile.symbol if profile else "EURUSD",
         hierarchy=hierarchy,
         aggregator=CalendarBarAggregator(
-            hierarchy, market_calendar=slot_tradable, extra_periods={"D1": 86400}
+            hierarchy, market_calendar=profile.calendar.slot_tradable if profile else slot_tradable,
+            extra_periods={"D1": 86400}
         ),
-        gap_detector=unexpected_broker_gap,
+        gap_detector=profile.calendar.unexpected_gap if profile else unexpected_broker_gap,
         sessions=SESSIONS,
-        max_spread_pips=2,
-        pip_size=0.0001,
+        max_spread_pips=profile.max_spread_units if profile else 2,
+        pip_size=profile.price_unit if profile else 0.0001,
     )
 
 
-def simulator(units):
+def simulator(units, *, profile=None):
     return ExecutionSimulator(
-        ExecutionConfig(fixed_units=units, max_holding_bars=12),
-        RiskLimits(0.5, 2, 5, 2, 2, 5),
+        profile.execution_config(units) if profile else ExecutionConfig(fixed_units=units, max_holding_bars=12),
+        RiskLimits(0.5, 2, 5, profile.max_spread_units if profile else 2, 2, 5),
+        instrument_context=dict(symbol=profile.symbol, profile_id=profile.fingerprint,
+                                instrument_id=profile.contract.key, quantity_unit='lots') if profile else None,
     )
 
 
 def request_for(setup, sample_id):
+    if setup['snapshot'].get('profile_id'):
+        sample_id=fingerprint(dict(profile=setup['snapshot']['profile_id'], sample_id=sample_id))
     return EntryRequest(
         sample_id,
         setup["snapshot"]["snapshot_id"],
@@ -59,10 +64,11 @@ def request_for(setup, sample_id):
     )
 
 
-def cached_forecast(memory, candles, config, adapter):
-    key = fingerprint(
-        dict(configuration=config.fingerprint, context=[c.as_dict() for c in candles])
-    )
+def cached_forecast(memory, candles, config, adapter, *, profile=None):
+    identity = dict(configuration=config.fingerprint, context=[c.as_dict() for c in candles])
+    if profile:
+        identity['instrument'] = profile.learning_namespace
+    key = fingerprint(identity)
     with memory.pool.connection() as c:
         row = c.execute(
             """SELECT payload_json FROM project_records
@@ -70,13 +76,18 @@ def cached_forecast(memory, candles, config, adapter):
             (key,),
         ).fetchone()
     if row:
-        return key, json.loads(row["payload_json"])["output"]
+        payload = json.loads(row["payload_json"])
+        if payload.get('symbol', 'EURUSD') != (profile.symbol if profile else 'EURUSD') or payload.get('profile_id') != (profile.fingerprint if profile else None):
+            raise ValueError('FORECAST_INSTRUMENT_MISMATCH')
+        return key, payload["output"]
     output = adapter.forecast([c.close for c in candles])
     memory.record_project_data(
         "agent_forecast_cache",
         key,
         dict(
             cache_key=key,
+            symbol=profile.symbol if profile else 'EURUSD',
+            profile_id=profile.fingerprint if profile else None,
             input_hash=fingerprint([c.as_dict() for c in candles]),
             configuration=config.fingerprint,
             input_last=candles[-1].timestamp.isoformat(),
