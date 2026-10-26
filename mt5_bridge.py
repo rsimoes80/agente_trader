@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from mt5_provider import fetch_history
+from mt5_provider import fetch_history, instrument_catalog, inspect_instrument
 
 HOST = os.environ.get("AURELIA_MT5_BRIDGE_HOST", "192.168.200.1")
 PORT = int(os.environ.get("AURELIA_MT5_BRIDGE_PORT", "8769"))
@@ -44,7 +44,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": True, "service": "Aurelia FX MT5 read-only bridge",
                              "display_name": "Agente Trader - IA MT5 read-only bridge"})
             return
-        if path != "/api/mt5/chart":
+        if path not in {"/api/mt5/chart","/api/mt5/instruments","/api/mt5/instrument"}:
             self._send(404, {"ok": False, "error": "Rota não encontrada."})
             return
         supplied = self.headers.get("X-Bridge-Token", "")
@@ -54,8 +54,12 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(urlparse(self.path).query)
         timeframe = query.get("timeframe", ["M5"])[0].upper()
         try:
+            if path=='/api/mt5/instruments':
+                self._send(200,dict(ok=True,**instrument_catalog(query.get('q',[''])[0],query.get('limit',[100])[0])));return
+            if path=='/api/mt5/instrument':
+                self._send(200,dict(ok=True,**inspect_instrument(query.get('symbol',[''])[0])));return
             count = max(100, min(2_000, int(query.get("count", ["600"])[0])))
-            result = fetch_history("EUR/USD", timeframe, count, include_current=True)
+            result = fetch_history(query.get('symbol',['EUR/USD'])[0], timeframe, count, include_current=True)
             self._send(200, {"ok": True, **result})
         except (RuntimeError, ValueError, OSError) as exc:
             self._send(503, {"ok": False, "error": str(exc)})

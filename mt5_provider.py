@@ -86,6 +86,34 @@ def status() -> dict[str, Any]:
                 mt5.shutdown()
 
 
+def instrument_catalog(query='', limit=100):
+    """Exact broker symbols for a selector; no trading or fuzzy substitution."""
+    if not isinstance(query,str) or len(query)>80:raise ValueError('Busca de ativo inválida.')
+    limit=max(1,min(200,int(limit)))
+    with _LOCK:
+        try:
+            terminal=_open_terminal();symbols=mt5.symbols_get()
+            if symbols is None:raise RuntimeError('Catálogo de ativos indisponível.')
+            matches=sorted((s for s in symbols if query.casefold() in (s.name+' '+s.description).casefold()),key=lambda s:s.name)
+            return dict(broker=terminal['broker'],server=terminal['server'],account_currency=terminal['account_currency'],
+                total=len(matches),symbols=[dict(symbol=s.name,description=s.description,path=s.path,
+                    contract_size=s.trade_contract_size,volume_min=s.volume_min,volume_step=s.volume_step,
+                    currency_profit=s.currency_profit,trade_mode=s.trade_mode) for s in matches[:limit]])
+        finally:
+            if mt5 is not None:mt5.shutdown()
+
+
+def inspect_instrument(symbol):
+    from src.aurelia_fx.instruments import inspect_contract
+    with _LOCK:
+        try:
+            terminal=_open_terminal()
+            return dict(**inspect_contract(mt5,symbol,broker=terminal['broker'],server=terminal['server']),
+                        account_currency=terminal['account_currency'],trade_mode=terminal['trade_mode'])
+        finally:
+            if mt5 is not None:mt5.shutdown()
+
+
 def _resolve_symbol(requested: str) -> str:
     compact = re.sub(r"[^A-Z0-9]", "", requested.upper())
     symbols = mt5.symbols_get() or ()

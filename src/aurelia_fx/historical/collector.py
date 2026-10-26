@@ -15,12 +15,14 @@ def collect(repository, fetch, *, days=30, full=False, run_study=False, now=None
     if not 30 <= days <= 60:
         raise ValueError("Histórico inicial requer 30 a 60 dias corridos.")
     reference_now = now
+    symbol=getattr(repository,'symbol','EURUSD')
     now = utc(now or datetime.now(timezone.utc))
     start = now - timedelta(days=days)
     previous = repository.latest()
     clock = None
     reports = {}
     imports = {}
+    price_unit=None
     for timeframe in TIMEFRAMES:
         seconds = SECONDS[timeframe]
         old = (previous or {}).get("timeframes", {}).get(timeframe, {})
@@ -33,13 +35,14 @@ def collect(repository, fetch, *, days=30, full=False, run_study=False, now=None
         )
         span = (now - last).total_seconds() if incremental else days * 86400
         count = max(100, min(100_000, int(span / seconds) + 20))
-        data = fetch("EURUSD", timeframe, count, include_current=False)
+        data = fetch(symbol, timeframe, count, include_current=False)
         checked = utc(reference_now or datetime.now(timezone.utc))
         source_clock = validate_source_clock(data, now=checked)
-        if data.get("timeframe") != timeframe or data.get("symbol") not in {
-            "EURUSD",
-            "EUR/USD",
-        }:
+        unit=data.get('pip_size',0.0001)
+        if price_unit is not None and price_unit!=unit:raise ValueError('Unidade de preço mudou durante a coleta.')
+        price_unit=unit
+        accepted={symbol,'EUR/USD'} if symbol=='EURUSD' else {symbol}
+        if data.get("timeframe") != timeframe or data.get("symbol") not in accepted:
             raise ValueError("Identidade do histórico MT5 incompatível.")
         if clock is not None and clock["clock_id"] != source_clock["clock_id"]:
             raise ValueError("Servidor/relógio mudou durante a captura histórica.")
@@ -49,7 +52,7 @@ def collect(repository, fetch, *, days=30, full=False, run_study=False, now=None
             and previous.get("clock_id") != source_clock["clock_id"]
         ):
             data = fetch(
-                "EURUSD",
+                symbol,
                 timeframe,
                 max(100, int(days * 86400 / seconds) + 20),
                 include_current=False,
@@ -57,6 +60,8 @@ def collect(repository, fetch, *, days=30, full=False, run_study=False, now=None
             source_clock = validate_source_clock(
                 data, now=utc(reference_now or datetime.now(timezone.utc))
             )
+            if data.get('symbol') not in accepted or data.get('timeframe')!=timeframe:
+                raise ValueError('Identidade do histórico mudou durante a recaptura.')
             if clock is not None and clock["clock_id"] != source_clock["clock_id"]:
                 raise ValueError("Fonte mudou durante a recaptura histórica.")
         clock = source_clock
@@ -66,11 +71,12 @@ def collect(repository, fetch, *, days=30, full=False, run_study=False, now=None
             clock_id=clock["clock_id"], timeframe=timeframe, start=start, as_of=now
         )
         reports[timeframe] = summarize(
-            frozen, timeframe, start=start, as_of=now, days=days
+            frozen, timeframe, start=start, as_of=now, days=days, pip_size=price_unit
         )
     baseline = dict(
         version=VERSION,
-        symbol="EURUSD",
+        symbol=symbol,
+        price_unit=price_unit,
         clock_id=clock["clock_id"],
         source_clock=clock,
         days=days,
@@ -94,7 +100,8 @@ def collect(repository, fetch, *, days=30, full=False, run_study=False, now=None
             clock_id=clock["clock_id"], timeframe="M5", start=start, as_of=now
         )
         research = study(rows, baseline_id=baseline["baseline_id"])
+        research['symbol']=symbol
         repository.memory.record_project_data(
-            "historical_hypothesis_study", research["study_id"], research
+            repository.record_type("historical_hypothesis_study"), research["study_id"], research
         )
     return baseline

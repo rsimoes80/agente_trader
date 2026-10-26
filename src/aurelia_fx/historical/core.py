@@ -73,9 +73,10 @@ def percentile(values, q):
     return ordered[lo] + (ordered[hi] - ordered[lo]) * (index - lo)
 
 
-def describe(rows):
+def describe(rows, pip_size=0.0001):
+    if not isinstance(pip_size,(int,float)) or not math.isfinite(pip_size) or pip_size<=0:raise ValueError('Unidade de preço inválida.')
     spreads = [r["spread_pips"] for r in rows if r.get("spread_pips") is not None]
-    ranges = [(r["high"] - r["low"]) / 0.0001 for r in rows]
+    ranges = [(r["high"] - r["low"]) / pip_size for r in rows]
     returns = [r["_return"] for r in rows if r.get("_return") is not None]
     return dict(
         bars=len(rows),
@@ -111,7 +112,7 @@ def trading_age_seconds(start, end):
     return total
 
 
-def summarize(rows, timeframe, *, start, as_of, days=30):
+def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
     start, as_of = utc(start), utc(as_of)
     seconds = SECONDS[timeframe]
     rows = closed_rows(rows, timeframe, start=start, as_of=as_of)
@@ -186,9 +187,9 @@ def summarize(rows, timeframe, *, start, as_of, days=30):
         dataset_sha256=hashlib.sha256(
             json.dumps(canonical, sort_keys=True, allow_nan=False).encode()
         ).hexdigest(),
-        statistics=describe(rows),
-        by_session={k: describe(v) for k, v in sessions.items()},
-        by_utc_hour={k: describe(v) for k, v in hours.items()},
+        statistics=describe(rows,pip_size),
+        by_session={k: describe(v,pip_size) for k, v in sessions.items()},
+        by_utc_hour={k: describe(v,pip_size) for k, v in hours.items()},
     )
 
 

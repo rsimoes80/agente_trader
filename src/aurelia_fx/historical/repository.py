@@ -10,23 +10,32 @@ from .core import VERSION, utc
 
 
 class HistoricalRepository:
-    def __init__(self, memory):
+    def __init__(self, memory, symbol='EURUSD'):
         if not hasattr(memory, "pool"):
             raise ValueError("Historical archive requires PostgreSQL.")
         self.memory = memory
+        from ..instruments import symbol_name
+        self.symbol=symbol_name(symbol)
+
+    def record_type(self, kind):
+        # Legacy EURUSD readers must never see the newest baseline of another
+        # instrument, even before all long-running services have been reloaded.
+        return kind if self.symbol=='EURUSD' else kind+':'+self.symbol
 
     @staticmethod
-    def prefix(clock_id, timeframe):
+    def prefix(clock_id, timeframe, symbol='EURUSD'):
         identity = hashlib.sha256(clock_id.encode()).hexdigest()[:24]
-        return f"archive:{identity}:EURUSD:{timeframe}:"
+        from ..instruments import symbol_name
+        return f"archive:{identity}:{symbol_name(symbol)}:{timeframe}:"
 
     def ingest(self, rows, *, clock, timeframe):
-        prefix = self.prefix(clock["clock_id"], timeframe)
+        prefix = self.prefix(clock["clock_id"], timeframe, self.symbol)
         values = []
         for row in rows:
+            if row.get('symbol',self.symbol)!=self.symbol:raise ValueError('Candle pertence a outro ativo.')
             payload = {
                 **row,
-                "symbol": "EURUSD",
+                "symbol": self.symbol,
                 "timeframe": timeframe,
                 "source": "mt5_history_archive",
                 "clock_id": clock["clock_id"],
@@ -50,7 +59,7 @@ class HistoricalRepository:
         )
 
     def candles(self, *, clock_id, timeframe, start, as_of, known_by=None):
-        prefix = self.prefix(clock_id, timeframe)
+        prefix = self.prefix(clock_id, timeframe, self.symbol)
         # Bound by canonical UTC key, then select the last known immutable revision.
         with self.memory.pool.connection() as c:
             rows = c.execute(
@@ -70,13 +79,15 @@ class HistoricalRepository:
         with self.memory.pool.connection() as c:
             rows = c.execute(
                 """SELECT payload_json,recorded_at FROM project_records
-                WHERE record_type='historical_baseline' AND payload_json::jsonb ->> 'version'=%s
+                WHERE record_type=%s AND payload_json::jsonb ->> 'version'=%s
+                AND COALESCE(payload_json::jsonb ->> 'symbol','EURUSD')=%s
                 AND (%s::text IS NULL OR payload_json::jsonb ->> 'clock_id'=%s)
                 AND (payload_json::jsonb ->> 'as_of')::timestamptz<=%s
                 AND recorded_at<=COALESCE(%s::timestamptz,clock_timestamp())
                 ORDER BY recorded_at DESC LIMIT 1""",
                 (
-                    VERSION,
+                    self.record_type('historical_baseline'),VERSION,
+                    self.symbol,
                     clock_id,
                     clock_id,
                     as_of or datetime.now(timezone.utc),
@@ -115,6 +126,7 @@ class HistoricalRepository:
             start=baseline["start"],
             as_of=baseline["as_of"],
             days=baseline["days"],
+            pip_size=baseline.get('price_unit',0.0001),
         )
         if (
             measured["dataset_sha256"]
@@ -153,15 +165,18 @@ class HistoricalRepository:
         )
 
     def record_baseline(self, baseline):
+        if baseline.get('symbol','EURUSD')!=self.symbol:raise ValueError('Baseline pertence a outro ativo.')
         self.memory.record_project_data(
-            "historical_baseline", baseline["baseline_id"], baseline
+            self.record_type("historical_baseline"), baseline["baseline_id"], baseline
         )
 
     def frozen_candles(
-        self, baseline, *, timeframe="M5", record_type="historical_baseline"
+        self, baseline, *, timeframe="M5", record_type=None
     ):
         """Load exactly the immutable revision described by this baseline."""
         from .core import summarize
+        if baseline.get('symbol','EURUSD')!=self.symbol:raise ValueError('Baseline pertence a outro ativo.')
+        record_type=record_type or self.record_type('historical_baseline')
 
         with self.memory.pool.connection() as c:
             record = c.execute(
@@ -186,6 +201,7 @@ class HistoricalRepository:
             start=baseline["start"],
             as_of=baseline["as_of"],
             days=baseline["days"],
+            pip_size=baseline.get('price_unit',0.0001),
         )
         if (
             measured["dataset_sha256"]
@@ -200,11 +216,12 @@ class HistoricalRepository:
         baseline = self.latest()
         with self.memory.pool.connection() as c:
             rows = c.execute("""SELECT record_type,payload_json FROM project_records
-                WHERE record_type IN ('historical_collection_status','historical_hypothesis_study')
-                ORDER BY recorded_at DESC LIMIT 30""").fetchall()
+                WHERE record_type IN (%s,%s)
+                AND COALESCE(payload_json::jsonb ->> 'symbol','EURUSD')=%s
+                ORDER BY recorded_at DESC LIMIT 30""",(self.record_type('historical_collection_status'),self.record_type('historical_hypothesis_study'),self.symbol)).fetchall()
         latest = {}
         for row in rows:
-            latest.setdefault(row["record_type"], json.loads(row["payload_json"]))
+            latest.setdefault(row["record_type"].split(':',1)[0], json.loads(row["payload_json"]))
         from .core import readiness
 
         blocker = readiness(

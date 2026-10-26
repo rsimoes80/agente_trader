@@ -63,6 +63,34 @@ class HistoricalPostgresTests(unittest.TestCase):
         self.assertEqual(len(self.candles()), 100)
         self.assertEqual(self.candles(clock="other"), [])
 
+    def test_two_symbols_share_clock_without_mixing_candles_or_revisions(self):
+        gold=HistoricalRepository(self.memory,'XAUUSD')
+        self.repo.ingest(rows(100),clock=self.clock,timeframe='M5')
+        bars=[{**r,'open':4000.,'high':4001.,'low':3999.,'close':4000.} for r in rows(100)]
+        gold.ingest(bars,clock=self.clock,timeframe='M5')
+        result=gold.candles(clock_id='test',timeframe='M5',start=NOW-timedelta(days=30),as_of=NOW)
+        self.assertEqual(len(result),100);self.assertEqual(result[-1]['close'],4000.)
+        self.assertEqual(self.candles()[-1]['symbol'],'EURUSD')
+        gold.ingest([{**bars[-1],'close':4000.5}],clock=self.clock,timeframe='M5')
+        self.assertLess(self.candles()[-1]['close'],2)
+        self.assertEqual(self.c.execute('SELECT count(*) n FROM project_records').fetchone()['n'],201)
+
+    def test_baselines_and_freezing_are_scoped_to_symbol(self):
+        from .test_historical_context import baseline
+        gold=HistoricalRepository(self.memory,'XAUUSD')
+        for symbol,key in [('EURUSD','eur'),('XAUUSD','gold')]:
+            b={**baseline(),'symbol':symbol,'baseline_id':key}
+            text,digest=self.memory._encode(b)
+            kind=HistoricalRepository(self.memory,symbol).record_type('historical_baseline')
+            self.c.execute("INSERT INTO project_records VALUES(%s,%s,%s,%s,clock_timestamp())",(kind,key,text,digest))
+        self.assertEqual(self.repo.latest()['symbol'],'EURUSD')
+        self.assertEqual(gold.latest()['symbol'],'XAUUSD')
+        import json
+        legacy=self.c.execute("SELECT payload_json FROM project_records WHERE record_type='historical_baseline' ORDER BY recorded_at DESC LIMIT 1").fetchone()
+        self.assertEqual(json.loads(legacy['payload_json'])['symbol'],'EURUSD')
+        with self.assertRaises(ValueError):gold.frozen_candles({**baseline(),'symbol':'EURUSD'})
+        with self.assertRaises(ValueError):self.repo.ingest([{**rows(1)[0],'symbol':'XAUUSD'}],clock=self.clock,timeframe='M5')
+
     def test_revisions_preserve_original_and_known_by_cutoff(self):
         data = rows(100)
         self.repo.ingest(data, clock=self.clock, timeframe="M5")
