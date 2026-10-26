@@ -71,6 +71,8 @@ O [teste completo de horários e outras famílias H1](docs/TESTE_DE_HORARIOS_H1.
 refaz as carteiras e mantém comparação futura em simulação; nenhuma regra nova foi aprovada.
 O [experimento de entradas M1 com contextos M15/M10 e M10/M5](docs/HIPOTESES_M1_M15_M10.md)
 compara os dois contextos menores e controles H4/H1 com os mesmos custos e duração máxima.
+O estudo foi concluído sem aprovação das novas configurações: houve mais entradas,
+mas nenhuma vantagem validada após custos. A regra em produção permanece inalterada.
 
 Para comparar H1 com H4+H1 no maior catálogo histórico compatível já congelado,
 execute `python run_trend_experiment.py`. O relatório é gravado no PostgreSQL
