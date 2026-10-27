@@ -62,27 +62,35 @@ def recovery_changes(state,exc,*,now=None):
                 message=f'Falha temporária na execução ({type(exc).__name__}). Sessão preservada; nova tentativa automática em {delay} segundos.')
 
 
-def main():
+def single_asset_main(*,symbol='EURUSD',managed_stop=None,progress=None):
     from mt5_provider import fetch_history
 
-    stop = threading.Event()
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    stop = managed_stop if managed_stop is not None else threading.Event()
+    if managed_stop is None:
+        signal.signal(signal.SIGINT, lambda *_: stop.set())
+        signal.signal(signal.SIGTERM, lambda *_: stop.set())
     memory = open_memory()
-    control = OperationControl(memory)
-    repository = HistoricalRepository(memory)
+    control = OperationControl(memory,symbol) if managed_stop is not None else OperationControl(memory)
+    repository = HistoricalRepository(memory,symbol) if managed_stop is not None else HistoricalRepository(memory)
+    if progress:
+        original_heartbeat=control.heartbeat
+        def heartbeat(*args,**kwargs):
+            result=original_heartbeat(*args,**kwargs);progress();return result
+        control.heartbeat=heartbeat
     worker_id = str(uuid4())
     handled = None
-    pid_path = ROOT / "data/agent.pid"
+    pid_path = ROOT / "data/agent.pid" if managed_stop is None else None
     last_heartbeat = 0
     try:
         with memory.pool.connection() as lease:
-            if not lease.execute(
-                "SELECT pg_try_advisory_lock(%s) AS acquired", (WORKER_LOCK,)
-            ).fetchone()["acquired"]:
+            import hashlib
+            lock_key=int.from_bytes(hashlib.sha256(symbol.encode()).digest()[:4],'big',signed=True)
+            lock_query="SELECT pg_try_advisory_lock(%s,%s) AS acquired" if managed_stop is not None else "SELECT pg_try_advisory_lock(%s) AS acquired"
+            lock_args=(WORKER_LOCK,lock_key) if managed_stop is not None else (WORKER_LOCK,)
+            if not lease.execute(lock_query,lock_args).fetchone()["acquired"]:
                 print("O serviço do agente já está ativo.", flush=True)
                 return 0
-            pid_path.write_text(str(os.getpid()), encoding="ascii")
+            if pid_path:pid_path.write_text(str(os.getpid()), encoding="ascii")
             initial = control.status()
             autonomous = autonomous_session(initial)
             if initial.get("session_id") and autonomous and initial["desired"] == "running" and initial["state"] != "STOPPED":
@@ -187,7 +195,7 @@ def main():
                     handled = (session_id, state.get("generation"))
                 stop.wait(3)
     finally:
-        if pid_path.exists() and pid_path.read_text(encoding="ascii").strip() == str(
+        if pid_path and pid_path.exists() and pid_path.read_text(encoding="ascii").strip() == str(
             os.getpid()
         ):
             pid_path.unlink()
@@ -195,7 +203,56 @@ def main():
     return 0
 
 
+def coordinated_main():
+    from aurelia_fx.asset_registry import AssetRegistry
+    from aurelia_fx.multi_asset_coordinator import MultiAssetCoordinator
+    from aurelia_fx.forecasting.shared import POOL
+    from run_agent_supervisor import stall_limit
+    stop=threading.Event()
+    signal.signal(signal.SIGINT,lambda *_:stop.set())
+    signal.signal(signal.SIGTERM,lambda *_:stop.set())
+    memory=open_memory();pid_path=ROOT/'data/agent.pid';last_report=0.
+    os.environ['AGENTE_TRADER_COORDINATED']='1'
+    coordinator=MultiAssetCoordinator(
+        lambda:[a['symbol'] for a in AssetRegistry(memory).list() if a.get('selected')],
+        lambda symbol,event,progress:single_asset_main(symbol=symbol,managed_stop=event,progress=progress),
+        stall_seconds=stall_limit())
+    try:
+        with memory.pool.connection() as lease:
+            if not lease.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(WORKER_LOCK,)).fetchone()['acquired']:
+                print('O serviço do agente já está ativo.',flush=True);return 0
+            pid_path.write_text(str(os.getpid()),encoding='ascii')
+            try:
+                while not stop.is_set():
+                    lease.execute('SELECT 1')
+                    status=coordinator.poll()
+                    if time.monotonic()-last_report>=15:
+                        memory.record_project_data('agent_multi_asset_coordinator','current',status)
+                        if status['healthy'] and os.environ.get('AURELIA_AGENT_SUPERVISED')=='1':
+                            print('AFX_AGENT_PROGRESS:coordinator',flush=True)
+                        last_report=time.monotonic()
+                    stop.wait(3)
+            finally:
+                if not coordinator.close(timeout=15):
+                    # Do not release the singleton lease while a worker may still
+                    # send. The supervisor will terminate the owned process tree.
+                    print('Asset worker still stopping; singleton lease preserved for watchdog recovery.',flush=True)
+                    while True:time.sleep(1)
+                POOL.close()
+                lease.execute('SELECT pg_advisory_unlock(%s)',(WORKER_LOCK,))
+    finally:
+        if pid_path.exists() and pid_path.read_text(encoding='ascii').strip()==str(os.getpid()):pid_path.unlink()
+        memory.close()
+    return 0
+
+
+def main():
+    return coordinated_main() if os.environ.get('AGENTE_TRADER_MULTI_ASSET')=='1' else single_asset_main()
+
+
 def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
+    if getattr(control,'symbol','EURUSD')!='EURUSD':
+        raise ValueError('O ciclo deste ativo ainda exige a integração do perfil e da execução multiativo.')
     original_fetch = fetch
     def fetch(*args, **kwargs):
         return guarded_fetch(original_fetch, *args, **kwargs)

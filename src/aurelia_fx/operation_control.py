@@ -262,7 +262,7 @@ class OperationControl:
                 **({'engine_version':engine_version} if engine_version else {}),
             ),
         )
-        if os.environ.get('AURELIA_AGENT_SUPERVISED')=='1':
+        if os.environ.get('AURELIA_AGENT_SUPERVISED')=='1' and os.environ.get('AGENTE_TRADER_COORDINATED')!='1':
             print('AFX_AGENT_PROGRESS:'+worker_id,flush=True)
 
     def worker_status(self):

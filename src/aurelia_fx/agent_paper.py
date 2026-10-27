@@ -53,11 +53,7 @@ class PaperAccount:
         previous_account=None,
         research_mode=False,
     ):
-        if (
-            contract.get("currency_profit") != "USD"
-            or contract.get("contract_size", 0) <= 0
-        ):
-            raise ValueError("A conta simulada requer contrato EURUSD em USD.")
+        self.validate_contract(contract)
         self.data = dict(
             version="observed-paper-v1",
             session_id=session_id,
@@ -125,6 +121,10 @@ class PaperAccount:
             self.data["lab_state"] = copy.deepcopy((previous_account or {}).get("lab_state",{}))
         if research_mode:
             self.data["lab_state"].setdefault("protocol_id",model_id)
+
+    def validate_contract(self,contract):
+        if contract.get('currency_profit')!='USD' or contract.get('contract_size',0)<=0:
+            raise ValueError('A conta simulada requer contrato EURUSD em USD.')
 
     def snapshot(self):
         return copy.deepcopy(self.data)

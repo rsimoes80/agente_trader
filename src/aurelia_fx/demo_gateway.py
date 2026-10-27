@@ -9,6 +9,7 @@ from .demo_intents import DemoIntentJournal
 from .operation_control import LOCK, validate_lot
 from .historical.core import utc
 from .entry_trend import entry_blocker, POLICY_ID
+from .account_risk import AccountRiskBook,AccountRiskSnapshot,known_position_tickets
 
 MAGIC=70616041
 NON_EXECUTION=("REQUOTE","REJECT","CANCEL","INVALID","INVALID_VOLUME","INVALID_PRICE",
@@ -45,22 +46,48 @@ class DemoGateway:
             raise ValueError("Autorização específica de pesquisa demo ausente.")
         self.control=control;self.authorization=authorization;self.terminal_factory=terminal_factory
         self.journal=DemoIntentJournal(control.memory)
+        self.risk_book=AccountRiskBook(control.memory)
+        self.profile=None
+        if authorization.get('research_profile'):
+            from .instrument_research import InstrumentResearchProfile
+            self.profile=InstrumentResearchProfile.from_dict(authorization['research_profile'])
+            if self.profile.symbol!=control.symbol or authorization.get('symbol')!=self.profile.symbol:
+                raise ValueError('DEMO_AUTHORIZATION_INSTRUMENT_MISMATCH')
+            self.profile.execution_config(authorization['lot'])
 
     def terminal(self):
-        return self.terminal_factory(account_id=self.authorization["account_id"],clock_id=self.authorization["clock_id"])
+        return self.terminal_factory(account_id=self.authorization["account_id"],clock_id=self.authorization["clock_id"],
+                                     **(dict(profile=self.profile) if self.profile else {}))
+
+    def financial_assumptions(self):
+        return dict(slippage_price=self.profile.costs.slippage_price,
+                    commission_round_trip_per_lot=2*self.profile.costs.commission_per_lot_side) if self.profile else dict(
+                    slippage_price=.00002,commission_round_trip_per_lot=7.)
 
     def owner(self):
         return dict(account_id=self.authorization["account_id"],approval_id=self.authorization["authorization_id"],
                     model_id=self.authorization["protocol_id"],session_id=self.authorization["session_id"],
                     clock_id=self.authorization["clock_id"])
 
-    def entry_request(self,terminal,setup,lot,risk_state):
+    def entry_request(self,terminal,setup,lot,risk_state,*,exposure=None):
+        if self.profile:
+            if setup['snapshot'].get('symbol')!=self.profile.symbol or setup['snapshot'].get('profile_id')!=self.profile.fingerprint:
+                raise ValueError('DEMO_SETUP_INSTRUMENT_MISMATCH')
+            from .instruments import InstrumentContract
+            current=InstrumentContract.from_mt5(terminal.info,broker=terminal.account.company,server=terminal.account.server)
+            fields=('point','tick_size','contract_size','currency_profit','calculation_mode','volume_min','volume_max','volume_step')
+            if any(getattr(current,k)!=getattr(self.profile.contract,k) for k in fields):
+                raise ValueError('DEMO_CONTRACT_CHANGED')
         blocker=entry_blocker(setup.get('snapshot'),setup['candidate'].side)
         if blocker:raise ValueError(blocker)
         sdk=terminal.sdk;info=terminal.info;quote=terminal.quote()
         terminal.check_account(sending=True)
         validate_lot(lot,dict(volume_min=info.volume_min,volume_max=info.volume_max,volume_step=info.volume_step))
-        if terminal.positions() or terminal.orders():raise ValueError("Há exposição ou ordem na conta demo; nova entrada recusada.")
+        if exposure is None:
+            if terminal.positions() or terminal.orders():raise ValueError("Há exposição ou ordem na conta demo; nova entrada recusada.")
+        elif not isinstance(exposure,AccountRiskSnapshot) or exposure.account_id!=self.authorization['account_id']:
+            raise ValueError('ACCOUNT_RISK_SNAPSHOT_MISMATCH')
+        assumptions=self.financial_assumptions();slippage=assumptions['slippage_price']
         if info.trade_mode!=sdk.SYMBOL_TRADE_MODE_FULL:raise ValueError("O símbolo não permite novas posições.")
         candidate=setup["candidate"];long=candidate.side=="long"
         entry=quote["ask"] if long else quote["bid"]
@@ -69,8 +96,8 @@ class DemoGateway:
         stop=price_level(candidate.stop,step,up=not long)
         target=price_level(candidate.target,step,up=not long)
         if not (stop<entry<target if long else target<entry<stop):raise ValueError("O preço invalidou os níveis da hipótese demo.")
-        spread=(quote["ask"]-quote["bid"])/0.0001
-        if spread>2:raise ValueError("Spread demo acima do limite.")
+        spread=(quote["ask"]-quote["bid"])/(self.profile.price_unit if self.profile else .0001)
+        if spread>(self.profile.max_spread_units if self.profile else 2):raise ValueError("Spread demo acima do limite.")
         trigger=quote["bid"] if long else quote["ask"]
         minimum=info.trade_stops_level*info.point
         if min(abs(trigger-stop),abs(target-trigger))<minimum:raise ValueError("Stop/alvo abaixo da distância mínima da corretora.")
@@ -82,19 +109,19 @@ class DemoGateway:
         if equity<=risk_state["day_start"]*.98:raise ValueError("Limite diário de perda demo atingido.")
         if equity<=risk_state["peak"]*.95:raise ValueError("Limite de drawdown demo atingido.")
         order_type=sdk.ORDER_TYPE_BUY if long else sdk.ORDER_TYPE_SELL
-        units=float(lot)*info.trade_contract_size
-        commission=70*units/1_000_000
+        commission=assumptions['commission_round_trip_per_lot']*float(lot)
         sign=1 if long else -1
-        stop_result=sdk.order_calc_profit(order_type,terminal.symbol,float(lot),entry,stop-sign*.00002)
-        target_result=sdk.order_calc_profit(order_type,terminal.symbol,float(lot),entry,target-sign*.00002)
+        stop_result=sdk.order_calc_profit(order_type,terminal.symbol,float(lot),entry,stop-sign*slippage)
+        target_result=sdk.order_calc_profit(order_type,terminal.symbol,float(lot),entry,target-sign*slippage)
         if not finite(stop_result) or not finite(target_result) or stop_result>=0:raise ValueError("Não foi possível calcular o risco na moeda da conta demo.")
         risk=-stop_result+commission;reward=target_result-commission
         if risk>equity*.005:raise ValueError("O lote escolhido excede o orçamento de risco demo.")
         if reward/risk<2:raise ValueError("Relação retorno/risco demo insuficiente após custos.")
+        if exposure:exposure.check(terminal.symbol,risk)
         margin=sdk.order_calc_margin(order_type,terminal.symbol,float(lot),entry)
         if not finite(margin) or margin<0 or margin>account.margin_free:raise ValueError("Margem demo insuficiente ou indisponível.")
         request=dict(action=sdk.TRADE_ACTION_DEAL,symbol=terminal.symbol,volume=float(lot),type=order_type,
-                     sl=stop,tp=target,deviation=max(1,int(.00002/info.point)),magic=MAGIC,
+                     sl=stop,tp=target,deviation=max(1,int(slippage/info.point)),magic=MAGIC,
                      type_time=sdk.ORDER_TIME_GTC,type_filling=filling(sdk,info))
         if info.trade_exemode!=sdk.SYMBOL_TRADE_EXECUTION_MARKET:request["price"]=entry
         return request,dict(initial_risk=risk,quoted_entry=entry,stop=stop,target=target,quote_at=quote["at"])
@@ -210,13 +237,18 @@ class DemoGateway:
         return intent
 
     def enter(self,setup,hypothesis,features,lot,risk_state,generation):
+        if 'lot' in self.authorization and validate_lot(lot)!=validate_lot(self.authorization['lot']):
+            raise ValueError('DEMO_AUTHORIZED_LOT_MISMATCH')
         client_id=fingerprint(dict(session=self.authorization["session_id"],signal=setup["signal_at"],hypothesis=hypothesis["id"]))[:32]
         with self.journal.locked() as scope, self.terminal() as terminal:
             previous=scope.latest(client_id)
             if previous:return self.resolve(terminal,scope,previous)
-            request,risk=self.entry_request(terminal,setup,lot,risk_state)
+            exposure=self.risk_book.observe(scope,terminal)
+            risk_state=dict(day_start=exposure.day_start,peak=exposure.peak,daily_entries=exposure.daily_entries)
+            request,risk=self.entry_request(terminal,setup,lot,risk_state,exposure=exposure)
             metadata=dict(**risk,side=setup["candidate"].side,hypothesis=hypothesis,features=features,
                           entry_policy=POLICY_ID,trend_snapshot=setup['snapshot'],
+                          financial_assumptions=self.financial_assumptions(),
                           signal_at=setup["signal_at"],entry_at=datetime.now(timezone.utc).isoformat())
             result=self.send(terminal,scope,client_id,request,metadata,generation=generation)
             if result["status"] in {"UNCERTAIN","SENDING","PARTIAL"}:
@@ -229,6 +261,8 @@ class DemoGateway:
             # Reconcile old close requests first; they may have completed while offline.
             intents=scope.for_account(self.authorization["account_id"])
             for intent in sorted(intents,key=lambda i:"position" not in i["request"]["broker"]):
+                if intent['owner']['session_id']!=self.authorization['session_id'] or intent['request']['broker'].get('symbol')!=terminal.symbol:
+                    continue
                 if intent["status"]=="PREPARED":
                     intent=scope.transition(intent["client_id"],"CANCELLED",evidence=dict(reason="RECOVERED_UNSENT_INTENT"))
                 if intent["status"] in {"SENDING","UNCERTAIN","PARTIAL","UNPROTECTED","CONFIRMED"}:
@@ -241,14 +275,24 @@ class DemoGateway:
                 for p in positions:
                     loss=terminal.sdk.order_calc_profit(terminal.sdk.ORDER_TYPE_BUY if p.type==terminal.sdk.POSITION_TYPE_BUY else terminal.sdk.ORDER_TYPE_SELL,
                          p.symbol,p.volume,p.price_open,p.sl)
-                    if not finite(loss) or loss>=0 or -loss+70*p.volume*terminal.info.trade_contract_size/1_000_000>terminal.account.equity*.005:risk_breach=True
+                    fee=self.financial_assumptions()['commission_round_trip_per_lot']*p.volume
+                    if not finite(loss) or loss>=0 or -loss+fee>terminal.account.equity*.005:risk_breach=True
                 if positions and (force_close or expired or risk_breach or intent["status"]=="UNPROTECTED"):
                     self.close_positions(terminal,scope,intent,positions)
                     intent=self.resolve(terminal,scope,scope.latest(intent["client_id"]))
                 resolved.append(intent)
             account=terminal.check_account()
             positions=terminal.positions();orders=terminal.orders()
+            risk_view=None;risk_error=None
+            try:
+                from dataclasses import asdict
+                risk_view=asdict(self.risk_book.observe(scope,terminal))
+            except (ValueError,RuntimeError) as exc:risk_error=str(exc)
+            all_intents=scope.for_account(self.authorization['account_id'])
             return dict(intents=resolved,balance=account.balance,equity=account.equity,
+                        known_position_tickets=known_position_tickets(positions,all_intents),
+                        global_pending=bool(scope.pending(self.authorization['account_id'])),
+                        account_risk=risk_view,account_risk_error=risk_error,
                         positions=positions,orders=orders,currency=account.currency,
                         trading_enabled=bool(terminal.terminal.trade_allowed and not terminal.terminal.tradeapi_disabled
                             and account.trade_allowed and account.trade_expert))
@@ -257,7 +301,7 @@ class DemoGateway:
         for position in positions:
             if position.magic!=MAGIC or position.symbol!=terminal.symbol:
                 raise ValueError("Recusado encerramento de posição alheia ao projeto.")
-            if any(i["client_id"]!=root["client_id"] for i in scope.pending(self.authorization["account_id"])):
+            if any(i["client_id"]!=root["client_id"] and i['request'].get('position')==position.ticket for i in scope.pending(self.authorization["account_id"])):
                 return
             current=[p for p in terminal.positions() if p.ticket==position.ticket and p.magic==MAGIC]
             if not current:continue
@@ -265,11 +309,11 @@ class DemoGateway:
             long=position.type==sdk.POSITION_TYPE_BUY
             request=dict(action=sdk.TRADE_ACTION_DEAL,symbol=position.symbol,position=position.ticket,
                          volume=position.volume,type=sdk.ORDER_TYPE_SELL if long else sdk.ORDER_TYPE_BUY,
-                         deviation=max(1,int(.00002/terminal.info.point)),magic=MAGIC,
+                         deviation=max(1,int(self.financial_assumptions()['slippage_price']/terminal.info.point)),magic=MAGIC,
                          type_time=sdk.ORDER_TIME_GTC,type_filling=filling(sdk,terminal.info))
             if terminal.info.trade_exemode!=sdk.SYMBOL_TRADE_EXECUTION_MARKET:request["price"]=quote["bid"] if long else quote["ask"]
             client=fingerprint(dict(close=root["client_id"],ticket=position.ticket,volume=position.volume,
                                     retry_window=int(datetime.now(timezone.utc).timestamp())//30))[:32]
             result=self.send(terminal,scope,client,request,dict(reduces=root["client_id"]),
-                             risk_reduction_for=root["client_id"] if root["status"] in {"UNPROTECTED","PARTIAL"} else None)
+                             risk_reduction_for=root["client_id"] if root["status"] in {"UNPROTECTED","PARTIAL","CONFIRMED"} else None)
             if result["status"] in {"SENDING","UNCERTAIN","PARTIAL"}:self.resolve(terminal,scope,result)

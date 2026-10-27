@@ -26,10 +26,11 @@ limites conjuntos de risco e margem. O projeto continua exclusivamente em demo.
    esses caminhos ao coordenador ao vivo e ao treinamento dos pesos por ativo. Compartilhar
    a inferência do Timestral e manter um treinamento pesado por vez. Não transferir
    resultados ou modelos ajustados de EURUSD para XAUUSD como se fossem equivalentes.
-4. **Risco e execução conjunta — pendente.** Substituir o bloqueio de toda posição
-   da conta por controles por símbolo e risco agregado. Manter o journal de envio
-   serializado, reconciliação de ordens incertas e veto a conta real. Tratar posições
-   externas, ordens pendentes, margens e perdas diárias uma única vez na conta.
+4. **Coordenador e risco conjunto implementados; ativação ao vivo pendente.**
+   O gateway possui controle por símbolo e risco agregado, com journal serializado,
+   reconciliação de ordens incertas e veto a conta real. O modo coordenado administra
+   serviços independentes e compartilha inferência. Ainda falta conectar o perfil
+   do XAUUSD à preparação/coleta/ciclo ao vivo antes de habilitar esse modo na instalação.
 5. **Validação e liberação — pendente.** Simulação, testes de dois símbolos ao mesmo
    tempo, reinício, suspensão e reconciliação, com custos próprios. Só depois
    habilitar os novos ciclos demo; hipóteses sem confirmação continuam em espera.
@@ -180,3 +181,48 @@ esse horário.
 A política alimentará os novos perfis. Ela não reescreve custos ou resultados dos
 experimentos congelados e não altera silenciosamente o protocolo EURUSD em execução.
 A criação dessa evidência não envia ordens nem libera o XAUUSD no motor legado.
+
+## Coordenador e risco da conta
+
+O modo `AGENTE_TRADER_MULTI_ASSET=1` está implementado em `run_agent.py`, mas ainda
+não foi habilitado na instalação. Cada ativo tem serviço, estado, geração, lease
+e retomada independentes. Uma falha recebe nova tentativa sem reiniciar os demais;
+um serviço travado não é mascarado pelos sinais de atividade de outro. O supervisor
+continua responsável por encerrar a árvore de processos em caso de travamento.
+O encerramento conserva o lease global enquanto algum serviço ainda pode enviar.
+
+A capacidade inicial é de oito serviços simultâneos, com fila explícita no estado
+do coordenador. Selecionar um ativo não inicia uma sessão e cancelar/remover um
+serviço não cria uma segunda geração sobre a anterior. A preparação de símbolos
+novos continua recusada enquanto seu perfil não estiver ligado ao ciclo completo;
+o coordenador não anuncia uma capacidade de execução que ainda não foi validada.
+
+`SharedTimestralPool` fornece identificadores independentes aos serviços e mantém
+um único adaptador físico. Chamadas são serializadas; versões diferentes fecham o
+processo anterior antes de carregar o modelo solicitado. Fechar o identificador
+de um ativo não interrompe outro que usa a mesma configuração. Os resultados de
+pesquisa continuam separados por perfil, mesmo quando a base pré-treinada é comum.
+
+`AccountRiskBook` é consultado dentro do lock do journal demo antes de enviar:
+
+- Risco solicitado mais risco restante das posições: máximo conjunto de **0,5%**
+  da equidade, usando `order_calc_profit` para cada contrato na moeda da conta.
+- Máximo de cinco entradas do projeto por dia UTC, somadas entre os ativos.
+- Referência diária e pico de equidade únicos: limites de 2% e 5%, respectivamente.
+  O pico e a referência legados são preservados na primeira migração.
+- Uma exposição por símbolo; posições externas, proteção alterada, ordens pendentes
+  ou envios não reconciliados impedem novas entradas. O lote não é aumentado nem
+  redimensionado automaticamente para ocupar o orçamento.
+
+O gateway reconcilia e gerencia somente sua sessão e instrumento. Posições de outro
+ativo do projeto são identificadas pelo journal, sem serem atribuídas à sessão
+atual. Fechamentos de tickets comprovados podem reduzir risco enquanto outro ativo
+aguarda confirmação; um fechamento incerto do mesmo ticket continua impedindo
+duplicação. O resultado flutuante da sessão também passa a considerar suas próprias
+posições, enquanto saldo e equidade continuam pertencendo à conta compartilhada.
+
+Os testes do gateway com SDK simulado e PostgreSQL isolado exercitam duas entradas
+aceitas dentro do orçamento e a recusa da segunda ao ultrapassar o limite conjunto.
+Também cobrem lote autorizado, exposição externa, proteção alterada, reinício das
+referências, limites diários e ausência de encerramentos de outro instrumento.
+Essa validação ainda não equivale a ativação do XAUUSD no serviço ao vivo.

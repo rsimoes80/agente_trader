@@ -120,13 +120,17 @@ class IntentScope:
         if risk_reduction_for:
             exposure = self.latest(risk_reduction_for)
             ticket = request.get("position")
-            if not exposure or exposure["status"] not in {"UNPROTECTED","PARTIAL"} or (
+            if not exposure or exposure["status"] not in {"UNPROTECTED","PARTIAL","CONFIRMED"} or (
                 exposure["owner"] != owner
                 or not isinstance(ticket,int) or isinstance(ticket,bool) or ticket <= 0
                 or ticket not in exposure.get("evidence",{}).get("position_tickets",[])
             ):
                 raise ValueError("Redução de risco sem posição reconciliada e identificada.")
-            pending = [p for p in pending if p["client_id"] != risk_reduction_for]
+            # Closing a positively identified ticket reduces known exposure even
+            # when another instrument has an unresolved send. An uncertain close
+            # for this same ticket still forbids a second closing request.
+            pending = [p for p in pending if p["client_id"] != risk_reduction_for
+                       and p['request'].get('position')==ticket]
         if pending:
             raise ValueError("Há intenção demo sem reconciliação; nova entrada bloqueada.")
         now = self.journal.now().isoformat()

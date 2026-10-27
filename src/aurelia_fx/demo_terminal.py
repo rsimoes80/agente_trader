@@ -12,13 +12,17 @@ def account_identity(account, terminal):
 
 
 class DemoTerminal:
-    def __init__(self, provider, *, account_id=None, clock_id=None):
+    def __init__(self, provider, *, account_id=None, clock_id=None, profile=None):
         self.provider=provider;self.sdk=provider.mt5
         self.account_id=account_id;self.clock_id=clock_id
         self.check_account()
-        self.symbol=provider._resolve_symbol("EURUSD")
+        self.profile=profile
+        self.symbol=profile.symbol if profile else provider._resolve_symbol("EURUSD")
         self.info=self.sdk.symbol_info(self.symbol)
-        if self.account.currency!="USD" or self.info.currency_base!="EUR" or self.info.currency_profit!="USD":
+        if profile:
+            if self.info is None or self.info.name!=profile.symbol or self.account.company!=profile.contract.broker or self.account.server!=profile.contract.server or self.account.currency!=profile.account_currency:
+                raise ValueError('DEMO_INSTRUMENT_IDENTITY_MISMATCH')
+        elif self.account.currency!="USD" or self.info.currency_base!="EUR" or self.info.currency_profit!="USD":
             raise ValueError("O executor demo requer conta USD e contrato EUR/USD.")
 
     def check_account(self, *, sending=False):
@@ -37,7 +41,10 @@ class DemoTerminal:
         return account
 
     def quote(self):
-        tick=self.sdk.symbol_info_tick(self.symbol)
+        return self.quote_for(self.symbol)
+
+    def quote_for(self,symbol):
+        tick=self.sdk.symbol_info_tick(symbol)
         if tick is None:raise RuntimeError("Cotação demo indisponível.")
         clock=self.provider._CLOCK.resolve(self.account.company,self.account.server,tick.time)
         if self.clock_id and clock["clock_id"]!=self.clock_id:
@@ -63,11 +70,11 @@ class DemoTerminal:
 
 
 @contextmanager
-def demo_terminal(*, account_id=None, clock_id=None):
+def demo_terminal(*, account_id=None, clock_id=None, profile=None):
     import mt5_provider as provider
     with provider._LOCK:
         try:
             provider._open_terminal()
-            yield DemoTerminal(provider,account_id=account_id,clock_id=clock_id)
+            yield DemoTerminal(provider,account_id=account_id,clock_id=clock_id,profile=profile)
         finally:
             if provider.mt5 is not None:provider.mt5.shutdown()

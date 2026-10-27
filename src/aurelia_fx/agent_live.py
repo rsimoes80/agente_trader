@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,13 @@ from .operation_control import LOCK
 from .sessions import SessionEngine
 from . import continual_learning as continual
 from . import exploratory_learning
+
+
+def inference_adapter(config):
+    if os.environ.get('AGENTE_TRADER_COORDINATED')=='1':
+        from .forecasting.shared import POOL
+        return POOL.acquire(config)
+    return TimestralAdapter(config)
 
 
 def checkpoint(control, session_id):
@@ -139,7 +147,7 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 "position": data["position"],
                 "pending_execution":data.get('pending_execution',False),
                 "account": account.summary(),
-                "autonomy": AutonomousLab("",execution_mode='demo' if native else 'paper').summary(account.data["lab_state"])
+                "autonomy": AutonomousLab("",execution_mode='demo' if native else 'paper',profile=getattr(account,'profile',None)).summary(account.data["lab_state"])
                     if data.get("research_mode") else None,
             },
         )
@@ -187,13 +195,13 @@ def management_tick(control, fetch, state, worker_id):
 
 
 def make_account(control,state,*,saved=None):
-    from .agent_demo import NativeDemoAccount
+    from .agent_demo import NativeDemoAccount,native_account_key
     from .demo_gateway import DemoGateway
     from .demo_terminal import demo_terminal
     auth=(saved or {}).get('authorization') or state['demo_authorization']
     gateway=DemoGateway(control,auth,demo_terminal)
     return NativeDemoAccount(gateway,state['symbol_contract'],checkpoint=saved,
-                             previous_account=None if saved else project_account(control,'DEMO:'+auth['account_id']))
+                             previous_account=None if saved else project_account(control,native_account_key(auth)))
 
 
 def demo_recovery_required(control,state):
@@ -302,7 +310,7 @@ def run_paper(
             observed_at=utc(row["timestamp"]) + timedelta(minutes=5),
             warmup_only=index < len(rows) - 1,
         )
-    adapter = TimestralAdapter(config)
+    adapter = inference_adapter(config)
     from .training.online_study import OnlineStudy
     study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id']) if research_policy else None
     sessions = SessionEngine(SESSIONS)
@@ -346,7 +354,7 @@ def run_paper(
                         from .forecasting.config import ROOT
                         if new_config.local_release:resolve(ROOT,new_config.local_release,new_config.local_artifact_sha256)
                         account.data['model_reload_pending']=True
-                        replacement=TimestralAdapter(new_config)
+                        replacement=inference_adapter(new_config)
                         try:replacement.warmup()
                         except Exception:
                             replacement.close();raise
