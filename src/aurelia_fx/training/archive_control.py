@@ -10,6 +10,14 @@ def compare(memory,root,folder,output,check=lambda:None):
     from aurelia_fx.domain import Candle
     from aurelia_fx.forecasting.config import load_config
     manifest,data=validate_dataset(folder);cfg=load_config();first=manifest['boundaries'][1];end=manifest['source_as_of']
+    from .scope import identity
+    scope=identity(manifest)
+    if scope['symbol']!='EURUSD' or scope['profile_id']:
+        # Legacy EUR cache cannot be evidence for a different instrument/profile.
+        result=dict(**scope,status='NO_MATCHED_CONTEXTS',matched_windows=0,archived_records=0,
+            scope='Legacy EURUSD archive excluded; own prospective comparison is required',used_for_selection=False,live_model_changed=False)
+        (Path(output)/'archive-control.json').write_text(json.dumps(result,indent=2),encoding='utf8')
+        return result
     with memory.pool.connection() as c:
         records=c.execute("""SELECT DISTINCT ON(record_key) payload_json,payload_sha256 FROM project_records
             WHERE record_type='agent_forecast_cache' AND payload_json::jsonb->>'configuration'=%s

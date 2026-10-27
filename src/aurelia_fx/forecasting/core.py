@@ -17,7 +17,7 @@ def utc(value):
     return stamp.astimezone(timezone.utc)
 
 
-def prepare(rows, as_of, config):
+def prepare(rows, as_of, config, *, calendar=None):
     as_of = utc(as_of)
     candles = []
     previous = None
@@ -42,7 +42,7 @@ def prepare(rows, as_of, config):
         )
         if min(candle.open, candle.high, candle.low, candle.close) <= 0:
             raise ValueError("Preço ausente ou inválido.")
-        if candles and stamp - candles[-1].timestamp != timedelta(seconds=300):
+        if candles and (calendar.unexpected_gap(candles[-1],candle,300) if calendar else stamp - candles[-1].timestamp != timedelta(seconds=300)):
             candles.clear()  # New contiguous context after holidays/weekends/feed gaps.
         candles.append(candle)
     candles = candles[-config.context :]

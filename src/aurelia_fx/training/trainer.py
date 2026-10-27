@@ -1,4 +1,4 @@
-"""Real EURUSD head fine tuning with a frozen backbone and sealed test evaluation."""
+"""Instrument-scoped head fine tuning with a frozen backbone and sealed evaluation."""
 from datetime import datetime,timezone
 import gc
 import json
@@ -22,6 +22,8 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     folder,output,root=Path(folder),Path(output),Path(root)
     from .dataset import validate_dataset
     manifest,data=validate_dataset(folder)
+    from .scope import identity
+    scope=identity(manifest);price_unit=manifest.get('price_unit',.0001)
     source=Path(snapshot_download(SOURCE_MODEL,revision=SOURCE_REVISION,local_files_only=True,
         cache_dir=str(root/'data/training/cache'),token=False,allow_patterns=['config.json','model.safetensors','LICENSE']))
     source_hash=file_hash(source/'model.safetensors')
@@ -77,7 +79,7 @@ def train(root,folder,output,progress,check,recipe='conservative'):
         return float(np.maximum(np.asarray(levels)*error,(np.asarray(levels)-1)*error).mean())
     best=score(validation['source'],validation['target']);best_epoch=0
     best_path=output/'best-head.safetensors';save_file(initial_head,best_path)
-    history=[dict(epoch=0,validation_pinball_pips=best*10000)]
+    history=[dict(epoch=0,validation_pinball_pips=best/price_unit)]
     for p in model.head.parameters():p.requires_grad_(True)
     optimizer=torch.optim.AdamW(model.head.parameters(),lr=settings['learning_rate'],weight_decay=0)
     rng=np.random.default_rng(31)
@@ -104,7 +106,7 @@ def train(root,folder,output,progress,check,recipe='conservative'):
             optimizer.step();losses.append(float(loss.detach()))
             if offset%320==0:progress(status='TRAINING',stage='training',message='Ajustando somente a saida',epoch=epoch,epochs=settings['epochs'],completed=offset,total=len(order))
         value=score(predict_phase(validation),validation['target'])
-        history.append(dict(epoch=epoch,training_normalized_pinball=float(np.mean(losses)),validation_pinball_pips=value*10000))
+        history.append(dict(epoch=epoch,training_normalized_pinball=float(np.mean(losses)),validation_pinball_pips=value/price_unit))
         if value<best:
             best=value;best_epoch=epoch;save_file({n:t.detach().contiguous() for n,t in model.head.state_dict().items()},best_path)
         save_epoch(epoch_path,dict(epoch=epoch,head=model.head.state_dict(),optimizer=optimizer.state_dict(),
@@ -122,23 +124,23 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     sealed=dict(selected_epoch=best_epoch,selected_by='validation only',candidate_sha256=file_hash(candidate/'model.safetensors'),sealed_at=datetime.now(timezone.utc).isoformat())
     # From this point on the head is immutable. A restart evaluates this same
     # candidate; it cannot return to fitting after seeing the test period.
-    atomic_json(output/'sealed-report-seed.json',dict(dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,
+    atomic_json(output/'sealed-report-seed.json',dict(**scope,price_unit=price_unit,dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,
         source_revision=SOURCE_REVISION,sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,
         epochs=history,partitions={},prior_market_data_seen=True,backbone_unchanged=True,
         live_model_changed=False,recipe=recipe,training_settings=settings))
     atomic_json(output/'selection.json',sealed)
     progress(status='VALIDATING',stage='validation',message='Avaliando o teste cronologico apos congelar o candidato',selection=sealed)
-    report=dict(dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,source_revision=SOURCE_REVISION,
+    report=dict(**scope,price_unit=price_unit,dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,source_revision=SOURCE_REVISION,
                 sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,epochs=history,partitions={},
                 prior_market_data_seen=True,backbone_unchanged=True,live_model_changed=False,recipe=recipe,training_settings=settings)
     for phase in ('validation','test'):
         a=arrays(phase);idx=np.load(folder/(phase+'.npy'),allow_pickle=False)
         predicted=predict_phase(a);target=data[idx[:,None]+np.arange(12)[None,:],4]
         reference=data[idx-1,4];times=data[idx-1,0]+300
-        original,la=forecast_metrics(a['source'],target,reference,levels)
-        tuned,lb=forecast_metrics(predicted,target,reference,levels)
+        original,la=forecast_metrics(a['source'],target,reference,levels,price_unit=price_unit)
+        tuned,lb=forecast_metrics(predicted,target,reference,levels,price_unit=price_unit)
         constant=np.broadcast_to(reference[:,None,None],predicted.shape)
-        baseline,_=forecast_metrics(constant,target,reference,levels)
+        baseline,_=forecast_metrics(constant,target,reference,levels,price_unit=price_unit)
         for h in baseline['horizons'].values():h['direction_accuracy_pct']=None
         interval=paired_day_interval(la,lb,times)
         np.save(output/(phase+'-predictions.npy'),predicted,allow_pickle=False)

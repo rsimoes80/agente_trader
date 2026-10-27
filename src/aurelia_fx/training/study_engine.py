@@ -13,6 +13,8 @@ def main():
         folder=(root/'data/training/runs'/options['run_id']).resolve()
         if folder.parent!=root/'data/training/runs':raise ValueError('Invalid study path')
         report=json.loads((folder/'forecast-report.json').read_text());financial=json.loads((folder/'simulation-report.json').read_text())
+        from .scope import assert_same
+        assert_same(report,financial,options.get('scope',dict(symbol='EURUSD',profile_id=None)))
         if not all(report['partitions'][p]['gate']['passed'] for p in ('validation','test')) or not financial['gate']['passed']:raise ValueError('Study lacks retrospective eligibility')
         if file_hash(folder/'candidate/model.safetensors')!=report['selection']['candidate_sha256']:raise ValueError('Study checkpoint changed')
         torch.set_num_threads(1)

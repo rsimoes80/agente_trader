@@ -5,17 +5,20 @@ from uuid import uuid4
 from .repository import ACTIVE,LOCK
 from aurelia_fx.historical.core import utc
 
-def status(memory):
+def status(memory,symbol='EURUSD'):
+    from .repository import TrainingRepository
+    repo=TrainingRepository(memory,symbol)
     with memory.pool.connection() as c:
-        row=c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_automatic_training' ORDER BY recorded_at DESC LIMIT 1").fetchone()
-    if not row:return dict(enabled=True,status='WAITING_AGENT',message='Treino automatico aguarda o agente iniciado.')
+        row=c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1",(repo.record_type('agent_automatic_training'),)).fetchone()
+    if not row:
+        run=repo.latest()
+        if run['status'] in ACTIVE:
+            return dict(enabled=True,status=run['status'],run_id=run['run_id'],message='Ciclo de '+symbol+': '+run.get('message',run['status']))
+        return dict(enabled=True,status='WAITING_AGENT',message='Treino automatico aguarda dados novos do agente iniciado.')
     result=json.loads(row['payload_json'])
     if memory._encode(result)[1]!=row['payload_sha256']:raise ValueError('Automatic training state changed')
     if result.get('run_id'):
-        with memory.pool.connection() as c:
-            latest=c.execute("SELECT payload_json,payload_sha256 FROM project_records WHERE record_type='agent_training_lab_state' ORDER BY recorded_at DESC LIMIT 1").fetchone()
-        run=json.loads(latest['payload_json']) if latest else {}
-        if latest and memory._encode(run)[1]!=latest['payload_sha256']:raise ValueError('Automatic training result integrity failure')
+        run=repo.latest()
         if run.get('run_id')==result['run_id'] and run['status'] in ACTIVE:
             result={**result,'status':run['status'],'message':'Pesquisa automática: '+run.get('message',run['status'])}
         if run.get('run_id')==result['run_id'] and run['status'] not in ACTIVE:
@@ -25,7 +28,8 @@ def status(memory):
     return result
 
 def schedule(repo,agent,fetch,now=None):
-    now=utc(now or datetime.now(timezone.utc));old=status(repo.memory)
+    symbol=agent.get('symbol','EURUSD')
+    now=utc(now or datetime.now(timezone.utc));old=status(repo.memory,symbol)
     if agent.get('desired')!='running' or agent.get('mode') not in {'demo','paper'}:return repo.latest()
     if repo.latest()['status'] in ACTIVE|{'AWAITING_PROSPECTIVE'}:return repo.latest()
     if old.get('last_attempt') and now-utc(old['last_attempt'])<timedelta(hours=24):return repo.latest()
@@ -33,7 +37,9 @@ def schedule(repo,agent,fetch,now=None):
     from aurelia_fx.historical.collector import collect
     outcome={**old,'enabled':True,'last_attempt':now.isoformat()}
     try:
-        archive=HistoricalRepository(repo.memory)
+        from .scope import profile_for
+        profile=profile_for(agent)
+        archive=HistoricalRepository(repo.memory,symbol,profile=profile)
         baseline=collect(archive,fetch,days=30,full=False)
         if baseline['clock_id']!=(agent.get('history') or {}).get('clock_id'):raise ValueError('SOURCE_MISMATCH')
         previous=old.get('last_dataset_last_candle') or (repo.latest().get('dataset') or {}).get('source_as_of')
@@ -52,5 +58,6 @@ def schedule(repo,agent,fetch,now=None):
         outcome.update(status='WAITING_SOURCE',message=str(exc)[:160])
         # Transient source failures retry after 15 minutes, not a whole day.
         outcome['last_attempt']=(now-timedelta(hours=23,minutes=45)).isoformat()
-    repo.memory.record_project_data('agent_automatic_training',str(uuid4()),outcome)
+    kind='agent_automatic_training' if symbol=='EURUSD' else 'agent_automatic_training:'+symbol
+    repo.memory.record_project_data(kind,str(uuid4()),{**outcome,'symbol':symbol})
     return repo.latest()

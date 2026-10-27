@@ -101,7 +101,14 @@ class Handler(BaseHTTPRequestHandler):
             app=self.server.app
             if path=='/api/diagnostics/training':
                 from aurelia_fx.training.automatic import status as automatic_status
-                self.send(200,dict(ok=True,csrf=CSRF,state=app.training.summary(),automatic=automatic_status(app.memory)));return
+                symbol=symbol_name(args.get('symbol','EURUSD'));training=TrainingRepository(app.memory,symbol)
+                assets=[a['symbol'] for a in app.assets.list() if a.get('selected')]
+                if symbol not in assets:assets.append(symbol)
+                queue=[]
+                for name in assets:
+                    snapshot=TrainingRepository(app.memory,name).latest()
+                    queue.append(dict(symbol=name,status=snapshot['status'],run_id=snapshot.get('run_id')))
+                self.send(200,dict(ok=True,csrf=CSRF,state=training.summary(),automatic=automatic_status(app.memory,symbol),assets=assets,queue=queue));return
             if path=='/api/diagnostics/agent':
                 from aurelia_fx.learning_evolution import collection_health
                 symbol=symbol_name(args.get('symbol','EURUSD'));control=OperationControl(app.memory,symbol)
@@ -149,7 +156,8 @@ class Handler(BaseHTTPRequestHandler):
             payload=json.loads(body)
             if not isinstance(payload,dict):raise ValueError('Object required')
             if path=='/api/diagnostics/training/command':
-                state=self.server.app.training.command(payload.get('action'),self.headers.get('Idempotency-Key',''))
+                symbol=symbol_name(payload.get('symbol','EURUSD'))
+                state=TrainingRepository(self.server.app.memory,symbol).command(payload.get('action'),self.headers.get('Idempotency-Key',''))
             elif path=='/api/diagnostics/instruments/command':
                 state=self.server.app.assets.command(payload,self.headers.get('Idempotency-Key',''),inspect_remote_instrument)
             else:

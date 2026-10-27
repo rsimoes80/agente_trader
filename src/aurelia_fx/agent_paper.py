@@ -54,7 +54,14 @@ class PaperAccount:
         checkpoint=None,
         previous_account=None,
         research_mode=False,
+        profile=None,
     ):
+        self._research_profile=profile
+        if profile:profile.execution_config(float(lot))
+        self._price_unit=profile.price_unit if profile else .0001
+        self._slippage=profile.costs.slippage_price if profile else SLIPPAGE
+        self._fee_per_value_unit=profile.costs.commission_per_lot_side/profile.value_per_price_per_lot if profile else COMMISSION
+        self._limits=RiskLimits(.5,2,5,profile.max_spread_units,2,5) if profile else LIMITS
         self.validate_contract(contract)
         self.data = dict(
             version="observed-paper-v1",
@@ -62,7 +69,7 @@ class PaperAccount:
             lot=lot,
             model_id=model_id,
             clock_id=clock_id,
-            units=float(lot) * contract["contract_size"],
+            units=float(lot) * (profile.value_per_price_per_lot if profile else contract["contract_size"]),
             balance=PROTOCOL["initial_equity"],
             peak=PROTOCOL["initial_equity"],
             day_start=PROTOCOL["initial_equity"],
@@ -80,7 +87,13 @@ class PaperAccount:
             commission_assumption_per_million_side=35,
             slippage_assumption_pips=0.2,
         )
+        if profile:
+            self.data.update(symbol=profile.symbol,profile_id=profile.fingerprint,
+                research_profile=profile.as_dict(),price_unit=profile.price_unit,
+                commission_assumption_per_million_side=None,slippage_assumption_pips=self._slippage/self._price_unit)
         if checkpoint:
+            if profile and (checkpoint.get('profile_id')!=profile.fingerprint or checkpoint.get('symbol')!=profile.symbol):
+                raise ValueError('PAPER_STUDY_INSTRUMENT_MISMATCH')
             if any(
                 checkpoint.get(k) != self.data[k]
                 for k in (
@@ -125,6 +138,11 @@ class PaperAccount:
             self.data["lab_state"].setdefault("protocol_id",model_id)
 
     def validate_contract(self,contract):
+        if self._research_profile:
+            p=self._research_profile
+            if contract.get('symbol')!=p.symbol or contract.get('contract_size')!=p.contract.contract_size or contract.get('currency_profit')!=p.contract.currency_profit:
+                raise ValueError('PAPER_STUDY_CONTRACT_MISMATCH')
+            return
         if contract.get('currency_profit')!='USD' or contract.get('contract_size',0)<=0:
             raise ValueError('A conta simulada requer contrato EURUSD em USD.')
 
@@ -140,6 +158,7 @@ class PaperAccount:
             model_id=self.data["model_id"],
             **fields,
         )
+        if self._research_profile:event.update(symbol=self._research_profile.symbol,profile_id=self._research_profile.fingerprint)
         event["event_id"] = fingerprint(event)
         self.events.append(event)
         return event
@@ -152,11 +171,12 @@ class PaperAccount:
         return (
             self.data["balance"]
             + p["sign"] * (exit_price - p["entry"]) * p["units"]
-            - 2 * COMMISSION * p["units"]
+            - 2 * self._fee_per_value_unit * p["units"]
         )
 
     def mark(self, quote, *, force_close=None):
         at = utc(quote.get("observed_at", quote["at"]))
+        if self._research_profile and not self._research_profile.allows_entry(at):force_close=force_close or 'CALENDAR_CLOSE'
         previous = self.data["last_quote"]
         if previous and at < utc(previous.get("observed_at", previous["at"])):
             raise ValueError("A conta simulada não pode voltar no tempo.")
@@ -189,8 +209,8 @@ class PaperAccount:
                 else None
             )
             if reason:
-                fill = price - p["sign"] * SLIPPAGE
-                commission = 2 * COMMISSION * p["units"]
+                fill = price - p["sign"] * self._slippage
+                commission = 2 * self._fee_per_value_unit * p["units"]
                 net = p["sign"] * (fill - p["entry"]) * p["units"] - commission
                 self.data["balance"] += net
                 self.data["realized_today"] += net
@@ -222,6 +242,8 @@ class PaperAccount:
         self.data["peak"] = max(self.data["peak"], self.equity(quote))
 
     def open(self, setup, features, probability, quote, *, active_sessions, hypothesis=None):
+        if self._research_profile and setup.get('snapshot',{}).get('symbol')!=self._research_profile.symbol:
+            raise ValueError('PAPER_STUDY_INSTRUMENT_MISMATCH')
         from .entry_trend import entry_blocker
         blocker = entry_blocker(setup.get("snapshot"), setup["candidate"].side)
         if blocker:
@@ -242,7 +264,9 @@ class PaperAccount:
         self.mark(quote)
         original = setup["candidate"]
         sign = 1 if original.side == "long" else -1
-        fill = (quote["ask"] if sign == 1 else quote["bid"]) + sign * SLIPPAGE
+        if self._research_profile and not self._research_profile.allows_entry(utc(quote.get('observed_at',quote['at']))):
+            return dict(approved=False,reasons=['MARKET_CALENDAR_CLOSING'])
+        fill = (quote["ask"] if sign == 1 else quote["bid"]) + sign * self._slippage
         try:
             executable = Candidate(
                 original.side,
@@ -260,18 +284,18 @@ class PaperAccount:
             quality=DataQuality(True),
             session=setup["snapshot"]["session"][0],
             allowed_sessions=frozenset(active_sessions),
-            spread_pips=(quote["ask"] - quote["bid"]) / 0.0001,
-            pip_size=0.0001,
-            max_slippage_price=SLIPPAGE,
+            spread_pips=(quote["ask"] - quote["bid"]) / self._price_unit,
+            pip_size=self._price_unit,
+            max_slippage_price=self._slippage,
             value_per_price_unit=1,
-            commission_per_unit=2 * COMMISSION,
+            commission_per_unit=2 * self._fee_per_value_unit,
             account=AccountSnapshot(
                 equity,
                 self.data["peak"],
                 self.data["day_start"],
                 self.data["daily_entries"],
             ),
-            limits=LIMITS,
+            limits=self._limits,
             now=utc(quote.get("observed_at", quote["at"])),
             entry_is_executable=True,
             fixed_units=self.data["units"],

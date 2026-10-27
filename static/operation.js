@@ -2,6 +2,7 @@
 (() => {
   const $=id=>document.getElementById(id);
   const selectedSymbol=new URLSearchParams(location.search).get('symbol')||'EURUSD';
+  document.querySelectorAll('a[href="/treinamento"]').forEach(link=>{link.href='/treinamento?symbol='+encodeURIComponent(selectedSymbol);});
   const labels={STOPPED:"Agente parado",QUEUED:"Início solicitado",CONNECTING:"Conectando ao MT5",LOADING_HISTORY:"Preparando o histórico",ANALYZING:"Analisando o mercado",POSITION_OPEN:"Operação em andamento",PAUSE_REQUESTED:"Pausa solicitada",PAUSED:"Agente pausado",STOP_REQUESTED:"Parada solicitada",ERROR:"Aguardando recuperação",INSUFFICIENT_DATA:"Histórico insuficiente"};
   let current=null, csrf="", busy=false, pending=null, chartData=null, polling=false,lotDirty=false;
   let quotePending=false,chartStale=true;

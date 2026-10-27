@@ -8,6 +8,9 @@ def worker(repo,state):
     import psutil
     psutil.Process().nice(psutil.IDLE_PRIORITY_CLASS if os.name=='nt' else 10)
     from aurelia_fx.training.trainer import train
+    from aurelia_fx.training.scope import assert_same,identity
+    scope=identity(state)
+    assert_same(state,state['dataset'])
     run_id=state['run_id'];output=ROOT/'data/training/runs'/run_id
     progress=lambda **kw:repo.publish(run_id,**kw)
     report_path=output/'forecast-report.json'
@@ -23,7 +26,7 @@ def worker(repo,state):
     if state.get('automatic') and not all(p['gate']['passed'] for p in report['partitions'].values()):
         reasons=sorted({r for p in report['partitions'].values() for r in p['gate']['reasons']})
         decision=dict(status='NOT_APPROVED',approved=False,reasons=reasons,live_model_changed=False)
-        financial=dict(status='SKIPPED_FORECAST_PREFILTER',gate=dict(passed=False,reasons=['FORECAST_PREFILTER_FAILED']),orders_sent=0)
+        financial=dict(**scope,status='SKIPPED_FORECAST_PREFILTER',gate=dict(passed=False,reasons=['FORECAST_PREFILTER_FAILED']),orders_sent=0)
         (output/'simulation-report.json').write_text(json.dumps(financial,indent=2))
         (output/'decision.json').write_text(json.dumps(decision,indent=2))
         repo.publish(run_id,status='NOT_APPROVED',stage='decision',forecast_report=report,financial_report=financial,
@@ -45,10 +48,10 @@ def worker(repo,state):
     study_protocol=state.get('study_protocol')
     if status=='AWAITING_PROSPECTIVE' and not study_protocol:
         from datetime import datetime,timezone
-        study_protocol=dict(registered_at=datetime.now(timezone.utc).isoformat(),candidate_sha256=report['selection']['candidate_sha256'],
+        study_protocol=dict(**scope,registered_at=datetime.now(timezone.utc).isoformat(),candidate_sha256=report['selection']['candidate_sha256'],
             min_days=7,min_forecasts=200,min_closed_trades_per_arm=20,minimum_distinct_days=20,max_days=45,
             compare_active_model=True,orders_sent=0,auto_promote=True)
-        repo.memory.record_project_data('agent_model_study_protocol',run_id,study_protocol)
+        repo.memory.record_project_data(repo.record_type('agent_model_study_protocol'),run_id,study_protocol)
     (output/'decision.json').write_text(json.dumps(decision,indent=2))
     repo.publish(run_id,status=status,stage='prospective' if status=='AWAITING_PROSPECTIVE' else 'decision',total=None,completed=None,financial_report=financial,archive_control=control,decision=decision,study_protocol=study_protocol,
         message='Avaliacao concluida. Candidato nao promovido; consulte os criterios.' if reasons else 'Criterios retrospectivos atendidos. Falta validacao prospectiva independente.')
@@ -57,12 +60,13 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--worker',action='store_true');parser.add_argument('--once',action='store_true')
     parser.add_argument('--run-id',help=argparse.SUPPRESS)
+    parser.add_argument('--symbol',help='Instrument queue; omitted selects the oldest eligible asset job')
     parser.add_argument('--retry',action='store_true',help='Explicitly resume a failed run, without changing its protocol')
     parser.add_argument('--verify',action='store_true',help='Recheck sealed reports and secondary control; never retrain a completed run')
     args=parser.parse_args()
     from aurelia_fx.storage import open_memory
     from aurelia_fx.training.repository import TrainingRepository,ACTIVE,RUN_LOCK,Cancelled
-    memory=open_memory();repo=TrainingRepository(memory);state={}
+    memory=open_memory();repo=TrainingRepository(memory,args.symbol or 'EURUSD');state={}
     try:
         state=repo.latest()
         if args.worker:
@@ -73,6 +77,19 @@ def main():
         from aurelia_fx.training.runtime import sample,resource_reason,deferred,MIN_START_MB
         with memory.pool.connection() as lease:
             if not lease.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(RUN_LOCK,)).fetchone()['acquired']:return
+            if not args.symbol and not args.retry and not args.verify:
+                from aurelia_fx.training.queue import schedule_selected,choose
+                from mt5_provider import fetch_history
+                schedule_selected(memory,fetch_history)
+                symbol=choose(memory)
+                if symbol is None:
+                    from aurelia_fx.training.queue import symbols
+                    for name in symbols(memory):
+                        snapshot=TrainingRepository(memory,name).latest()
+                        sample(memory,snapshot)
+                        if snapshot.get('cancel_requested') and snapshot.get('run_id'):TrainingRepository(memory,name).finish_cancel(snapshot['run_id'])
+                    return
+                repo=TrainingRepository(memory,symbol)
             state=repo.latest()
             sample(memory,state)
             if state['status']=='FAILED' and str(state.get('message','')).startswith('RESOURCE_LIMIT'):
@@ -84,7 +101,7 @@ def main():
                 from aurelia_fx.training.automatic import schedule
                 from aurelia_fx.operation_control import OperationControl
                 from mt5_provider import fetch_history
-                state=schedule(repo,OperationControl(memory).status(),fetch_history)
+                state=schedule(repo,OperationControl(memory,repo.symbol).status(),fetch_history)
             if args.verify and state['status'] in {'NOT_APPROVED','AWAITING_PROSPECTIVE'}:
                 run_folder=ROOT/'data/training/runs'/state['run_id']
                 if not all((run_folder/name).exists() for name in ('forecast-report.json','simulation-report.json','selection.json')):
@@ -108,20 +125,31 @@ def main():
             if not state.get('dataset_directory'):
                 from aurelia_fx.training.dataset import export,export_rolling
                 repo.publish(run_id,status='DATASET',stage='dataset',message='Exportando historico congelado.')
-                exporter=export_rolling if state.get('dataset_policy')=='rolling' else export
-                folder,manifest=exporter(memory,ROOT,progress=lambda **kw:repo.publish(run_id,**kw))
+                from aurelia_fx.training.scope import profile_for
+                profile=profile_for(state)
+                if profile:
+                    from aurelia_fx.training.dataset import export_asset
+                    from mt5_provider import fetch_history
+                    folder,manifest=export_asset(memory,ROOT,profile,fetch_history,
+                        progress=lambda **kw:repo.publish(run_id,**kw),check=lambda:repo.check(run_id))
+                    if manifest['source_clock_id']!=state['source_clock_id']:raise ValueError('TRAINING_SOURCE_CLOCK_MISMATCH')
+                else:
+                    exporter=export_rolling if state.get('dataset_policy')=='rolling' else export
+                    folder,manifest=exporter(memory,ROOT,progress=lambda **kw:repo.publish(run_id,**kw))
                 state=repo.publish(run_id,dataset_directory=str(folder.relative_to(ROOT)),dataset=manifest)
             from aurelia_fx.training.protocol import register
-            protocol_id=state.get('protocol_id') or register(memory,run_id,state['dataset']['dataset_id'],state.get('training_recipe','conservative'))
+            from aurelia_fx.training.scope import identity,assert_same
+            assert_same(state,state['dataset'])
+            protocol_id=state.get('protocol_id') or register(memory,run_id,state['dataset']['dataset_id'],state.get('training_recipe','conservative'),scope=identity(state))
             if psutil.virtual_memory().available<MIN_START_MB*1024**2:
                 repo.publish(run_id,status='WAITING_RESOURCES',stage='training',protocol_id=protocol_id,
                     message='Aguardando pelo menos 384 MB de RAM livre. O agente continua independente.')
                 return
             output=ROOT/'data/training/runs'/run_id;output.mkdir(parents=True,exist_ok=True)
-            repo.publish(run_id,status='TRAINING',stage='features',protocol_id=protocol_id,retry_not_before=None,message='Iniciando ou retomando prova CPU com dados reais.')
+            repo.publish(run_id,status='TRAINING',stage='features',protocol_id=protocol_id,retry_not_before=None,completed=None,total=None,message='Iniciando ou retomando prova CPU com dados reais.')
             env={**os.environ,'HF_HOME':str(ROOT/'data/training/hf-home'),'HF_XET_CACHE':str(ROOT/'data/training/cache/xet')}
             with (output/'worker.log').open('a',encoding='utf-8') as log:
-                child=subprocess.Popen([str(ROOT/'.venv-training/Scripts/python.exe'),'-u',str(Path(__file__).resolve()),'--worker','--run-id',run_id],
+                child=subprocess.Popen([str(ROOT/'.venv-training/Scripts/python.exe'),'-u',str(Path(__file__).resolve()),'--worker','--run-id',run_id,'--symbol',repo.symbol],
                     cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             birth=psutil.Process(child.pid).create_time();started=time.monotonic();peak=0;last_runtime=0
             try:
@@ -146,7 +174,7 @@ def main():
                 if child.wait(timeout=15)!=0:raise RuntimeError('WORKER_FAILED: inspect the run worker.log')
                 sample(memory,repo.latest())
                 with memory.pool.connection() as c:
-                    previous=c.execute("SELECT MAX((payload_json::jsonb->'resources'->>'peak_process_tree_rss_mb')::float8) AS peak FROM project_records WHERE record_type='agent_training_lab_state' AND payload_json::jsonb->>'run_id'=%s",(run_id,)).fetchone()['peak'] or 0
+                    previous=c.execute("SELECT MAX((payload_json::jsonb->'resources'->>'peak_process_tree_rss_mb')::float8) AS peak FROM project_records WHERE record_type=%s AND payload_json::jsonb->>'run_id'=%s",(repo.record_type('agent_training_lab_state'),run_id)).fetchone()['peak'] or 0
                 repo.publish(run_id,resources=dict(peak_process_tree_rss_mb=max(previous,round(peak/1024**2,1)),
                     last_attempt_peak_mb=round(peak/1024**2,1),wall_seconds=round(time.monotonic()-started,2)))
             except Cancelled:

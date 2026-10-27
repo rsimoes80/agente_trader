@@ -15,12 +15,13 @@ def sample(memory, state, *, worker_rss_mb=None, elapsed_seconds=None, available
     if available_mb is None:
         import psutil
         available_mb=psutil.virtual_memory().available/1024**2
-    data=dict(at=datetime.now(timezone.utc).isoformat(),run_id=state.get('run_id'),
+    symbol=state.get('symbol','EURUSD')
+    data=dict(at=datetime.now(timezone.utc).isoformat(),run_id=state.get('run_id'),symbol=symbol,profile_id=state.get('profile_id'),
         host_role='windows_training_runner',available_mb=round(available_mb,1),
         minimum_start_mb=MIN_START_MB,minimum_free_mb=MIN_FREE_MB,maximum_worker_mb=MAX_WORKER_MB,
         maximum_seconds=MAX_SECONDS,worker_rss_mb=worker_rss_mb,elapsed_seconds=elapsed_seconds,
         shortage_mb=round(max(0,MIN_START_MB-available_mb),1))
-    memory.record_project_data('agent_training_runtime',str(uuid4()),data)
+    memory.record_project_data('agent_training_runtime' if symbol=='EURUSD' else 'agent_training_runtime:'+symbol,str(uuid4()),data)
     return data
 
 

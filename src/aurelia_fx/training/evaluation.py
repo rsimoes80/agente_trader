@@ -21,6 +21,9 @@ def evaluate(root,folder,output,progress,check):
     if file_hash(output/'candidate/model.safetensors')!=sealed['candidate_sha256']:raise ValueError('Sealed candidate changed')
     from .dataset import validate_dataset
     manifest,data=validate_dataset(folder)
+    from .scope import assert_same
+    assert_same(manifest,report)
+    price_unit=manifest.get('price_unit',.0001)
     identity=fingerprint(dict(dataset=manifest,candidate=sealed['candidate_sha256'],source=report['source_sha256'],path='public-sdk-v1'))
     progress_path=output/'public-evaluation-progress.json'
     completed=json.loads(progress_path.read_text()) if progress_path.exists() else dict(identity=identity,arrays={})
@@ -55,7 +58,7 @@ def evaluate(root,folder,output,progress,check):
                 x=np.asarray(data[batch[:,None]+np.arange(-256,0)[None,:],4],dtype=np.float32)
                 predicted[offset:offset+len(batch)]=f.forecast(x,prediction_length=12).quantiles[:,0].numpy()
                 if offset%160==0:progress(status='VALIDATING',stage='validation',message='Conferindo previsoes pelo SDK publico',partition=phase+':'+name,completed=offset,total=len(indices))
-            results[name],losses[name]=forecast_metrics(predicted,target,reference,f.quantile_levels)
+            results[name],losses[name]=forecast_metrics(predicted,target,reference,f.quantile_levels,price_unit=price_unit)
             if not saved_hash:
                 import os
                 temporary=array_path.with_suffix('.tmp')
@@ -66,7 +69,7 @@ def evaluate(root,folder,output,progress,check):
             progress(status='VALIDATING',stage='validation',partition=key,completed=len(indices),total=len(indices),
                 message='Avaliação concluída preservada',saved_checkpoint=dict(stage='validation',partition=key,completed=len(indices),total=len(indices)))
         constant=np.broadcast_to(reference[:,None,None],predicted.shape)
-        results['constant'],_=forecast_metrics(constant,target,reference,f.quantile_levels)
+        results['constant'],_=forecast_metrics(constant,target,reference,f.quantile_levels,price_unit=price_unit)
         for h in results['constant']['horizons'].values():h['direction_accuracy_pct']=None
         interval=paired_day_interval(losses['source'],losses['candidate'],data[indices-1,0]+300)
         report['partitions'][phase]=dict(**results,uncertainty=interval,gate=forecast_gate(results['source'],results['candidate'],interval))

@@ -22,13 +22,16 @@ PROTOCOL=dict(version='eurusd-head-pilot-v1',model=SOURCE_MODEL,revision=SOURCE_
     prospective_gate=dict(min_days=7,min_closed_trades_per_arm=20),
     activation='Never automatic from this pilot. All gates and independent prospective evidence required.')
 
-def register(memory,run_id,dataset_id,recipe='conservative'):
+def register(memory,run_id,dataset_id,recipe='conservative',*,scope=None):
     from datetime import datetime,timezone
     from aurelia_fx.agent_model import fingerprint
     if recipe not in RECIPES:raise ValueError('Unknown training recipe')
-    payload=dict(run_id=run_id,dataset_id=dataset_id,protocol={**PROTOCOL,**RECIPES[recipe],
+    payload=dict(**(scope or {}),run_id=run_id,dataset_id=dataset_id,protocol={**PROTOCOL,**RECIPES[recipe],
         'version':'continual-model-research-v1','activation':'automatic only after prospective comparison with source and active model',
         'prospective_gate':dict(min_days=7,min_distinct_days=20,min_closed_trades_per_arm=20,min_forecasts=200,max_days=45)},recipe=recipe)
+    if scope and scope.get('profile_id'):
+        payload['protocol'].update(version='per-instrument-head-research-v1',context_policy='calendar-closed-slots-v1',
+            targets='12 contiguous wall-clock M5 closes; no missing target bars',costs='frozen instrument profile in dataset manifest')
     key=fingerprint(payload)
     with memory.pool.connection() as c:
         row=c.execute("SELECT payload_json FROM project_records WHERE record_type='agent_training_lab_protocol' AND record_key=%s LIMIT 1",(key,)).fetchone()

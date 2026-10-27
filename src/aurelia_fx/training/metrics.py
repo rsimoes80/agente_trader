@@ -2,22 +2,23 @@
 from datetime import datetime,timezone
 
 
-def forecast_metrics(prediction,target,reference,levels):
+def forecast_metrics(prediction,target,reference,levels,*,price_unit=.0001):
     import numpy as np
     q=np.asarray(levels);p=np.asarray(prediction,dtype=np.float64);y=np.asarray(target,dtype=np.float64)
+    if not np.isfinite(price_unit) or price_unit<=0:raise ValueError('Invalid price unit')
     if p.shape!=(*y.shape,len(q)) or not np.isfinite(p).all() or not np.isfinite(y).all() or len(y)==0 or (np.diff(p,axis=-1)<0).any():raise ValueError('Invalid forecast evaluation arrays')
     median=int(np.flatnonzero(q==.5)[0]);lo=int(np.flatnonzero(q==.1)[0]);hi=int(np.flatnonzero(q==.9)[0])
     error=y[...,None]-p
     losses=np.maximum(q*error,(q-1)*error).mean(axis=(1,2))
-    result=dict(windows=len(y),mean_pinball_pips=float(losses.mean()*10000),horizons={})
+    result=dict(windows=len(y),mean_pinball_pips=float(losses.mean()/price_unit),horizons={})
     for h in (3,6,12):
         pred=p[:,h-1,median];truth=y[:,h-1]
         actual_direction=np.sign(np.where(abs(truth-reference)<1e-10,0,truth-reference))
         pred_direction=np.sign(np.where(abs(pred-reference)<1e-10,0,pred-reference))
-        result['horizons'][str(h)]=dict(mae_pips=float(abs(pred-truth).mean()*10000),
-            bias_pips=float((pred-truth).mean()*10000),direction_accuracy_pct=float((actual_direction==pred_direction).mean()*100),
+        result['horizons'][str(h)]=dict(mae_pips=float(abs(pred-truth).mean()/price_unit),
+            bias_pips=float((pred-truth).mean()/price_unit),direction_accuracy_pct=float((actual_direction==pred_direction).mean()*100),
             coverage_10_90_pct=float(((truth>=p[:,h-1,lo])&(truth<=p[:,h-1,hi])).mean()*100),
-            interval_width_pips=float((p[:,h-1,hi]-p[:,h-1,lo]).mean()*10000))
+            interval_width_pips=float((p[:,h-1,hi]-p[:,h-1,lo]).mean()/price_unit))
     return result,losses
 
 

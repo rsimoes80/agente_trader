@@ -205,6 +205,10 @@ opcionais `History` e `Timestral` para operar o agente principal.
 - `/`, `/mercado`, `/diagnostico` e `/treinamento` acessíveis na nova VM.
 - Backup executável e arquivos locais dos modelos incluídos na política de cópia.
 
+O treinamento por ativo também requer a pasta `data/training`, incluindo datasets,
+checkpoints, releases e `active/<symbol>/<profile_id>.json`. O GitHub não contém
+os pesos ajustados. Consulte [treinamento por ativo](TREINAMENTO_POR_ATIVO.md).
+
 Uma mudança de conta, fonte ou modelo pode exigir novo preparo e contexto;
 preservar o banco não garante retomar qualquer sessão em outra conta.
 

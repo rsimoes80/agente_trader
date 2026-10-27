@@ -33,10 +33,9 @@ def inference_adapter(config):
 
 
 def profile_config(config,profile):
-    if profile and config.local_release:
-        from dataclasses import replace
-        # A global EURUSD release is not evidence for another instrument.
-        return replace(config,local_release='',local_artifact_sha256='')
+    if profile:
+        from .training.releases import load_asset_config
+        return load_asset_config(config,profile)
     return config
 
 
@@ -332,7 +331,7 @@ def run_paper(
         )
     adapter = inference_adapter(config)
     from .training.online_study import OnlineStudy
-    study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id']) if research_policy and not profile else None
+    study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id'],profile=profile) if research_policy else None
     sessions = SessionEngine(profile.session_windows() if profile else SESSIONS)
     last_persist = 0
     last_history_refresh = 0
@@ -473,9 +472,9 @@ def run_paper(
                     )
                     if study and study.run:
                         try:
-                            study_context=prepare(session.history,utc(latest['timestamp'])+timedelta(minutes=5),config)
+                            study_context=prepare(session.history,utc(latest['timestamp'])+timedelta(minutes=5),config,**(dict(calendar=profile.calendar) if profile else {}))
                             study.observe(study_context,closed,quote,adapter,setup=setup if not history_block and age<=90 and age>=0 else None,
-                                quote_fetch=lambda:observed_quote(fetch('EURUSD','M5',100,include_current=True),clock_id=account.data['clock_id']))
+                                quote_fetch=lambda:observed_quote(fetch(symbol,'M5',100,include_current=True),clock_id=account.data['clock_id'],**(dict(symbol=symbol) if profile else {})))
                         except (RuntimeError,ValueError,KeyError,OSError) as exc:
                             account.data['lab_state'].setdefault('model_study',{})['error']=type(exc).__name__
                             study.close()
@@ -485,6 +484,7 @@ def run_paper(
                             session.history,
                             utc(latest["timestamp"]) + timedelta(minutes=5),
                             config,
+                            **(dict(calendar=profile.calendar) if profile else {}),
                         )
                         _, output = cached_forecast(
                             control.memory, context, config, adapter,**(dict(profile=profile) if profile else {})
@@ -581,7 +581,7 @@ def run_paper(
                                     )
                                     account.events = before_events
                                     if study:
-                                        study.close();study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id'])
+                                        study.close();study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id'],profile=profile)
                                     continue
                             else:
                                 decision["reason"] = (
@@ -603,7 +603,7 @@ def run_paper(
                             source=account.data['clock_id'], model=config.fingerprint,
                             forecast=lambda: output if output is not None else cached_forecast(
                                 control.memory,
-                                prepare(session.history, utc(latest['timestamp'])+timedelta(minutes=5), config),
+                                prepare(session.history, utc(latest['timestamp'])+timedelta(minutes=5), config,**(dict(calendar=profile.calendar) if profile else {})),
                                 config, adapter,**(dict(profile=profile) if profile else {}))[1],
                         )
                     account.data["last_candle"] = latest["timestamp"]

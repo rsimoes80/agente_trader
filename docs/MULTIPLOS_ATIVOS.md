@@ -38,11 +38,11 @@ ativo não inicia automaticamente uma sessão. Sessões em execução são retom
 pelo supervisor após reinício, com reconciliação e sem prazo arbitrário de expiração.
 O XAUUSD integrado opera exclusivamente na conta demo, assim como o escopo autorizado.
 
-**Limitação remanescente:** treinamento e promoção de pesos próprios do Timestral
-para cada ativo ainda não estão integrados. O XAUUSD utiliza a base pré-treinada e
-aprendizado de experiências/hipóteses separado; o ajuste global legado dos pesos
-do EURUSD é desconsiderado por esse perfil. Aprender resultados não equivale a
-retreinar automaticamente o modelo neural.
+O retreinamento por ativo está integrado ao laboratório: dados, checkpoints,
+resultados, validação futura e releases do XAUUSD são separados dos registros
+legados do EURUSD. O ajuste continua limitado à saída do Timestral-5M em CPU;
+a base de inferência atual não é substituída por concluir um treino. Consulte
+[treinamento por ativo](TREINAMENTO_POR_ATIVO.md) para o fluxo e os critérios.
 
 ### Conferência da ativação
 

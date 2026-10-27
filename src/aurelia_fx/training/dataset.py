@@ -18,31 +18,45 @@ def validate_dataset(folder):
     import numpy as np
     from .proof import file_hash
     folder=Path(folder);manifest=json.loads((folder/'manifest.json').read_text())
+    from .scope import identity
+    identity(manifest)
     identity={k:v for k,v in manifest.items() if k not in {'dataset_id','array_sha256'}}
     if fingerprint(identity)!=manifest['dataset_id']:raise ValueError('Dataset manifest changed')
     if file_hash(folder/'candles.npy')!=manifest['array_sha256']:raise ValueError('Dataset prices changed')
     data=np.load(folder/'candles.npy',mmap_mode='r',allow_pickle=False)
-    expected,boundaries,excluded=split_windows(data[:,0],first_label=manifest['first_label_at'],end=manifest['source_as_of'],reserved=manifest.get('reserved_intervals',()))
+    from .scope import profile_for
+    profile=profile_for(manifest)
+    calendar=profile.calendar if profile and manifest.get('context_policy')=='calendar-closed-slots-v1' else None
+    expected,boundaries,excluded=split_windows(data[:,0],first_label=manifest['first_label_at'],end=manifest['source_as_of'],reserved=manifest.get('reserved_intervals',()),calendar=calendar)
     for phase,indices in expected.items():
         if not np.array_equal(indices,np.load(folder/(phase+'.npy'),allow_pickle=False)):raise ValueError('Dataset target partition changed')
     if manifest['counts']!={k:len(v) for k,v in expected.items()}:raise ValueError('Dataset counts changed')
     return manifest,data
 
 
-def split_windows(stamps,*,first_label,end,context=CONTEXT,horizon=HORIZON,stride=STRIDE,reserved=()):
+def split_windows(stamps,*,first_label,end,context=CONTEXT,horizon=HORIZON,stride=STRIDE,reserved=(),calendar=None):
     import numpy as np
     stamps=np.asarray(stamps,dtype=np.int64)
     if len(stamps)<context+horizon or (np.diff(stamps)<=0).any():raise ValueError('Insufficient or unordered data')
     first,end=int(utc(first_label).timestamp()),int(utc(end).timestamp())
     boundaries=[first+int((end-first)*f) for f in (.70,.85)]
     gaps=np.r_[0,np.cumsum(np.diff(stamps)!=300)]
+    context_gaps=gaps
+    if calendar:
+        from types import SimpleNamespace
+        bad=np.diff(stamps)!=300
+        for index in np.flatnonzero(bad):
+            prior=SimpleNamespace(timestamp=datetime.fromtimestamp(int(stamps[index]),timezone.utc))
+            current=SimpleNamespace(timestamp=datetime.fromtimestamp(int(stamps[index+1]),timezone.utc))
+            bad[index]=calendar.unexpected_gap(prior,current,300)
+        context_gaps=np.r_[0,np.cumsum(bad)]
     result={k:[] for k in ('train','validation','test')};excluded={'gap':0,'cross_boundary':0,'outside':0}
     for i in range(context,len(stamps)-horizon+1,stride):
         if any(stamps[i-context]<utc(b).timestamp() and stamps[i+horizon-1]+300>utc(a).timestamp() for a,b in reserved):
             excluded['reserved']=excluded.get('reserved',0)+1;continue
         if stamps[i]<first or stamps[i+horizon-1]+300>end:
             excluded['outside']+=1;continue
-        if gaps[i+horizon-1]!=gaps[i-context]:
+        if context_gaps[i-1]!=context_gaps[i-context] or gaps[i+horizon-1]!=gaps[i-1]:
             excluded['gap']+=1;continue
         phase='train' if stamps[i]<boundaries[0] else 'validation' if stamps[i]<boundaries[1] else 'test'
         upper=boundaries[0] if phase=='train' else boundaries[1] if phase=='validation' else end
@@ -102,6 +116,50 @@ def export(memory,root,progress=lambda **kw:None):
     manifest['array_sha256']=hashlib.sha256((folder/'candles.npy').read_bytes()).hexdigest()
     (folder/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     memory.record_project_data('agent_timestral_training_dataset',manifest['dataset_id'],manifest)
+    return folder,manifest
+
+
+def export_asset(memory,root,profile,fetch,progress=lambda **kw:None,check=lambda:None):
+    """Freeze up to one year of native M5; never replace the operational baseline."""
+    import numpy as np
+    from aurelia_fx.source_clock import validate_source_clock
+    from .scope import identity
+    now=datetime.now(timezone.utc);start=now-timedelta(days=365)
+    archive=HistoricalRepository(memory,profile.symbol,profile=profile)
+    progress(stage='dataset',message='Capturando até 365 dias M5 de '+profile.symbol+' para treino separado.')
+    check();payload=fetch(profile.symbol,'M5',100_000,include_current=False)
+    clock=validate_source_clock(payload,datetime.now(timezone.utc))
+    if payload.get('symbol')!=profile.symbol or payload.get('timeframe')!='M5' or payload.get('pip_size')!=profile.price_unit:
+        raise ValueError('TRAINING_HISTORY_INSTRUMENT_MISMATCH')
+    rows=closed_rows(payload['candles'],'M5',start=start,as_of=now)
+    if any(r.get('symbol',profile.symbol)!=profile.symbol for r in rows):raise ValueError('TRAINING_CANDLE_INSTRUMENT_MISMATCH')
+    for offset in range(0,len(rows),1000):
+        check();archive.ingest(rows[offset:offset+1000],clock=clock,timeframe='M5')
+        progress(stage='dataset',message='Histórico próprio salvo no PostgreSQL.',completed=min(offset+1000,len(rows)),total=len(rows))
+    known=datetime.now(timezone.utc)
+    rows=closed_rows(archive.candles(clock_id=clock['clock_id'],timeframe='M5',start=start,as_of=now,known_by=known),'M5',start=start,as_of=now)
+    if not rows:raise ValueError('TRAINING_HISTORY_EMPTY')
+    first=utc(rows[0]['timestamp'])+timedelta(days=10)
+    array=np.asarray([[utc(r['timestamp']).timestamp(),*[r[k] for k in ('open','high','low','close','volume')],r.get('spread_pips') if r.get('spread_pips') is not None else float('nan')] for r in rows],dtype=np.float64)
+    splits,bounds,excluded=split_windows(array[:,0],first_label=first,end=now,calendar=profile.calendar)
+    if any(len(v)<200 for v in splits.values()):raise ValueError('ASSET_TRAINING_WINDOWS_INSUFFICIENT')
+    manifest=dict(version='instrument-rolling-v1',symbol=profile.symbol,profile_id=profile.fingerprint,
+        research_profile=profile.as_dict(),price_unit=profile.price_unit,source_run='automatic-per-asset',
+        context_policy='calendar-closed-slots-v1',target_policy='12 wall-clock M5 closes; no gaps or calendar breaks in targets',
+        source_clock_id=clock['clock_id'],known_by=known.isoformat(),source_as_of=now.isoformat(),
+        source_start=utc(rows[0]['timestamp']).isoformat(),first_label_at=first.isoformat(),
+        boundaries=[datetime.fromtimestamp(t,timezone.utc).isoformat() for t in bounds],
+        source_candles_sha256=fingerprint(rows),context=CONTEXT,horizon=HORIZON,stride=STRIDE,
+        candles=len(array),counts={k:len(v) for k,v in splits.items()},excluded=excluded,reserved_intervals=[],
+        prior_market_data_seen=True,split='70/15/15 chronological; gaps excluded; independent prospective evidence required',
+        columns=['timestamp','open','high','low','close','volume','spread_pips'],lot=.01,contract=profile.contract.as_dict())
+    identity(manifest);manifest['dataset_id']=fingerprint(manifest)
+    folder=Path(root)/'data/training/datasets'/manifest['dataset_id'];folder.mkdir(parents=True,exist_ok=True)
+    np.save(folder/'candles.npy',array,allow_pickle=False)
+    for name,indices in splits.items():np.save(folder/(name+'.npy'),indices,allow_pickle=False)
+    manifest['array_sha256']=hashlib.sha256((folder/'candles.npy').read_bytes()).hexdigest()
+    (folder/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')
+    memory.record_project_data(profile.record_type('agent_timestral_training_dataset'),manifest['dataset_id'],manifest)
     return folder,manifest
 
 def export_rolling(memory,root,progress=lambda **kw:None):
