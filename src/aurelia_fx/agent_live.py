@@ -16,7 +16,8 @@ from .agent_research import SESSIONS, cached_forecast, intelligence_session
 from .agent_strategy import attach_forecast, propose_pullback
 from .entry_trend import POLICY_ID
 from .autonomous_lab import REGIME_HASH
-from .forecasting.adapter import TimestralAdapter
+from .forecasting.adapter import ModelUnavailable, TimestralAdapter
+from .forecasting import health as forecast_health
 from .forecasting.core import prepare
 from .historical.core import closed_rows, readiness, utc
 from .operation_control import LOCK
@@ -277,8 +278,16 @@ def run_paper(
     from .training.visibility import select_model,use_result
     select_model(account,config,symbol=symbol,profile_id=profile.fingerprint if profile else None,worker_id=worker_id)
     control.publish(session_id,expected_generation=state.get('generation'),model_runtime=account.data['model_runtime'])
+    def health_owner():
+        return account.data.get('lab_state',{}).get('continual',account.data)
     def forecast_context(context):
-        key,result=cached_forecast(control.memory,context,config,adapter,**(dict(profile=profile) if profile else {}))
+        try:
+            key,result=cached_forecast(control.memory,context,config,adapter,**(dict(profile=profile) if profile else {}))
+        except ModelUnavailable as exc:
+            forecast_health.failure(health_owner(),exc,configuration=config.fingerprint)
+            raise
+        forecast_health.success(health_owner(),result,configuration=config.fingerprint,
+            source=(result.get('execution_evidence') or {}).get('source','engine'))
         use_result(account,config,result)
         return key,result
     session = intelligence_session(**(dict(profile=profile) if profile else {}))
@@ -348,6 +357,16 @@ def run_paper(
             warmup_only=index < len(rows) - 1,
         )
     adapter = inference_adapter(config)
+    probe=forecast_health.ForecastProbe(adapter.forecast)
+    health_owner().setdefault('forecast_health',{}).update(status='CHECKING',configuration=config.fingerprint,worker_id=worker_id)
+    def request_probe(closed,latest):
+        try:
+            context=prepare(closed,utc(latest['timestamp'])+timedelta(minutes=5),config,
+                **(dict(calendar=profile.calendar) if profile else {}))
+            if probe.request([c.close for c in context],configuration=config.fingerprint,signal_at=latest['timestamp']):
+                health_owner().setdefault('forecast_health',{}).update(status='CHECKING',probe_started_at=datetime.now(timezone.utc).isoformat())
+        except ValueError:
+            health_owner().setdefault('forecast_health',{}).update(status='WAITING_DATA')
     from .training.online_study import OnlineStudy
     study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id'],profile=profile) if research_policy else None
     sessions = SessionEngine(profile.session_windows() if profile else SESSIONS)
@@ -368,6 +387,12 @@ def run_paper(
                     quote,
                     force_close=forced_exit(current,quote,profile),
                 )
+                checked=probe.poll()
+                if checked and checked['configuration']==config.fingerprint:
+                    if checked['error'] is not None:
+                        forecast_health.failure(health_owner(),checked['error'],configuration=config.fingerprint)
+                    else:
+                        forecast_health.success(health_owner(),checked['output'],configuration=config.fingerprint,source='healthcheck')
                 if study:
                     try:study.tick(quote,stop=current['desired']!='running')
                     except (RuntimeError,ValueError,KeyError,OSError) as exc:
@@ -393,7 +418,9 @@ def run_paper(
                         try:replacement.warmup()
                         except Exception:
                             replacement.close();raise
-                        adapter.close();adapter=replacement;config=new_config
+                        probe.close();adapter.close();adapter=replacement;config=new_config
+                        probe=forecast_health.ForecastProbe(adapter.forecast)
+                        health_owner().setdefault('forecast_health',{}).update(status='CHECKING',configuration=config.fingerprint)
                         select_model(account,config,symbol=symbol,profile_id=profile.fingerprint if profile else None,worker_id=worker_id)
                         account.data['model_reload_pending']=False
                         learning=account.data['lab_state']['continual']
@@ -429,6 +456,8 @@ def run_paper(
                     as_of=utc(quote["at"]),
                 )
                 latest = closed[-1] if closed else None
+                if latest and not history_block and probe.next_at==0:
+                    request_probe(closed,latest)
                 decision = None
                 if latest and latest["timestamp"] != account.data["last_candle"]:
                     if (
@@ -489,7 +518,7 @@ def run_paper(
                         entry_policy=POLICY_ID,
                         trend_context={role:snapshot.as_dict().get(role) for role in ('macro_trend','context_trend')},
                     )
-                    if study and study.run:
+                    if study and study.run and not probe.busy and health_owner().get('forecast_health',{}).get('status')=='AVAILABLE':
                         try:
                             study_context=prepare(session.history,utc(latest['timestamp'])+timedelta(minutes=5),config,**(dict(calendar=profile.calendar) if profile else {}))
                             study.observe(study_context,closed,quote,adapter,setup=setup if not history_block and age<=90 and age>=0 else None,
@@ -498,6 +527,9 @@ def run_paper(
                             account.data['lab_state'].setdefault('model_study',{})['error']=type(exc).__name__
                             study.close()
                     output = None
+                    if setup and (probe.busy or health_owner().get('forecast_health',{}).get('status')!='AVAILABLE'):
+                        reason='TIMESTRAL_CHECKING' if probe.busy else 'TIMESTRAL_UNAVAILABLE'
+                        decision.update(action='WAIT',reason=reason)
                     if setup and (not reason or (research_policy and reason=='POSITION_ALREADY_OPEN')):
                         context = prepare(
                             session.history,
@@ -505,7 +537,8 @@ def run_paper(
                             config,
                             **(dict(calendar=profile.calendar) if profile else {}),
                         )
-                        _, output = forecast_context(context)
+                        output = forecast_health.forecast_or_wait(forecast_context,context,decision)
+                    if output is not None:
                         features = attach_forecast(setup, output)
                         if research_policy:
                             continual.consider(account.data['lab_state'],setup,features,history=session.history)
@@ -616,7 +649,8 @@ def run_paper(
                             session.history, session.aggregator.history['D1'],
                             at=utc(quote['at']),
                             ready=not history_block and not expired
-                                and not account.data.get('model_reload_pending') and 0 <= age <= 90,
+                                and not account.data.get('model_reload_pending') and not probe.busy
+                                and health_owner().get('forecast_health',{}).get('status')=='AVAILABLE' and 0 <= age <= 90,
                             source=account.data['clock_id'], model=config.fingerprint,
                             forecast=lambda: output if output is not None else forecast_context(
                                 prepare(session.history, utc(latest['timestamp'])+timedelta(minutes=5), config,**(dict(calendar=profile.calendar) if profile else {})),
@@ -635,6 +669,11 @@ def run_paper(
                         candles=closed[-100:],
                         clock_id=account.data['clock_id'],
                     )
+                # Probe only after broker decisions. It runs in the background;
+                # existing positions and heartbeats keep being managed while a
+                # cold model loads. It never authorizes an entry.
+                if latest and not history_block and not account.data.get('model_reload_pending'):
+                    request_probe(closed,latest)
                 if account.events or decision or time.monotonic() - last_persist >= 10:
                     view = dict(last_decision=decision) if decision else {}
                     if expired or history_block:
@@ -650,6 +689,11 @@ def run_paper(
                     ):
                         return
                     last_persist = time.monotonic()
+            except ModelUnavailable as exc:
+                forecast_health.failure(health_owner(),exc,configuration=config.fingerprint)
+                commit(control,account,worker_id,generation=current.get('generation'),
+                    message='Timestral temporariamente indisponível; nova tentativa automática. '
+                    'Cotações e posições existentes continuam em acompanhamento.')
             except (RuntimeError, ValueError, KeyError, OSError) as exc:
                 control.publish(
                     session_id,
@@ -660,5 +704,6 @@ def run_paper(
                 )
             stop.wait(3)
     finally:
+        probe.close()
         adapter.close()
         if study:study.close()

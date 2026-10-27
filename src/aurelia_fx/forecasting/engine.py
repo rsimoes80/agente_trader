@@ -12,11 +12,16 @@ from .config import SDK_REVISION, TimestralConfig
 
 
 def engine_main():
+    def progress(phase):
+        print(json.dumps(dict(progress=True,phase=phase)),flush=True)
     try:
+        progress('IMPORTING_NUMPY')
         import numpy as np
+        progress('IMPORTING_TORCH')
         import torch
+        progress('IMPORTING_SDK')
         from huggingface_hub import snapshot_download
-        from timestral import TimestralForecaster
+        from .loading import load_forecaster
 
         options = json.loads(sys.stdin.readline())
         options["horizons"] = tuple(options["horizons"])
@@ -30,6 +35,7 @@ def engine_main():
         )
         if config.device == "cuda" and device != "cuda" and not config.cpu_fallback:
             raise RuntimeError("CUDA indisponível e fallback CPU desabilitado.")
+        progress('RESOLVING_ARTIFACT')
         if config.local_release:
             from aurelia_fx.training.releases import resolve
             directory=resolve(Path(__file__).resolve().parents[3],config.local_release,config.local_artifact_sha256)
@@ -43,10 +49,12 @@ def engine_main():
             )
         )
         weights = directory / "model.safetensors"
+        progress('VERIFYING_ARTIFACT')
         with weights.open("rb") as handle:
             artifact = hashlib.file_digest(handle, "sha256").hexdigest()
+        progress('LOADING_WEIGHTS')
         try:
-            model = TimestralForecaster.from_pretrained(
+            model = load_forecaster(
                 directory, device=device, max_context=config.context
             )
         except torch.cuda.OutOfMemoryError:
@@ -54,7 +62,7 @@ def engine_main():
                 raise
             torch.cuda.empty_cache()
             device = "cpu"
-            model = TimestralForecaster.from_pretrained(
+            model = load_forecaster(
                 directory, device=device, max_context=config.context
             )
         metadata = dict(

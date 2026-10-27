@@ -129,9 +129,15 @@ def observe(parent, snapshot, history, daily_history, *, at, ready, source, mode
     features = setup['features']
     try:
         features = attach_forecast(setup, forecast())
+        state['forecast_status']='AVAILABLE'
+        state['last_forecast_success_at']=utc(at).isoformat()
     except (RuntimeError, ValueError, KeyError, OSError) as exc:
         state['forecast_errors'] += 1
         state['last_forecast_error'] = type(exc).__name__
+        from .forecasting.health import failure
+        details=failure(state,exc,configuration=model,now=utc(at))
+        state['forecast_status']='UNAVAILABLE'
+        state['last_forecast_failure']=details
     consider(parent, setup, features)
 
 
@@ -142,5 +148,8 @@ def summary(parent):
     return {**{k: state[k] for k in ('version', 'registered_at', 'candidates', 'submitted',
         'busy', 'closed', 'censored', 'rejected', 'net_pnl', 'wins', 'policy_blocks', 'forecast_errors')},
         **(dict(symbol=state['symbol'],profile_id=state['profile_id']) if state.get('profile_id') else {}),
+        'forecast_status':state.get('forecast_status','UNVERIFIED'),
+        'last_forecast_success_at':state.get('last_forecast_success_at'),
+        'last_forecast_failure':state.get('last_forecast_failure'),
         'hypothesis_review': hypothesis_review.summary(state),
         'scope': 'exploratory_shadow_not_broker', 'automatic_activation': False}

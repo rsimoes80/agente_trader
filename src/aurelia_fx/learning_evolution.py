@@ -132,8 +132,16 @@ def collection_health(state, worker, now=None):
             result['message'] = 'Coleta recente. Aguardar um gatilho não representa falha do agente.'
     learning = (state.get('autonomy') or {}).get('continual') or {}
     exploration = learning.get('exploratory') or {}
-    if exploration.get('forecast_errors'):
-        result['alerts'].append('Houve falhas de previsão na pesquisa exploratória. Nessas amostras, Timestral foi marcado como ausente.')
+    forecast=learning.get('forecast_health') or {}
+    if forecast.get('worker_id') and forecast['worker_id']!=(worker.get('heartbeat') or {}).get('worker_id'):
+        forecast={'status':'UNVERIFIED'}
+    if forecast.get('status') in {'UNAVAILABLE','WAITING_RESOURCES','CACHE_ONLY'}:
+        fault=forecast.get('current_failure') or {}
+        result['alerts'].append('Timestral: '+fault.get('message','Disponibilidade do processo ainda não confirmada.')+
+            (' Código: '+fault['code']+'.' if fault.get('code') else ''))
+        if result['status']=='OK':result['status']='WARNING'
+    elif not forecast and exploration.get('forecast_errors'):
+        result['alerts'].append(f"Há {exploration['forecast_errors']} falhas históricas de previsão neste ativo. A disponibilidade atual do Timestral ainda não foi verificada.")
     if learning.get('censored', 0) or exploration.get('censored', 0):
         result['alerts'].append('Há simulações excluídas por dados incompletos. Elas não contam como ganho ou perda.')
     return result

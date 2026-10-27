@@ -15,7 +15,11 @@ from .config import ROOT
 
 
 class ModelUnavailable(RuntimeError):
-    pass
+    def __init__(self, message, *, code='MODEL_UNAVAILABLE', phase=None, details=None, retry_seconds=30):
+        super().__init__(message)
+        self.code, self.phase = code, phase
+        self.details = details or {}
+        self.retry_seconds = retry_seconds
 
 
 class TimestralAdapter:
@@ -25,6 +29,10 @@ class TimestralAdapter:
         self._birth = None
         self.responses = queue.Queue()
         self.lock = threading.Lock()
+        self.phase = 'NOT_STARTED'
+        self.retry_at = 0.
+        self.last_failure = None
+        self.cold = True
 
     def close(self):
         process, self.process = self.process, None
@@ -63,25 +71,40 @@ class TimestralAdapter:
             try:
                 parent=psutil.Process(self.process.pid)
                 if self._birth is not None and parent.create_time()!=self._birth:
-                    self.close();raise ModelUnavailable('Processo Timestral mudou de identidade.')
+                    self.close();raise ModelUnavailable('Processo Timestral mudou de identidade.',code='PROCESS_IDENTITY_CHANGED',phase=self.phase)
                 rss=sum(p.memory_info().rss for p in [parent,*parent.children(recursive=True)] if p.is_running())
-                if psutil.virtual_memory().available<128*1024**2:
-                    self.close();raise ModelUnavailable('Timestral aguarda memoria livre; processo isolado encerrado.')
+                available=psutil.virtual_memory().available
+                if available<128*1024**2:
+                    self.close();raise ModelUnavailable('Timestral aguarda memória livre; nova tentativa automática.',
+                        code='WAITING_RESOURCES',phase=self.phase,retry_seconds=60,
+                        details=dict(available_mb=round(available/1024**2),minimum_available_mb=128,rss_mb=round(rss/1024**2)))
                 if rss > self.config.memory_mb * 1024**2:
                     self.close()
-                    raise ModelUnavailable("Timestral excedeu limite de memória.")
+                    raise ModelUnavailable("Timestral excedeu limite de memória.",code='MEMORY_LIMIT',phase=self.phase,
+                        details=dict(rss_mb=round(rss/1024**2),limit_mb=self.config.memory_mb),retry_seconds=60)
             except psutil.NoSuchProcess:
-                raise ModelUnavailable("Processo Timestral encerrou.") from None
+                raise ModelUnavailable("Processo Timestral encerrou.",code='ENGINE_EXITED',phase=self.phase) from None
             try:
-                return self.responses.get(
+                response=self.responses.get(
                     timeout=min(0.1, max(0.001, deadline - time.monotonic()))
                 )
+                if response.get('progress'):
+                    self.phase=response.get('phase','LOADING')
+                    continue
+                return response
             except queue.Empty:
                 pass
         self.close()
-        raise ModelUnavailable("Timeout Timestral; processo isolado encerrado.")
+        raise ModelUnavailable("Timeout Timestral; nova tentativa automática.",code='LOAD_TIMEOUT' if self.phase!='INFERENCE' else 'INFERENCE_TIMEOUT',
+            phase=self.phase,details=dict(timeout_seconds=timeout))
 
     def _start(self):
+        if time.monotonic()<self.retry_at:
+            previous=self.last_failure
+            raise ModelUnavailable('Timestral aguardando a próxima tentativa automática.',
+                code=previous.code if previous else 'RETRY_PENDING',phase=self.phase,
+                details={**(previous.details if previous else {}),'retry_pending':True},
+                retry_seconds=max(1,round(self.retry_at-time.monotonic())))
         if self.process is not None and self.process.poll() is None:
             return
         self.close()
@@ -91,7 +114,7 @@ class TimestralAdapter:
             / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         )
         if not Path(python).is_file():
-            raise ModelUnavailable("Ambiente Timestral não instalado.")
+            raise ModelUnavailable("Ambiente Timestral não instalado.",code='ENVIRONMENT_MISSING',phase='STARTING')
         env = dict(
             os.environ,
             PYTHONIOENCODING="utf-8",
@@ -121,12 +144,16 @@ class TimestralAdapter:
         ).start()
         self.process.stdin.write(json.dumps(self._options()) + "\n")
         self.process.stdin.flush()
+        self.phase='STARTING'
         ready = self._wait(self.config.load_timeout_seconds)
         if not ready.get("ready"):
             self.close()
             raise ModelUnavailable(
-                "Falha no carregamento Timestral: " + ready.get("error_type", "unknown")
+                "Falha no carregamento Timestral: " + ready.get("error_type", "unknown"),
+                code='LOAD_FAILED',phase=self.phase,details=dict(engine_error=ready.get('error_type','unknown'))
             )
+        self.phase='READY'
+        self.cold=True
 
     def _command(self,python):return [python,'-u',str(ROOT/'run_timestral.py'),'--engine']
     def _options(self):return asdict(self.config)
@@ -155,15 +182,26 @@ class TimestralAdapter:
                 self._start()
                 self.process.stdin.write(json.dumps(request, allow_nan=False) + "\n")
                 self.process.stdin.flush()
-                result = self._wait(self.config.timeout_seconds)
+                self.phase='INFERENCE'
+                # Mapped weights are faulted into RAM on their first forward
+                # pass. Use the bounded loading budget for that warm-up only.
+                result = self._wait(max(self.config.timeout_seconds,self.config.load_timeout_seconds)
+                    if self.cold else self.config.timeout_seconds)
                 if not result.get("ok"):
                     raise ModelUnavailable(
                         "Inferência Timestral indisponível: "
-                        + result.get("error_type", "unknown")
+                        + result.get("error_type", "unknown"),code='INFERENCE_FAILED',phase=self.phase,
+                        details=dict(engine_error=result.get('error_type','unknown'))
                     )
+                self.phase='READY';self.retry_at=0.;self.last_failure=None;self.cold=False
                 return result
             except (OSError, ValueError, ModelUnavailable) as exc:
                 self.close()
                 if isinstance(exc, ModelUnavailable):
+                    if not exc.details.get('retry_pending'):
+                        self.retry_at=time.monotonic()+exc.retry_seconds;self.last_failure=exc
                     raise
-                raise ModelUnavailable("Falha no processo local Timestral.") from None
+                failure=ModelUnavailable("Falha no processo local Timestral.",code='PROCESS_IO_ERROR',phase=self.phase,
+                    details=dict(error_type=type(exc).__name__))
+                self.retry_at=time.monotonic()+failure.retry_seconds;self.last_failure=failure
+                raise failure from None

@@ -324,6 +324,7 @@ def summary(lab):
         min_days=7,min_trades=20,censored=state.get('censored',0),suspended_contexts=len(state.get('suspended',{})),
         hypothesis_review=hypothesis_review.summary(state),
         exploratory=exploratory_learning.summary(state),
+        forecast_health=state.get('forecast_health'),
         fibonacci=fibonacci_summary(state),
         evolution=evolution_summary(state, VARIANTS),
         model_study={k:study.get(k) for k in ('run_id','registered_at','forecast_count','status','closed','error')} if study else None)
