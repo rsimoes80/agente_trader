@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from aurelia_fx.forecasting.adapter import ModelUnavailable, TimestralAdapter
 from aurelia_fx.forecasting.config import TimestralConfig
-from aurelia_fx.forecasting.health import ForecastProbe, failure, success, forecast_or_wait
+from aurelia_fx.forecasting.health import ForecastProbe, failure, success, forecast_or_wait, consume_probe
 from aurelia_fx.learning_evolution import collection_health
 
 
@@ -98,6 +98,32 @@ class ForecastHealthTests(unittest.TestCase):
         with patch.object(a,'_start'),patch.object(a,'_wait',return_value={'ok':True}) as wait:
             a.forecast([1.]*64);a.forecast([1.]*64)
         self.assertEqual([args.args[0] for args in wait.call_args_list],[180,45])
+
+    def test_owner_consumes_only_results_for_the_current_configuration(self):
+        state={};probe=MagicMock()
+        result=dict(configuration='old',error=None,output={'model':'old'})
+        probe.poll.return_value=result
+        self.assertFalse(consume_probe(state,probe,configuration='current'));self.assertEqual(state,{})
+        result.update(configuration='current',output={'model':'current'})
+        self.assertTrue(consume_probe(state,probe,configuration='current'))
+        self.assertEqual(state['forecast_health']['model'],'current')
+        self.assertEqual(state['forecast_health']['status'],'AVAILABLE')
+
+    def test_worker_starts_and_publishes_model_checks_during_warmup_without_orders(self):
+        import ast
+        from pathlib import Path
+        tree=ast.parse((Path(__file__).resolve().parents[2]/'src/aurelia_fx/agent_live.py').read_text(encoding='utf8'))
+        function=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='run_paper')
+        warmup=next(n for n in ast.walk(function) if isinstance(n,ast.For) and
+            isinstance(n.iter,ast.Call) and isinstance(n.iter.func,ast.Name) and n.iter.func.id=='enumerate')
+        calls=[n for n in ast.walk(function) if isinstance(n,ast.Call)]
+        first=min(n.lineno for n in calls if isinstance(n.func,ast.Name) and n.func.id=='request_probe')
+        self.assertLess(first,warmup.lineno)
+        warm_calls=[n for n in ast.walk(warmup) if isinstance(n,ast.Call)]
+        self.assertTrue(any(isinstance(n.func,ast.Attribute) and n.func.attr=='consume_probe' for n in warm_calls))
+        self.assertTrue(any(isinstance(n,ast.keyword) and n.arg=='autonomy' for n in ast.walk(warmup)))
+        self.assertFalse(any(isinstance(n.func,ast.Attribute) and n.func.attr=='open' and
+            isinstance(n.func.value,ast.Name) and n.func.value.id=='account' for n in warm_calls))
 
     def test_historical_errors_do_not_remain_an_active_alert_after_recovery(self):
         now=datetime(2026,10,27,15,tzinfo=timezone.utc)

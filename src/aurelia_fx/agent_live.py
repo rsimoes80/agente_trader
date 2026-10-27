@@ -324,38 +324,6 @@ def run_paper(
         start=now - timedelta(days=60),
         as_of=now,
     )
-    last_management = 0
-    for index, row in enumerate(rows):
-        if index % 48 == 0:
-            lease.execute("SELECT 1")
-            current = control.status()
-            if current.get("session_id") != session_id or stop.is_set():
-                return
-            control.heartbeat(worker_id)
-            if (account.data["position"] or account.data.get('pending_execution')) and time.monotonic() - last_management >= 2:
-                data = fetch(symbol, "M5", 100, include_current=True)
-                quote=observed_quote(data, clock_id=account.data["clock_id"],**(dict(symbol=symbol) if profile else {}))
-                account.mark(
-                    quote,force_close=forced_exit(current,quote,profile),
-                )
-                commit(control, account, worker_id)
-                last_management = time.monotonic()
-            if current["desired"] != "running" and not account.data["position"] and not account.data.get('pending_execution'):
-                commit(control, account, worker_id)
-                return
-            control.publish(
-                session_id,
-                expected_desired=current["desired"],
-                state="ANALYSIS_WARMUP",
-                stage="analysis",
-                message=f"Preparando o contexto ao vivo: {index}/{len(rows)} candles. Posições existentes continuam em acompanhamento.",
-            )
-        session.update(
-            [row],
-            spread_pips=row.get("spread_pips"),
-            observed_at=utc(row["timestamp"]) + timedelta(minutes=5),
-            warmup_only=index < len(rows) - 1,
-        )
     adapter = inference_adapter(config)
     probe=forecast_health.ForecastProbe(adapter.forecast)
     health_owner().setdefault('forecast_health',{}).update(status='CHECKING',configuration=config.fingerprint,worker_id=worker_id)
@@ -374,6 +342,43 @@ def run_paper(
     last_history_refresh = 0
     last_config_check = 0
     try:
+        if rows:
+            request_probe(rows[-500:],rows[-1])
+        last_management = 0
+        for index, row in enumerate(rows):
+            if index % 48 == 0:
+                lease.execute("SELECT 1")
+                current = control.status()
+                if current.get("session_id") != session_id or stop.is_set():
+                    return
+                control.heartbeat(worker_id)
+                if (account.data["position"] or account.data.get('pending_execution')) and time.monotonic() - last_management >= 2:
+                    data = fetch(symbol, "M5", 100, include_current=True)
+                    quote=observed_quote(data, clock_id=account.data["clock_id"],**(dict(symbol=symbol) if profile else {}))
+                    account.mark(
+                        quote,force_close=forced_exit(current,quote,profile),
+                    )
+                    commit(control, account, worker_id)
+                    last_management = time.monotonic()
+                if current["desired"] != "running" and not account.data["position"] and not account.data.get('pending_execution'):
+                    commit(control, account, worker_id)
+                    return
+                forecast_health.consume_probe(health_owner(),probe,configuration=config.fingerprint)
+                request_probe(rows[-500:],rows[-1])
+                control.publish(
+                    session_id,
+                    expected_desired=current["desired"],
+                    state="ANALYSIS_WARMUP",
+                    stage="analysis",
+                    **(dict(autonomy=research_policy.summary(account.data["lab_state"])) if research_policy else {}),
+                    message=f"Preparando o contexto ao vivo: {index}/{len(rows)} candles. Posições existentes continuam em acompanhamento.",
+                )
+            session.update(
+                [row],
+                spread_pips=row.get("spread_pips"),
+                observed_at=utc(row["timestamp"]) + timedelta(minutes=5),
+                warmup_only=index < len(rows) - 1,
+            )
         while not stop.is_set():
             lease.execute("SELECT 1")
             current = control.status()
@@ -387,12 +392,7 @@ def run_paper(
                     quote,
                     force_close=forced_exit(current,quote,profile),
                 )
-                checked=probe.poll()
-                if checked and checked['configuration']==config.fingerprint:
-                    if checked['error'] is not None:
-                        forecast_health.failure(health_owner(),checked['error'],configuration=config.fingerprint)
-                    else:
-                        forecast_health.success(health_owner(),checked['output'],configuration=config.fingerprint,source='healthcheck')
+                forecast_health.consume_probe(health_owner(),probe,configuration=config.fingerprint)
                 if study:
                     try:study.tick(quote,stop=current['desired']!='running')
                     except (RuntimeError,ValueError,KeyError,OSError) as exc:

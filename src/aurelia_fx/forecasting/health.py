@@ -51,6 +51,16 @@ def forecast_or_wait(operation, context, decision):
         return None
 
 
+def consume_probe(state,probe,*,configuration):
+    checked=probe.poll()
+    if not checked or checked['configuration']!=configuration:return False
+    if checked['error'] is not None:
+        failure(state,checked['error'],configuration=configuration)
+    else:
+        success(state,checked['output'],configuration=configuration,source='healthcheck')
+    return True
+
+
 class ForecastProbe:
     """One bounded in-flight check; consume its result on the owner thread.
 
