@@ -23,6 +23,7 @@ class ModelUnavailable(RuntimeError):
 
 
 class TimestralAdapter:
+    LOW_MEMORY_GRACE_SECONDS = 10
     def __init__(self, config):
         self.config = config
         self.process = None
@@ -70,6 +71,7 @@ class TimestralAdapter:
         started=time.monotonic();deadline=started+timeout
         hard_deadline=started+max(timeout,min(900,5*timeout)) if startup else deadline
         stages=set();bytes_read=0;total_bytes=None
+        low_memory_since=None
         while time.monotonic() < deadline:
             try:
                 parent=psutil.Process(self.process.pid)
@@ -78,9 +80,15 @@ class TimestralAdapter:
                 rss=sum(p.memory_info().rss for p in [parent,*parent.children(recursive=True)] if p.is_running())
                 available=psutil.virtual_memory().available
                 if available<128*1024**2:
-                    self.close();raise ModelUnavailable('Timestral aguarda memória livre; nova tentativa automática.',
-                        code='WAITING_RESOURCES',phase=self.phase,retry_seconds=60,
-                        details=dict(available_mb=round(available/1024**2),minimum_available_mb=128,rss_mb=round(rss/1024**2)))
+                    low_memory_since=time.monotonic() if low_memory_since is None else low_memory_since
+                    elapsed=time.monotonic()-low_memory_since
+                    if elapsed>=self.LOW_MEMORY_GRACE_SECONDS:
+                        self.close();raise ModelUnavailable('Timestral aguarda memória livre após pressão persistente; nova tentativa automática.',
+                            code='WAITING_RESOURCES',phase=self.phase,retry_seconds=60,
+                            details=dict(available_mb=round(available/1024**2),minimum_available_mb=128,
+                                rss_mb=round(rss/1024**2),pressure_seconds=round(elapsed,1)))
+                else:
+                    low_memory_since=None
                 if rss > self.config.memory_mb * 1024**2:
                     self.close()
                     raise ModelUnavailable("Timestral excedeu limite de memória.",code='MEMORY_LIMIT',phase=self.phase,

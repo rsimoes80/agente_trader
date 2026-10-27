@@ -68,7 +68,7 @@ class ForecastHealthTests(unittest.TestCase):
         a.process=p;a.phase='IMPORTING_TORCH'
         process=SimpleNamespace(memory_info=lambda:SimpleNamespace(rss=20*1024**2),
             children=lambda **kwargs:[],is_running=lambda:True)
-        with patch('psutil.Process',return_value=process),patch('psutil.virtual_memory',return_value=SimpleNamespace(available=64*1024**2)):
+        with patch('psutil.Process',return_value=process),patch('psutil.virtual_memory',return_value=SimpleNamespace(available=64*1024**2)),patch.object(a,'LOW_MEMORY_GRACE_SECONDS',0):
             with self.assertRaises(ModelUnavailable) as caught:a._wait(.1)
         e=caught.exception
         self.assertEqual(e.code,'WAITING_RESOURCES');self.assertEqual(e.phase,'IMPORTING_TORCH')
@@ -191,6 +191,30 @@ class ForecastHealthTests(unittest.TestCase):
         self.assertFalse(consume_probe(state,probe,configuration='a'))
         self.assertEqual(state['forecast_health']['progress']['bytes_read'],16)
         self.assertNotEqual(state['forecast_health'].get('status'),'AVAILABLE')
+
+    def test_brief_pressure_does_not_destroy_a_model_that_completes_its_request(self):
+        import queue
+        now=[0.];calls=[0];a=TimestralAdapter(TimestralConfig(enabled=True));a.process=MagicMock();a.process.pid=123
+        def get(**kwargs):
+            calls[0]+=1;now[0]+=2
+            if calls[0]==3:return {'ok':True}
+            raise queue.Empty
+        a.responses=SimpleNamespace(get=get)
+        process=SimpleNamespace(memory_info=lambda:SimpleNamespace(rss=20),children=lambda **kwargs:[],is_running=lambda:True)
+        with patch('aurelia_fx.forecasting.adapter.time.monotonic',side_effect=lambda:now[0]),patch('psutil.Process',return_value=process),patch('psutil.virtual_memory',return_value=SimpleNamespace(available=64*1024**2)),patch.object(a,'close') as close:
+            self.assertEqual(a._wait(20),{'ok':True})
+        close.assert_not_called();self.assertLess(now[0],a.LOW_MEMORY_GRACE_SECONDS)
+
+    def test_sustained_pressure_still_stops_the_isolated_engine(self):
+        import queue
+        now=[0.];a=TimestralAdapter(TimestralConfig(enabled=True));a.process=MagicMock();a.process.pid=123
+        def get(**kwargs):now[0]+=2;raise queue.Empty
+        a.responses=SimpleNamespace(get=get)
+        process=SimpleNamespace(memory_info=lambda:SimpleNamespace(rss=20),children=lambda **kwargs:[],is_running=lambda:True)
+        with patch('aurelia_fx.forecasting.adapter.time.monotonic',side_effect=lambda:now[0]),patch('psutil.Process',return_value=process),patch('psutil.virtual_memory',return_value=SimpleNamespace(available=64*1024**2)),patch.object(a,'close') as close:
+            with self.assertRaises(ModelUnavailable) as caught:a._wait(20)
+        self.assertEqual(caught.exception.code,'WAITING_RESOURCES')
+        self.assertEqual(caught.exception.details['pressure_seconds'],10);close.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()
