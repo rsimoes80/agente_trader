@@ -121,3 +121,20 @@ class TimestralServiceTests(unittest.TestCase):
         with patch("subprocess.Popen", side_effect=OSError("test-load-failure")):
             with self.assertRaises(ModelUnavailable):
                 bad.forecast([1.1] * 64)
+
+    def test_inference_process_requests_normal_windows_cpu_priority(self):
+        import subprocess
+        process=MagicMock();process.pid=123;process.poll.return_value=None
+        process.stdin=io.StringIO();process.stdout=io.StringIO('');process.stderr=None
+        adapter=TimestralAdapter(replace(self.config,python=sys.executable))
+        parent=SimpleNamespace(create_time=lambda:1.,children=lambda **kwargs:[])
+        with patch.object(subprocess,'CREATE_NO_WINDOW',0x08000000,create=True),patch.object(subprocess,'NORMAL_PRIORITY_CLASS',0x20,create=True),patch('subprocess.Popen',return_value=process) as start,patch('psutil.Process',return_value=parent),patch.object(adapter,'_wait',return_value={'ready':True}):
+            try:adapter.warmup()
+            finally:adapter.close()
+        self.assertEqual(start.call_args.kwargs['creationflags'],0x08000020)
+
+    def test_installed_agent_task_has_normal_cpu_io_and_memory_priority(self):
+        from pathlib import Path
+        script=(Path(__file__).resolve().parents[2]/'install_agent_startup.ps1').read_text(encoding='utf8')
+        self.assertIn('New-ScheduledTaskSettingsSet -Priority 4 ',script)
+        self.assertIn('-ExecutionTimeLimit ([TimeSpan]::Zero)',script)

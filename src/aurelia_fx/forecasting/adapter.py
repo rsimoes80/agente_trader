@@ -159,7 +159,8 @@ class TimestralAdapter:
                 stderr=log,
                 text=True,
                 encoding="utf-8",
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    | getattr(subprocess, "NORMAL_PRIORITY_CLASS", 0),
             )
         import psutil
         self._birth=psutil.Process(self.process.pid).create_time()

@@ -6,7 +6,11 @@ Os checkpoints antigos continham 12 falhas exploratórias de EURUSD e duas de XA
 
 Na reprodução com candles reais, foi confirmada uma indisponibilidade por memória: o supervisor encerrou a inferência quando a RAM disponível caiu abaixo da reserva de 128 MB. O carregador original do SDK inicializava um modelo completo e depois copiava os pesos do checkpoint para ele, gerando uma alocação evitável. O modelo e as dependências também conseguiram produzir previsões válidas; não se tratava de ausência permanente dos arquivos.
 
+Foi identificada também uma diferença entre o serviço e os testes manuais: a tarefa agendada usava a prioridade padrão 7, herdada por toda a cadeia do agente e da inferência. A medição confirmou CPU abaixo do normal, I/O baixo e prioridade de memória 2, enquanto os testes manuais usavam prioridade normal. Sob pressão de memória, isso prejudicava a residência dos pesos e a leitura do arquivo. A tarefa do agente foi corrigida para prioridade 4, que corresponde a CPU, I/O e memória normais, conforme a [tabela oficial da Microsoft](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskschedulerschema-priority-settingstype-element). Prioridade 5 ainda reduziria a prioridade de memória, por isso não foi usada.
+
 ## Correções
+
+- `install_agent_startup.ps1` passa a declarar `-Priority 4`. A tarefa existente `AgenteTrader-Agent` foi atualizada preservando os gatilhos e o reinício automático. Os processos do próprio agente tiveram CPU, I/O e memória restaurados ao nível normal durante a execução. Não se usa prioridade alta ou tempo real. O subprocesso de inferência também solicita explicitamente CPU normal.
 
 - Carregamento do mesmo checkpoint em `float32`, construindo a arquitetura em `meta` e atribuindo os tensores do arquivo `safetensors` com `strict=True, assign=True`. Evita inicializar e copiar pesos que seriam descartados. O buffer não persistente de RoPE é reconstruído como no SDK; buffers desconhecidos em `meta` são rejeitados.
 - A abordagem de carregamento segue a [receita oficial do PyTorch](https://docs.pytorch.org/tutorials/recipes/recipes/module_load_state_dict_tips.html). Não modifica o SDK instalado, o arquivo de pesos, a configuração numérica ou os critérios de negociação.
