@@ -44,6 +44,22 @@ aprendizado de experiências/hipóteses separado; o ajuste global legado dos pes
 do EURUSD é desconsiderado por esse perfil. Aprender resultados não equivale a
 retreinar automaticamente o modelo neural.
 
+### Conferência da ativação
+
+Em 27/10/2026, EURUSD e XAUUSD concluíram a preparação e chegaram a `ANALYZING`,
+em demo, lote 0,01 cada. A sessão e geração anteriores do EURUSD foram preservadas;
+o XAUUSD iniciou sua própria sessão. O coordenador confirmou os dois serviços
+ativos, sem falhas ou fila. Nenhuma entrada foi forçada para validar a integração.
+
+Foram aprovados 194 testes de integração/unidade, incluindo PostgreSQL em esquemas
+isolados e SDK simulado: risco agregado, reconciliação por símbolo, recuperação,
+histórico, calendário do ouro e isolamento do aprendizado. No Chrome, os dois
+gráficos publicados receberam cotações atuais; não houve erros JavaScript nem
+transbordamento horizontal a 390 px. As evidências locais, fora do Git, são
+`data/reports/multi-asset-integration-validation.log`,
+`.tools/multi-asset-runtime-delivery.json` e
+`.tools/asset-selector-browser-verification.json`.
+
 ## Histórico das etapas anteriores à integração
 
 1. **Contratos e dados — base implementada.** Catálogo por nome exato, inspeção
