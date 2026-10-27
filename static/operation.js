@@ -33,11 +33,27 @@
     for(const label of headers){const cell=document.createElement('th');cell.scope='col';cell.textContent=label;head.append(cell);}table.append(head);
     for(const row of rows){const tr=document.createElement('tr');for(const value of row){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}target.append(table);
   }
+  function renderFibonacci(f){
+    const labels={WAITING:'Aguardando dados',DISCOVERY:'Coletando amostra inicial',VALIDATION:'Validação em dados novos',EVALUATING:'Coleta encerrada',REFERENCE:'Referência',COLLECTING:'Coletando dados',INCONCLUSIVE:'Inconclusiva',CANDIDATE:'Candidata à validação independente',REJECTED:'Rejeitada nesta comparação'};
+    const names={reference:'Estratégia atual',retracement:'Contexto de retração',extension:'Saída por extensão'};
+    const reasons={SUBMITTED:'Simulação solicitada',PORTFOLIO_BUSY_OR_LOCKED:'Carteira ocupada ou bloqueada por risco',OUTSIDE_RETRACEMENT_ZONE:'Fora da zona de retração',HISTORY_NOT_CAUSAL:'Histórico incompatível com o instante do sinal',ATR_UNAVAILABLE:'Volatilidade indisponível',CONTEXT_DATA_GAP:'Lacuna no contexto',AMBIGUOUS_OUTSIDE_BAR:'Extremos ambíguos no mesmo candle',CONFIRMED_ANCHORS_UNAVAILABLE:'Sem extremos confirmados',IMPULSE_DIRECTION_MISMATCH:'Último impulso em outra direção',IMPULSE_SMALL_OR_OLD:'Impulso pequeno ou antigo',IMPULSE_EXTREME_SUPERSEDED:'Novo extremo após a âncora',IMPULSE_ORIGIN_INVALIDATED:'Origem do impulso invalidada',EXTENSION_BEHIND_ENTRY:'Extensão ultrapassada pelo preço de entrada'};
+    $('fibonacci-status').textContent=f?`${labels[f.status]||f.status}. ${f.message||''}`:'Pesquisa disponível quando o agente iniciar o ciclo autônomo.';
+    $('fibonacci-window').textContent=f?.registered_at?`Ativo: ${f.symbol}. Início: ${date(f.registered_at)} UTC. Validação começa: ${date(f.validation_starts_at)} UTC. Fim da coleta: ${date(f.collection_ends_at)} UTC. Mínimo: ${f.minimum_closed} operações por versão na validação e 7 dias comparáveis. Resultados iniciais não entram nessa avaliação. ${f.censored||0} exposições excluídas por dados incompletos.`:'';
+    const rows=f?.arms||[],cols=['Alternativa','Situação','Encerradas','Líquido USD','Queda realizada USD','Diferença para base USD'];
+    evolutionTable('fibonacci-table',cols,rows.map(r=>[r.name,labels[r.status]||r.status,r.closed,number(r.net_pnl),number(r.realized_drawdown),number(r.delta_baseline)]));
+    evolutionTable('fibonacci-discovery',['Alternativa','Encerradas','Líquido USD','Queda realizada USD'],rows.map(r=>[r.name,r.discovery.closed,number(r.discovery.net_pnl),number(r.discovery.realized_drawdown)]));
+    evolutionTable('fibonacci-contexts',['Alternativa','Contexto','Encerradas','Líquido USD','Queda realizada USD'],(f?.contexts||[]).map(r=>[names[r.arm],r.context.split('|').slice(-4).join(' · '),r.closed,number(r.net_pnl),number(r.realized_drawdown)]));
+    evolutionTable('fibonacci-reasons',['Alternativa','Motivo','Quantidade'],Object.entries(f?.counts||{}).map(([k,v])=>{const [arm,...parts]=k.split(':');const reason=parts.join(':');return [names[arm]||arm,reasons[reason]||reason,v];}));
+    const o=f?.last_observation,a=o?.anchors;
+    $('fibonacci-last').textContent=o?`Última oportunidade: ${date(o.signal_at)} UTC · ${o.side==='long'?'Compra':'Venda'} · ${o.regime}. `+(a?.available?`Retração pelo fechamento: ${number(a.depth*100)}%. Impulso: ${number(a.impulse_atr)} ATR. Âncoras: ${number(a.anchor_start.price)} → ${number(a.anchor_end.price)}; confirmadas em ${date(a.anchor_start.confirmed_at)} / ${date(a.anchor_end.confirmed_at)} UTC.`:`Contexto Fibonacci indisponível: ${reasons[a?.reason]||a?.reason||'Aguardando'}. A referência continua independente dessa condição.`):'Nenhuma oportunidade elegível registrada ainda.';
+    if(f?.failure)$('fibonacci-status').textContent+=` Pesquisa com falha registrada (${f.failure.count}): ${f.failure.reason||f.failure.error}. A falha impede aprovação de candidatos e não interrompe as operações.`;
+  }
   function renderEvolution(data){
     const health=data.collection_health;
     const box=$("collection-status");box.replaceChildren();
     if(health){box.dataset.status=health.status;const line=document.createElement('p');line.textContent=health.message;box.append(line);for(const alert of health.alerts){const p=document.createElement('p');p.textContent=alert;box.append(p);}}
     const learning=data.state.autonomy?.continual,e=learning?.evolution;
+    renderFibonacci(learning?.fibonacci);
     if(!e)return;
     const active=e.portfolios.find(r=>r.active),exploration=learning.exploratory;
     $("evolution-overview").replaceChildren();

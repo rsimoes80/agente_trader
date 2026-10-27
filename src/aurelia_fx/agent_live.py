@@ -103,7 +103,16 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
                 ('agent_demo_event' if native else 'agent_paper_event',event["event_id"], text, digest),
             )
+        fibonacci = account.data.get('lab_state',{}).get('continual',{}).get('fibonacci_research',{})
+        for record in fibonacci.get('pending_records',[]):
+            payload=dict(spec_hash=fibonacci['spec_hash'], registered_at=fibonacci['registered_at'],
+                         **record['payload'])
+            text,digest=control.memory._encode(payload)
+            c.execute("""INSERT INTO project_records(record_type,record_key,payload_json,payload_sha256)
+                VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                ('agent_fibonacci_'+record['kind'],digest,text,digest))
         data = account.snapshot()
+        data.get('lab_state',{}).get('continual',{}).get('fibonacci_research',{}).pop('pending_records',None)
         from .learning_storage import pack
         pack(control.memory,c,data)
         text, digest = control.memory._encode(data)
@@ -168,6 +177,7 @@ def commit(control, account, worker_id, *, generation=None, **view):
                     if data.get("research_mode") else None,
             },
         )
+    account.data.get('lab_state',{}).get('continual',{}).get('fibonacci_research',{}).pop('pending_records',None)
     account.events.clear()
     if native:account.applied.clear()
     return True
@@ -498,7 +508,7 @@ def run_paper(
                         _, output = forecast_context(context)
                         features = attach_forecast(setup, output)
                         if research_policy:
-                            continual.consider(account.data['lab_state'],setup,features)
+                            continual.consider(account.data['lab_state'],setup,features,history=session.history)
                             hypothesis=continual.choose(account.data['lab_state'],setup,features,research_policy.protocol_id)
                             if not hypothesis.get('wait'):setup=continual.apply(setup,hypothesis['variant_id'])
                         else:hypothesis=None

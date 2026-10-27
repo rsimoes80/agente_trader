@@ -229,6 +229,8 @@ def advance(lab,rows,at):
             prior=Candle(utc(previous),bar.open,bar.open,bar.open,bar.open)
             valid=not gap_detector(prior,bar,300)
         active,closing=simulation_window(profile,bar,sessions.identify(bar.timestamp).active_sessions)
+        from . import fibonacci_research
+        fibonacci_research.guarded(state,'advance',bar,at,valid,active,closing)
         hypothesis_review.advance_portfolios(state,bar,valid,active)
         exploratory_learning.advance(state,bar,at,active)
         for variant,sim in portfolios.items():
@@ -263,11 +265,14 @@ def advance(lab,rows,at):
     hypothesis_review.evaluate(state,at)
     return events
 
-def consider(lab,setup,features):
+def consider(lab,setup,features,*,history=None):
     state=lab['continual'];check_scope(state,setup);signal=setup['signal_at']
     profile=profile_for(state)
     if utc(signal)<=utc(state['registered_at']) or signal==state['last_signal']:return
     if entry_blocker(setup['snapshot'],setup['candidate'].side):return
+    if history is not None:
+        from . import fibonacci_research
+        fibonacci_research.guarded(state,'consider',setup,history)
     state['last_signal']=signal;state['eligible_signals']+=1;key=context(setup)
     hypothesis_review.consider_portfolios(state,setup,features,key)
     for variant in VARIANTS:
@@ -302,6 +307,7 @@ def choose(lab,setup,features,protocol_id):
 
 def summary(lab):
     from .learning_evolution import summary as evolution_summary
+    from .fibonacci_research import summary as fibonacci_summary
     state=lab.get('continual')
     if not state:return None
     variants=[]
@@ -318,5 +324,6 @@ def summary(lab):
         min_days=7,min_trades=20,censored=state.get('censored',0),suspended_contexts=len(state.get('suspended',{})),
         hypothesis_review=hypothesis_review.summary(state),
         exploratory=exploratory_learning.summary(state),
+        fibonacci=fibonacci_summary(state),
         evolution=evolution_summary(state, VARIANTS),
         model_study={k:study.get(k) for k in ('run_id','registered_at','forecast_count','status','closed','error')} if study else None)
