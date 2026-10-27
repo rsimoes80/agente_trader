@@ -160,3 +160,23 @@ testes PostgreSQL em esquemas isolados com rollback: recuperação de snapshots,
 recusa de referências trocadas e isolamento das experiências de desenvolvimento.
 Esses resultados sintéticos verificam implementação; não demonstram rentabilidade
 nem significam que XAUUSD já esteja operando no serviço ao vivo.
+
+## Conta Standard e custos
+
+Em 27/10/2026 o usuário confirmou que utiliza conta **Standard**. A
+[página oficial da conta Standard](https://support.thinkmarkets.com/hc/en-gb/articles/11613269516945-Standard-account)
+informa ausência de comissão em Forex e commodities. A confirmação foi vinculada
+à identidade da conta demo atual, corretora, servidor, moeda e contratos exatos
+EURUSD/XAUUSD inspecionados pelo SDK, e gravada como `account_pricing_policy`.
+
+`AccountPricingRepository` confere conta e integridade ao recuperar a política.
+Ela informa comissão zero apenas para os instrumentos explicitamente vinculados;
+não transfere essa condição para outro servidor, conta, XAUUSD247, símbolos
+ThinkZero ou ações que não foram conferidas. Spread observado, slippage e swap
+continuam separados. O slippage requer hipótese declarada, e o tratamento de
+swap/virada de sessão precisa ser definido antes de simular exposições que cruzem
+esse horário.
+
+A política alimentará os novos perfis. Ela não reescreve custos ou resultados dos
+experimentos congelados e não altera silenciosamente o protocolo EURUSD em execução.
+A criação dessa evidência não envia ordens nem libera o XAUUSD no motor legado.
