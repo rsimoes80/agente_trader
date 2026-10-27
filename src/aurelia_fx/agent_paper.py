@@ -17,7 +17,9 @@ COMMISSION = 35 / 1_000_000
 SLIPPAGE = 0.00002
 
 
-def observed_quote(data, *, clock_id, now=None):
+def observed_quote(data, *, clock_id, now=None, symbol=None):
+    if symbol is not None and data.get('symbol')!=symbol:
+        raise ValueError('QUOTE_INSTRUMENT_MISMATCH')
     now = now or datetime.now(timezone.utc)
     clock = validate_source_clock(data, now)
     if clock["clock_id"] != clock_id:

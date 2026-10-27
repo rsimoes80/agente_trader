@@ -100,6 +100,12 @@ class AccountRiskBook:
             intent=position_owner(p,intents)
             if intent is None:raise ValueError('ACCOUNT_FOREIGN_OR_UNRECONCILED_POSITION')
             if intent['status']!='CONFIRMED':raise ValueError('ACCOUNT_UNPROTECTED_POSITION')
+            history=terminal.sdk.history_deals_get(position=int(getattr(p,'identifier',p.ticket)))
+            if not history:raise ValueError('POSITION_HISTORY_UNAVAILABLE')
+            if any(getattr(d,'volume',0)>0 and d.magic!=MAGIC for d in history):
+                raise ValueError('POSITION_EXTERNAL_DEAL')
+            if p.volume>intent['request']['broker']['volume']+1e-8:
+                raise ValueError('POSITION_VOLUME_CHANGED')
             if p.type not in {terminal.sdk.POSITION_TYPE_BUY,terminal.sdk.POSITION_TYPE_SELL} or not finite(p.volume) or p.volume<=0:
                 raise ValueError('POSITION_VOLUME_OR_TYPE_INVALID')
             info=terminal.sdk.symbol_info(p.symbol)

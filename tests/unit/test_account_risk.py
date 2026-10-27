@@ -16,6 +16,7 @@ class AccountRiskTests(DemoIntentTests):
         self.sdk=N(POSITION_TYPE_BUY=0,POSITION_TYPE_SELL=1,ORDER_TYPE_BUY=0,ORDER_TYPE_SELL=1,
             symbol_info=lambda s:N(trade_tick_size=.00001 if s=='EURUSD' else .01,point=.00001 if s=='EURUSD' else .01),
             order_calc_profit=lambda kind,s,lot,start,end:(1 if kind==0 else -1)*(end-start)*lot*values[s])
+        self.sdk.history_deals_get=lambda **kw:[N(volume=p.volume,magic=MAGIC) for p in self.positions if p.identifier==kw.get('position')]
         self.terminal=N(sdk=self.sdk,account_id=self.owner['account_id'],check_account=lambda:self.account,
             orders=lambda:self.orders,positions=lambda:self.positions,quote_for=lambda s:self.quotes[s])
         return AccountRiskBook(self.memory)
@@ -125,3 +126,11 @@ class AccountRiskTests(DemoIntentTests):
             risk=book.observe(scope,self.terminal,now=self.now)
             self.assertEqual(risk.peak,51000.)
             self.assertEqual(risk.day_start,50500.)
+
+    def test_foreign_deals_in_a_netting_position_block_another_symbol_entry(self):
+        book=self.setup_risk()
+        with self.journal.locked() as scope:
+            self.position(scope,'EURUSD')
+            self.sdk.history_deals_get=lambda **kw:[N(volume=.01,magic=MAGIC),N(volume=.01,magic=0)]
+            with self.assertRaisesRegex(ValueError,'POSITION_EXTERNAL_DEAL'):
+                book.observe(scope,self.terminal,now=self.now)

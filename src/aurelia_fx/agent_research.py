@@ -6,7 +6,7 @@ Counterfactual candidate labels are explicitly separate from portfolio results.
 from __future__ import annotations
 
 import json
-from datetime import time
+from datetime import time,timedelta
 
 from .agent_model import fingerprint
 from .broker_calendar import slot_tradable, unexpected_broker_gap
@@ -47,6 +47,13 @@ def simulator(units, *, profile=None):
         instrument_context=dict(symbol=profile.symbol, profile_id=profile.fingerprint,
                                 instrument_id=profile.contract.key, quantity_unit='lots') if profile else None,
     )
+
+
+def simulation_window(profile,bar,active_sessions):
+    if not profile:return active_sessions,None
+    active=active_sessions if profile.allows_entry(bar.timestamp) else ()
+    reason=None if profile.allows_entry(bar.timestamp+timedelta(minutes=5)) else 'CALENDAR_CLOSE'
+    return active,reason
 
 
 def request_for(setup, sample_id):

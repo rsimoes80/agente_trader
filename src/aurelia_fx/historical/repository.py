@@ -10,17 +10,20 @@ from .core import VERSION, utc
 
 
 class HistoricalRepository:
-    def __init__(self, memory, symbol='EURUSD'):
+    def __init__(self, memory, symbol='EURUSD', *, profile=None):
         if not hasattr(memory, "pool"):
             raise ValueError("Historical archive requires PostgreSQL.")
         self.memory = memory
         from ..instruments import symbol_name
         self.symbol=symbol_name(symbol)
+        if profile and profile.symbol!=self.symbol:raise ValueError('HISTORY_PROFILE_SYMBOL_MISMATCH')
+        self.profile=profile
 
     def record_type(self, kind):
         # Legacy EURUSD readers must never see the newest baseline of another
         # instrument, even before all long-running services have been reloaded.
-        return kind if self.symbol=='EURUSD' else kind+':'+self.symbol
+        base=kind if self.symbol=='EURUSD' else kind+':'+self.symbol
+        return self.profile.record_type(base) if self.profile else base
 
     @staticmethod
     def prefix(clock_id, timeframe, symbol='EURUSD'):
@@ -96,10 +99,13 @@ class HistoricalRepository:
             ).fetchall()
         if not rows:
             return None
-        return {
+        result={
             **json.loads(rows[0]["payload_json"]),
             "_recorded_at": rows[0]["recorded_at"].isoformat(),
         }
+        if self.profile and result.get('profile_id')!=self.profile.fingerprint:
+            raise ValueError('HISTORY_PROFILE_IDENTITY_MISMATCH')
+        return result
 
     def replay_dataset(self, *, timeframe="M5"):
         from ..domain import Candle
@@ -127,6 +133,7 @@ class HistoricalRepository:
             as_of=baseline["as_of"],
             days=baseline["days"],
             pip_size=baseline.get('price_unit',0.0001),
+            profile=self.profile,
         )
         if (
             measured["dataset_sha256"]
@@ -166,6 +173,7 @@ class HistoricalRepository:
 
     def record_baseline(self, baseline):
         if baseline.get('symbol','EURUSD')!=self.symbol:raise ValueError('Baseline pertence a outro ativo.')
+        if self.profile and baseline.get('profile_id')!=self.profile.fingerprint:raise ValueError('HISTORY_PROFILE_IDENTITY_MISMATCH')
         self.memory.record_project_data(
             self.record_type("historical_baseline"), baseline["baseline_id"], baseline
         )
@@ -176,6 +184,7 @@ class HistoricalRepository:
         """Load exactly the immutable revision described by this baseline."""
         from .core import summarize
         if baseline.get('symbol','EURUSD')!=self.symbol:raise ValueError('Baseline pertence a outro ativo.')
+        if self.profile and baseline.get('profile_id')!=self.profile.fingerprint:raise ValueError('HISTORY_PROFILE_IDENTITY_MISMATCH')
         record_type=record_type or self.record_type('historical_baseline')
 
         with self.memory.pool.connection() as c:
@@ -202,6 +211,7 @@ class HistoricalRepository:
             as_of=baseline["as_of"],
             days=baseline["days"],
             pip_size=baseline.get('price_unit',0.0001),
+            profile=self.profile,
         )
         if (
             measured["dataset_sha256"]
@@ -228,6 +238,7 @@ class HistoricalRepository:
             baseline,
             as_of=datetime.now(timezone.utc),
             clock_id=baseline["clock_id"] if baseline else None,
+            profile=self.profile,
         )
         return dict(
             baseline=baseline,

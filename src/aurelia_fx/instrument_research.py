@@ -127,9 +127,12 @@ class InstrumentResearchProfile:
     costs: ResearchCosts | None = None
     volatility_bands_units: tuple[float, float] | None = None
     sessions: tuple[ResearchSession, ...] = ()
+    intraday_exit_policy: str = 'calendar-five-minutes-before-close-v1'
     version: str = 'instrument-research-v1'
 
     def __post_init__(self):
+        if self.intraday_exit_policy!='calendar-five-minutes-before-close-v1':
+            raise ValueError('INSTRUMENT_EXIT_COST_MODEL_REQUIRED')
         object.__setattr__(self, 'sessions', tuple(self.sessions))
         if any(not isinstance(s, ResearchSession) for s in self.sessions) or len({s.name for s in self.sessions}) != len(self.sessions):
             raise ValueError('Research sessions must be typed and uniquely named.')
@@ -169,6 +172,11 @@ class InstrumentResearchProfile:
         if not self.sessions:
             raise ValueError('INSTRUMENT_RESEARCH_SESSIONS_REQUIRED')
         return tuple(s.window() for s in self.sessions)
+
+    def allows_entry(self,stamp):
+        # Intraday research closes five minutes before the next scheduled break.
+        # Unknown holidays are not inferred from missing data.
+        return self.calendar.instant_open(stamp) and self.calendar.instant_open(stamp+timedelta(minutes=5))
 
     def as_dict(self):
         return json.loads(json.dumps({**asdict(self), 'profile_id': self.fingerprint}, allow_nan=False))

@@ -75,6 +75,7 @@ def single_asset_main(*,symbol='EURUSD',managed_stop=None,progress=None):
     if progress:
         original_heartbeat=control.heartbeat
         def heartbeat(*args,**kwargs):
+            if getattr(control,'runtime_profile',None):kwargs['engine_version']='multi-instrument-v1'
             result=original_heartbeat(*args,**kwargs);progress();return result
         control.heartbeat=heartbeat
     worker_id = str(uuid4())
@@ -110,6 +111,25 @@ def single_asset_main(*,symbol='EURUSD',managed_stop=None,progress=None):
                 )
             while not stop.is_set():
                 lease.execute("SELECT 1")
+                if managed_stop is not None and symbol!='EURUSD' and not getattr(control,'runtime_profile',None):
+                    try:
+                        from aurelia_fx.runtime_profiles import provision
+                        from aurelia_fx.instrument_research import InstrumentResearchProfile
+                        own=control.status();frozen=own.get('research_profile')
+                        if frozen:
+                            control.runtime_profile=InstrumentResearchProfile.from_dict(frozen)
+                        else:
+                            account_id=(OperationControl(memory).status().get('demo_authorization') or {}).get('account_id')
+                            if not account_id:raise ValueError('DEMO_ACCOUNT_IDENTITY_REQUIRED')
+                            def preparation_progress(**fields):
+                                memory.record_project_data('instrument_preparation_status',symbol,dict(symbol=symbol,**fields))
+                                control.heartbeat(worker_id)
+                            control.runtime_profile=provision(memory,symbol,account_id,fetch_history,progress=preparation_progress)
+                        repository=HistoricalRepository(memory,symbol,profile=control.runtime_profile)
+                    except (RuntimeError,ValueError) as exc:
+                        memory.record_project_data('instrument_preparation_status',symbol,
+                            dict(symbol=symbol,stage='waiting',message=str(exc)[:180]))
+                        control.heartbeat(worker_id);stop.wait(30);continue
                 if time.monotonic() - last_heartbeat >= 15:
                     control.heartbeat(worker_id)
                     last_heartbeat = time.monotonic()
@@ -203,7 +223,7 @@ def single_asset_main(*,symbol='EURUSD',managed_stop=None,progress=None):
     return 0
 
 
-def coordinated_main():
+def coordinated_main(settings=None):
     from aurelia_fx.asset_registry import AssetRegistry
     from aurelia_fx.multi_asset_coordinator import MultiAssetCoordinator
     from aurelia_fx.forecasting.shared import POOL
@@ -216,7 +236,7 @@ def coordinated_main():
     coordinator=MultiAssetCoordinator(
         lambda:[a['symbol'] for a in AssetRegistry(memory).list() if a.get('selected')],
         lambda symbol,event,progress:single_asset_main(symbol=symbol,managed_stop=event,progress=progress),
-        stall_seconds=stall_limit())
+        stall_seconds=stall_limit(),max_workers=(settings or {}).get('max_workers',8))
     try:
         with memory.pool.connection() as lease:
             if not lease.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(WORKER_LOCK,)).fetchone()['acquired']:
@@ -237,7 +257,7 @@ def coordinated_main():
                     # Do not release the singleton lease while a worker may still
                     # send. The supervisor will terminate the owned process tree.
                     print('Asset worker still stopping; singleton lease preserved for watchdog recovery.',flush=True)
-                    while True:time.sleep(1)
+                    while any(w['alive'] for w in coordinator.status()['workers'].values()):time.sleep(1)
                 POOL.close()
                 lease.execute('SELECT pg_advisory_unlock(%s)',(WORKER_LOCK,))
     finally:
@@ -247,12 +267,16 @@ def coordinated_main():
 
 
 def main():
-    return coordinated_main() if os.environ.get('AGENTE_TRADER_MULTI_ASSET')=='1' else single_asset_main()
+    from aurelia_fx.multi_asset_settings import load_settings
+    settings=load_settings(ROOT)
+    return coordinated_main(settings) if settings['enabled'] else single_asset_main()
 
 
 def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
-    if getattr(control,'symbol','EURUSD')!='EURUSD':
+    symbol=getattr(control,'symbol','EURUSD');profile=getattr(repository,'profile',None)
+    if symbol!='EURUSD' and not profile:
         raise ValueError('O ciclo deste ativo ainda exige a integração do perfil e da execução multiativo.')
+    if profile and state.get('mode')!='demo':raise ValueError('Este ativo requer MT5 Demo no ciclo coordenado.')
     original_fetch = fetch
     def fetch(*args, **kwargs):
         return guarded_fetch(original_fetch, *args, **kwargs)
@@ -277,12 +301,13 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
             raise InterruptedPreparation()
         control.heartbeat(worker_id)
 
+    history_days=30
     def capture(symbol, timeframe, count, *, include_current=False):
         check()
         publish(
             state="LOADING_HISTORY",
             stage="history",
-            message=f"Atualizando 30 dias de {symbol} em {timeframe}. Os dados válidos existentes serão reutilizados.",
+            message=f"Atualizando {history_days} dias de {symbol} em {timeframe}. Os dados válidos existentes serão reutilizados.",
             current_timeframe=timeframe,
         )
         return fetch(symbol, timeframe, count, include_current=include_current)
@@ -292,9 +317,10 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         state="CONNECTING",
         stage="connection",
         error_type=None,
-        message="Conectando ao MT5 e verificando o lote do EUR/USD.",
+        message="Conectando ao MT5 e verificando o lote de "+symbol+".",
     )
-    source = fetch("EURUSD", "M5", 100, include_current=False)
+    source = fetch(symbol, "M5", 100, include_current=False)
+    if profile and source.get('symbol')!=symbol:raise ValueError('PREPARATION_SOURCE_INSTRUMENT_MISMATCH')
     contract = source.get("symbol_contract")
     if not contract:
         raise ValueError(
@@ -302,7 +328,7 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         )
     publish(symbol_contract=contract)
     validate_lot(state["lot"], contract)
-    if (
+    if not profile and (
         contract.get("currency_profit") != "USD"
         or not contract.get("contract_size", 0) > 0
     ):
@@ -313,6 +339,7 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     baseline = collect(repository, capture, days=30, full=False)
     check()
     history = dict(
+        **(dict(symbol=symbol,profile_id=profile.fingerprint) if profile else {}),
         baseline_id=baseline["baseline_id"],
         start=baseline["start"],
         end=baseline["as_of"],
@@ -346,9 +373,18 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         symbol_contract=contract,
         message="Os 30 dias estão preparados. Capturando mais 30 dias anteriores para aquecer a análise sem usar informações futuras.",
     )
+    if profile:
+        history_days=60
+        from aurelia_fx.historical.collector import collect_warmup
+        warmup=collect_warmup(repository,capture,clock_id=history['clock_id'],days=60)
+        check()
+        if warmup['status']!='ready':raise ValueError('INSTRUMENT_WARMUP_HISTORY_NOT_READY')
+        publish(research_profile=profile.as_dict(),profile_id=profile.fingerprint,
+                warmup_history=dict(start=warmup['start'],as_of=warmup['as_of'],baseline_id=warmup['baseline_id']))
     from aurelia_fx.forecasting.config import load_config
 
-    config = load_config()
+    from aurelia_fx.agent_live import profile_config
+    config = profile_config(load_config(),profile)
     if not config.enabled or config.revision == "main":
         raise ValueError(
             "Ative o Timestral com uma revisão imutável dos pesos antes de analisar."
@@ -356,7 +392,7 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     from aurelia_fx.autonomous_lab import AutonomousLab
     from aurelia_fx.agent_live import run_paper
     mode=state.get('mode','paper')
-    policy=AutonomousLab(config.fingerprint,execution_mode=mode)
+    policy=AutonomousLab(config.fingerprint,execution_mode=mode,profile=profile)
     if config.local_release:
         # Adaptive weights do not change the user's existing demo/account/lot authority.
         from aurelia_fx.training.releases import resolve
@@ -370,11 +406,15 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
     if mode=='demo':
         from aurelia_fx.demo_terminal import demo_terminal
         from aurelia_fx.agent_model import fingerprint
-        with demo_terminal(clock_id=history['clock_id']) as terminal:
+        expected_account=(state.get('demo_authorization') or {}).get('account_id')
+        if profile and not expected_account:
+            expected_account=(OperationControl(control.memory).status().get('demo_authorization') or {}).get('account_id')
+        with demo_terminal(clock_id=history['clock_id'],**(dict(profile=profile,account_id=expected_account) if profile else {})) as terminal:
             terminal.check_account()
             authorization=dict(scope='autonomous_demo_research',real_orders=False,
                 account_id=terminal.account_id,session_id=session_id,lot=state['lot'],
                 clock_id=history['clock_id'],protocol_id=policy.protocol_id)
+            if profile:authorization.update(symbol=symbol,research_profile=profile.as_dict(),profile_id=profile.fingerprint)
             authorization['authorization_id']=fingerprint(authorization)
         old=state.get('demo_authorization')
         if old and old!=authorization:

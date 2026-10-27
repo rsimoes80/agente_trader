@@ -114,6 +114,8 @@ def propose_pullback(
     if snapshot.invalidating_evidence:
         return None, "INVALIDATING_EVIDENCE"
     previous, current = history[-2:]
+    if profile and not profile.allows_entry(current.timestamp+timedelta(minutes=5)):
+        return None,'MARKET_CALENDAR_CLOSING'
     if (current.timestamp - previous.timestamp).total_seconds() != 300:
         return None, "NONCONTIGUOUS_TRIGGER"
     if current.spread_pips is None or current.spread_pips > (profile.max_spread_units if profile else 2):

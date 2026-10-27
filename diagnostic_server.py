@@ -54,6 +54,23 @@ def instrument_execution_ready(symbol,worker):
     heartbeat=worker.get('heartbeat') or {}
     return symbol=='EURUSD' or bool(worker.get('available') and heartbeat.get('symbol')==symbol and heartbeat.get('engine_version')=='multi-instrument-v1')
 
+
+def instrument_preparation(memory,symbol):
+    with memory.pool.connection() as c:
+        row=c.execute("""SELECT payload_json,payload_sha256 FROM project_records
+            WHERE record_type='instrument_preparation_status' AND record_key=%s
+            ORDER BY recorded_at DESC LIMIT 1""",(symbol,)).fetchone()
+    if not row:return None
+    value=json.loads(row['payload_json'])
+    if value.get('symbol')!=symbol or memory._encode(value)[1]!=row['payload_sha256']:
+        raise ValueError('Instrument preparation integrity failure')
+    labels={'INSTRUMENT_MARKET_CALENDAR_REQUIRED':'O calendário deste contrato ainda precisa ser verificado.',
+            'HISTORICAL_INSTRUMENT_VALUATION_REQUIRED':'Falta preparar a conversão histórica para a moeda da conta.',
+            'ACCOUNT_PRICING_POLICY_REQUIRED':'Falta confirmar o tipo de conta e seus custos.',
+            'INSTRUMENT_COMMISSION_NOT_CONFIRMED':'Falta verificar a comissão deste contrato.',
+            'DEMO_ACCOUNT_IDENTITY_REQUIRED':'Aguardando a identificação da conta demo do MT5.'}
+    return {**value,'message':labels.get(value.get('message'),value.get('message'))}
+
 class Handler(BaseHTTPRequestHandler):
     server_version='AgenteTraderIA/2.0'
     sys_version=''
@@ -92,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200,dict(ok=True,csrf=CSRF,state=state,
                     worker=worker,collection_health=collection_health(state,worker),
                     execution_ready=instrument_execution_ready(symbol,worker),
-                    asset=app.assets.get(symbol),authenticated=True,access_mode='single_user'));return
+                    asset=app.assets.get(symbol),preparation=instrument_preparation(app.memory,symbol),authenticated=True,access_mode='single_user'));return
             if path=='/api/diagnostics/instruments':
                 instruments=[]
                 for asset in app.assets.list():
@@ -100,7 +117,8 @@ class Handler(BaseHTTPRequestHandler):
                     control=OperationControl(app.memory,asset['symbol']);state=control.status();worker=control.worker_status()
                     instruments.append({**asset,'state':state['state'],'desired':state['desired'],
                         'has_exposure':bool(state.get('position') or state.get('pending_execution')),
-                        'execution_ready':instrument_execution_ready(asset['symbol'],worker)})
+                        'execution_ready':instrument_execution_ready(asset['symbol'],worker),
+                        'preparation':instrument_preparation(app.memory,asset['symbol'])})
                 self.send(200,dict(ok=True,csrf=CSRF,instruments=instruments));return
             if path=='/api/diagnostics/decisions':
                 state=OperationControl(app.memory,symbol_name(args.get('symbol','EURUSD'))).status()
@@ -144,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
                 if symbol!='EURUSD':
                     configured=self.server.app.assets.get(symbol)
                     if not configured or not configured.get('selected'):raise ValueError('Configure este ativo primeiro.')
+                    if payload.get('action')=='START' and payload.get('mode','paper')!='demo':
+                        raise ValueError('Este ativo utiliza MT5 Demo no ciclo coordenado.')
                     if payload.get('action')=='START' and not instrument_execution_ready(symbol,control.worker_status()):
                         raise ValueError('Ativo configurado. A execução deste ativo aguarda a preparação do motor multiativo.')
                 state=control.command(payload,self.headers.get('Idempotency-Key',''),actor='local_owner')

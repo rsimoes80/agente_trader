@@ -12,7 +12,7 @@ from statistics import mean
 from uuid import uuid4
 
 from .agent_model import PROTOCOL, fingerprint, partition_samples
-from .agent_research import SESSIONS, intelligence_session, request_for, simulator
+from .agent_research import SESSIONS, intelligence_session, request_for, simulator,simulation_window
 from .agent_strategy import (
     SPEC,
     SPEC_HASH,
@@ -159,10 +159,11 @@ def label(
     simulation.submit(request_for(setup, sample_id))
     sessions = SessionEngine(profile.session_windows() if profile else SESSIONS)
     for bar in following:
+        active,closing=simulation_window(profile,bar,sessions.identify(bar.timestamp).active_sessions)
         simulation.advance(
             bar,
             data_valid=True,
-            active_sessions=sessions.identify(bar.timestamp).active_sessions,
+            active_sessions=active,force_close_reason=closing,
         )
         if not simulation.busy:
             break

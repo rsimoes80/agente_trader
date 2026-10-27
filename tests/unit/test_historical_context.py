@@ -65,7 +65,7 @@ class HistoricalContextTests(unittest.TestCase):
 
         from aurelia_fx.historical.collector import collect
 
-        repo = MagicMock(); repo.symbol="EURUSD"
+        repo = MagicMock(); repo.symbol="EURUSD"; repo.profile=None
         repo.latest.return_value = None
         repo.candles.return_value = rows(100)
         repo.ingest.return_value = {"received": 100, "inserted": 100, "unchanged": 0}
@@ -101,7 +101,7 @@ class HistoricalContextTests(unittest.TestCase):
         from aurelia_fx.historical.collector import collect
         from aurelia_fx.source_clock import SourceClockUnavailable
 
-        repo = MagicMock(); repo.symbol="EURUSD"
+        repo = MagicMock(); repo.symbol="EURUSD"; repo.profile=None
         repo.latest.return_value = None
         data = dict(
             symbol="EURUSD",
@@ -127,7 +127,7 @@ class HistoricalContextTests(unittest.TestCase):
 
         from aurelia_fx.historical.collector import collect
 
-        repo = MagicMock(); repo.symbol="EURUSD"
+        repo = MagicMock(); repo.symbol="EURUSD"; repo.profile=None
         prior = baseline()
         for tf in TIMEFRAMES:
             prior["timeframes"][tf]["last"] = (NOW - timedelta(minutes=5)).isoformat()

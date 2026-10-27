@@ -62,7 +62,10 @@
     document.querySelector('nav a[href^="/diagnostico"]').href='/diagnostico?symbol='+encodeURIComponent(selectedSymbol);
     document.querySelector('#operation .eyebrow').textContent='AGENTE '+selectedSymbol;
     $("chart").setAttribute('aria-label','Candles '+selectedSymbol+' em M5');
-    $("asset-readiness").textContent=data.asset?.selected===false?'Este ativo foi removido da lista. Adicione novamente para configurá-lo.':data.execution_ready?'Controles e resultados pertencem a '+selectedSymbol+'.':'Ativo em configuração. O gráfico pode ser consultado; execução e aprendizado deste ativo ainda aguardam a preparação do motor multiativo.';
+    $("asset-readiness").textContent=data.asset?.selected===false?'Este ativo foi removido da lista. Adicione novamente para configurá-lo.':data.execution_ready?'Controles e resultados pertencem a '+selectedSymbol+'.':data.preparation?.message||'Ativo em configuração. O gráfico pode ser consultado; execução e aprendizado deste ativo ainda aguardam a preparação do motor multiativo.';
+    const paperOption=$("execution-mode").querySelector('option[value="paper"]');
+    paperOption.disabled=selectedSymbol!=='EURUSD';
+    if(selectedSymbol!=='EURUSD')$("execution-mode").value='demo';
     const trend=current.last_decision?.trend_context,dir=t=>t?.direction==='bullish'?'alta':t?.direction==='bearish'?'baixa':'indefinida';
     $("trend-status").textContent=current.autonomy?.entry_policy==='trend-only-h4-h1-confirmed-v1'?`Filtro obrigatório ativo · H4: ${dir(trend?.macro_trend)} · H1: ${dir(trend?.context_trend)}. Confirmação estrutural exigida nos dois períodos.`:"Aguardando confirmação do processo com a política de tendência atualizada.";
     $("state-title").textContent=labels[current.state] || current.state;

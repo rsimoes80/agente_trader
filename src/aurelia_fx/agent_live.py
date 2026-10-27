@@ -32,6 +32,20 @@ def inference_adapter(config):
     return TimestralAdapter(config)
 
 
+def profile_config(config,profile):
+    if profile and config.local_release:
+        from dataclasses import replace
+        # A global EURUSD release is not evidence for another instrument.
+        return replace(config,local_release='',local_artifact_sha256='')
+    return config
+
+
+def forced_exit(state,quote,profile):
+    if state['desired']=='stopped':return 'OPERATOR_STOP'
+    if profile and not profile.allows_entry(utc(quote.get('observed_at',quote['at']))):return 'CALENDAR_CLOSE'
+    return None
+
+
 def checkpoint(control, session_id):
     with control.memory.pool.connection() as c:
         row = c.execute(
@@ -41,7 +55,9 @@ def checkpoint(control, session_id):
             (session_id,),
         ).fetchone()
     from .learning_storage import hydrate
-    return hydrate(control.memory,json.loads(row["payload_json"])) if row else None
+    data=hydrate(control.memory,json.loads(row["payload_json"])) if row else None
+    if data and data.get('symbol','EURUSD')!=getattr(control,'symbol','EURUSD'):raise ValueError('CHECKPOINT_INSTRUMENT_MISMATCH')
+    return data
 
 
 def claim(control, session_id, worker_id):
@@ -67,6 +83,7 @@ def project_account(control, account_key='EURUSD:USD'):
 
 
 def commit(control, account, worker_id, *, generation=None, **view):
+    if account.data.get('symbol','EURUSD')!=getattr(control,'symbol','EURUSD'):raise ValueError('ACCOUNT_COMMIT_INSTRUMENT_MISMATCH')
     with control.memory.pool.connection() as c, c.transaction():
         c.execute("SELECT pg_advisory_xact_lock(%s)", (LOCK,))
         state = control.latest(c)
@@ -176,11 +193,12 @@ def management_tick(control, fetch, state, worker_id):
         checkpoint=saved,
         research_mode=saved.get("research_mode",False),
     )
-    data = fetch("EURUSD", "M5", 100, include_current=True)
-    quote = observed_quote(data, clock_id=account.data["clock_id"])
+    symbol=getattr(control,'symbol','EURUSD');profile=getattr(account,'profile',None)
+    data = fetch(symbol, "M5", 100, include_current=True)
+    quote = observed_quote(data, clock_id=account.data["clock_id"],**(dict(symbol=symbol) if profile else {}))
     current = control.status()
     account.mark(
-        quote, force_close="OPERATOR_STOP" if current["desired"] == "stopped" else None
+        quote, force_close=forced_exit(current,quote,profile)
     )
     commit(control, account, worker_id)
     if not account.data["position"] and not account.data.get('pending_execution') and current["desired"] == "running":
@@ -228,6 +246,10 @@ def run_paper(
     control, repository, state, version, fetch, config, worker_id, stop, lease,
     *, research_policy=None,
 ):
+    profile=getattr(repository,'profile',None)
+    symbol=getattr(control,'symbol','EURUSD')
+    if profile and (state.get('mode')!='demo' or not research_policy or research_policy.profile!=profile):
+        raise ValueError('INSTRUMENT_RUNTIME_PROFILE_REQUIRED')
     session_id = state["session_id"]
     saved = checkpoint(control, session_id)
     account = make_account(control,state,saved=saved) if state.get('mode')=='demo' else PaperAccount(
@@ -242,7 +264,7 @@ def run_paper(
     )
     if not claim(control, session_id, worker_id):
         return
-    session = intelligence_session()
+    session = intelligence_session(**(dict(profile=profile) if profile else {}))
     model = version["model"] if version else None
     threshold = version["report"]["threshold"] if version else None
     if research_policy and (account.data["lab_state"].get("protocol_id") != research_policy.protocol_id
@@ -258,10 +280,10 @@ def run_paper(
         account.data['lab_state']=seeded
     if research_policy:
         initialized=account.data['lab_state'].get('continual')
-        current_learning=continual.initialize(account.data['lab_state'],datetime.now(timezone.utc),account.data['units'])
+        current_learning=continual.initialize(account.data['lab_state'],datetime.now(timezone.utc),account.data['units'],profile=profile)
         if current_learning is not initialized:
             account.event('learning_protocol',datetime.now(timezone.utc).isoformat(),
-                protocol=continual.SPEC,protocol_hash=continual.SPEC_HASH,
+                protocol=continual.SPEC,protocol_hash=continual.spec_for(profile),
                 scope='prospective_shadow_separate_from_broker_results')
         if state.get('mode')!='demo':commit(control,account,worker_id)
         control.publish(session_id,expected_generation=state.get("generation"),
@@ -285,12 +307,10 @@ def run_paper(
                 return
             control.heartbeat(worker_id)
             if (account.data["position"] or account.data.get('pending_execution')) and time.monotonic() - last_management >= 2:
-                data = fetch("EURUSD", "M5", 100, include_current=True)
+                data = fetch(symbol, "M5", 100, include_current=True)
+                quote=observed_quote(data, clock_id=account.data["clock_id"],**(dict(symbol=symbol) if profile else {}))
                 account.mark(
-                    observed_quote(data, clock_id=account.data["clock_id"]),
-                    force_close="OPERATOR_STOP"
-                    if current["desired"] == "stopped"
-                    else None,
+                    quote,force_close=forced_exit(current,quote,profile),
                 )
                 commit(control, account, worker_id)
                 last_management = time.monotonic()
@@ -312,8 +332,8 @@ def run_paper(
         )
     adapter = inference_adapter(config)
     from .training.online_study import OnlineStudy
-    study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id']) if research_policy else None
-    sessions = SessionEngine(SESSIONS)
+    study=OnlineStudy(control.memory,account.data['lab_state'],state['symbol_contract'],account.data['clock_id']) if research_policy and not profile else None
+    sessions = SessionEngine(profile.session_windows() if profile else SESSIONS)
     last_persist = 0
     last_history_refresh = 0
     last_config_check = 0
@@ -325,13 +345,11 @@ def run_paper(
                 return
             control.heartbeat(worker_id)
             try:
-                data = fetch("EURUSD", "M5", 500, include_current=True)
-                quote = observed_quote(data, clock_id=account.data["clock_id"])
+                data = fetch(symbol, "M5", 500, include_current=True)
+                quote = observed_quote(data, clock_id=account.data["clock_id"],**(dict(symbol=symbol) if profile else {}))
                 account.mark(
                     quote,
-                    force_close="OPERATOR_STOP"
-                    if current["desired"] == "stopped"
-                    else None,
+                    force_close=forced_exit(current,quote,profile),
                 )
                 if study:
                     try:study.tick(quote,stop=current['desired']!='running')
@@ -348,7 +366,7 @@ def run_paper(
                         account.data['model_reload_pending']=True
                         rollback(ROOT,Path(config.local_release).parent.name)
                         account.event('model_rollback',quote['at'],reason=rollback_request['reason'],samples=rollback_request['samples'])
-                    new_config=load_config()
+                    new_config=profile_config(load_config(),profile)
                     if new_config.fingerprint!=config.fingerprint and (new_config.local_release or config.local_release):
                         from .training.releases import resolve
                         from .forecasting.config import ROOT
@@ -376,12 +394,13 @@ def run_paper(
                     baseline,
                     as_of=datetime.now(timezone.utc),
                     clock_id=account.data["clock_id"],
+                    profile=profile,
                 )
                 if research_policy and history_block and time.monotonic()-last_history_refresh >= 60:
                     from .historical.collector import collect
                     last_history_refresh=time.monotonic()
                     baseline=collect(repository,fetch,days=30,full=False)
-                    history_block=readiness(baseline,as_of=datetime.now(timezone.utc),clock_id=account.data["clock_id"])
+                    history_block=readiness(baseline,as_of=datetime.now(timezone.utc),clock_id=account.data["clock_id"],profile=profile)
                 expired = not research_policy and datetime.now(timezone.utc) >= utc(
                     version["approval"]["valid_until"]
                 )
@@ -410,6 +429,7 @@ def run_paper(
                         snapshot,
                         session.history,
                         daily_history=session.aggregator.history["D1"],
+                        profile=profile,
                     )
                     if research_policy:
                         if setup:setup.update(learning_source=account.data['clock_id'],learning_model=config.fingerprint)
@@ -433,6 +453,7 @@ def run_paper(
                         else
                         "HISTORY_NOT_READY"
                         if history_block
+                        else 'MARKET_CALENDAR_CLOSING' if profile and not profile.allows_entry(utc(quote['observed_at']))
                         else "MODEL_APPROVAL_EXPIRED"
                         if expired
                         else "SIGNAL_TOO_OLD"
@@ -466,7 +487,7 @@ def run_paper(
                             config,
                         )
                         _, output = cached_forecast(
-                            control.memory, context, config, adapter
+                            control.memory, context, config, adapter,**(dict(profile=profile) if profile else {})
                         )
                         features = attach_forecast(setup, output)
                         if research_policy:
@@ -482,20 +503,23 @@ def run_paper(
                                 output, context, clock_id=account.data["clock_id"],
                                 configuration=config.fingerprint,
                                 generated_at=datetime.now(timezone.utc),
+                                **(dict(symbol=symbol,profile_id=profile.fingerprint) if profile else {}),
                             ),
                             hypothesis=hypothesis,
                         )
                         if not reason and ((research_policy and not hypothesis.get('wait')) or (not research_policy and probability >= threshold)):
                             fresh = control.status()
                             fresh_data = fetch(
-                                "EURUSD", "M5", 100, include_current=True
+                                symbol, "M5", 100, include_current=True
                             )
                             fresh_quote = observed_quote(
-                                fresh_data, clock_id=account.data["clock_id"]
+                                fresh_data, clock_id=account.data["clock_id"],**(dict(symbol=symbol) if profile else {})
                             )
-                            account.mark(fresh_quote)
+                            account.mark(fresh_quote,force_close=forced_exit(fresh,fresh_quote,profile))
                             if (
                                 fresh["desired"] == "running"
+                                and not stop.is_set()
+                                and not forced_exit(fresh,fresh_quote,profile)
                                 and fresh.get("generation") == current.get("generation")
                                 and utc(fresh_quote["observed_at"])
                                 - utc(fresh_quote["at"])
@@ -580,7 +604,7 @@ def run_paper(
                             forecast=lambda: output if output is not None else cached_forecast(
                                 control.memory,
                                 prepare(session.history, utc(latest['timestamp'])+timedelta(minutes=5), config),
-                                config, adapter)[1],
+                                config, adapter,**(dict(profile=profile) if profile else {}))[1],
                         )
                     account.data["last_candle"] = latest["timestamp"]
                     if research_policy:

@@ -95,7 +95,7 @@ def describe(rows, pip_size=0.0001):
     )
 
 
-def trading_age_seconds(start, end):
+def trading_age_seconds(start, end, *, calendar=None):
     """Elapsed open-market time under the existing NY weekly calendar.
 
     This does not excuse holidays or unexplained gaps. Live quote freshness is
@@ -106,15 +106,17 @@ def trading_age_seconds(start, end):
     while stamp < end:
         boundary = stamp.replace(second=0, microsecond=0) + timedelta(minutes=1)
         following = min(boundary, end)
-        if market_open(stamp):
+        if (calendar.instant_open if calendar else market_open)(stamp):
             total += (following - stamp).total_seconds()
         stamp = following
     return total
 
 
-def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
+def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001, profile=None):
     start, as_of = utc(start), utc(as_of)
     seconds = SECONDS[timeframe]
+    session_engine=SessionEngine(profile.session_windows()) if profile else SESSIONS
+    calendar=profile.calendar if profile else None
     rows = closed_rows(rows, timeframe, start=start, as_of=as_of)
     sessions = defaultdict(list)
     hours = defaultdict(list)
@@ -136,7 +138,7 @@ def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
                     )
                 )
         previous = row
-        session = SESSIONS.identify(stamp + timedelta(seconds=seconds)).active_sessions
+        session = session_engine.identify(stamp + timedelta(seconds=seconds)).active_sessions
         sessions[session[0] if session else "outside_session"].append(row)
         hours[str(stamp.hour)].append(row)
     # Five-day FX convention, not a provider holiday calendar. Large TFs use
@@ -146,7 +148,7 @@ def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
         minute += timedelta(minutes=1)
     trading_minutes = 0
     while minute + timedelta(minutes=1) <= as_of:
-        trading_minutes += market_open(minute)
+        trading_minutes += (calendar.instant_open if calendar else market_open)(minute)
         minute += timedelta(minutes=1)
     expected = max(1, int(trading_minutes * 60 / seconds))
     coverage = min(1.0, len(rows) / expected)
@@ -158,7 +160,7 @@ def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
     freshness_limit = max(6 * 3600, seconds * 2)
     fresh = last is not None and (
         (as_of - last - timedelta(seconds=seconds)).total_seconds() <= freshness_limit
-        or trading_age_seconds(last + timedelta(seconds=seconds), as_of) <= freshness_limit
+        or trading_age_seconds(last + timedelta(seconds=seconds), as_of,calendar=calendar) <= freshness_limit
     )
     ready = (
         coverage >= 0.95
@@ -178,8 +180,8 @@ def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
         last=last.isoformat() if last else None,
         expected_bars=expected,
         coverage=coverage,
-        calendar="FX weekly New York 17:00; holidays not modeled",
-        freshness_basis="elapsed FX weekly trading time; original tolerance unchanged",
+        calendar=calendar.version if calendar else "FX weekly New York 17:00; holidays not modeled",
+        freshness_basis="elapsed instrument calendar trading time; original tolerance unchanged" if calendar else "elapsed FX weekly trading time; original tolerance unchanged",
         gaps=gaps,
         gaps_truncated=len(gaps) == 100,
         ready=ready,
@@ -193,9 +195,11 @@ def summarize(rows, timeframe, *, start, as_of, days=30, pip_size=0.0001):
     )
 
 
-def readiness(baseline, *, as_of, clock_id):
+def readiness(baseline, *, as_of, clock_id, profile=None):
     if not baseline:
         return "HISTORY_BASELINE_REQUIRED"
+    if profile and (baseline.get('symbol')!=profile.symbol or baseline.get('profile_id')!=profile.fingerprint):
+        return 'HISTORY_INSTRUMENT_PROFILE_MISMATCH'
     cutoff = utc(as_of)
     if baseline.get("clock_id") != clock_id or baseline.get("version") != VERSION:
         return "HISTORY_SOURCE_MISMATCH"

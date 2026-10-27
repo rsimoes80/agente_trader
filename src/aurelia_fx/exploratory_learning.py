@@ -7,7 +7,7 @@ from datetime import timedelta
 from dataclasses import replace
 
 from .agent_model import fingerprint
-from .agent_research import request_for
+from .agent_research import request_for,simulation_window
 from .broker_calendar import unexpected_broker_gap
 from .entry_trend import entry_blocker
 from .historical.core import utc
@@ -47,7 +47,8 @@ def advance(parent, bar, at, active_sessions):
             Candle(utc(state['last_bar']), bar.open, bar.open, bar.open, bar.open), bar, 300)
     hypothesis_review.advance_portfolios(state, bar, valid, active_sessions)
     sim = decode_sim(state['portfolio'], state['units'],profile=profile)
-    for event in sim.advance(bar, data_valid=valid, active_sessions=active_sessions):
+    active_sessions,closing=simulation_window(profile,bar,active_sessions)
+    for event in sim.advance(bar, data_valid=valid, active_sessions=active_sessions,force_close_reason=closing):
         if event['status'] == 'closed':
             f = event['financial_result']
             result = dict(variant='baseline', context=event['intelligence_context']['learning_context'],

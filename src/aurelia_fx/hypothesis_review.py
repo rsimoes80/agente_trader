@@ -200,11 +200,13 @@ def advance_portfolios(state, bar, valid, active_sessions):
     """Replay two independent accounts, including opportunities freed by skipped trades."""
     from .continual_learning import decode_sim, encode_sim, profile_for
     profile=profile_for(state)
+    from .agent_research import simulation_window
+    active_sessions,closing=simulation_window(profile,bar,active_sessions)
     research=state_for(state);proposal=research['proposal']
     if not proposal or proposal['status']!='COLLECTING_FUTURE':return
     for arm in ('base','filtered'):
         sim=decode_sim(proposal['portfolios'].get(arm),state['units'],profile=profile)
-        for event in sim.advance(bar,data_valid=valid,active_sessions=active_sessions):
+        for event in sim.advance(bar,data_valid=valid,active_sessions=active_sessions,force_close_reason=closing):
             if event['status']=='censored':
                 proposal['status']='INVALIDATED_DATA_GAP'
             elif event['status']=='closed':

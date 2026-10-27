@@ -30,7 +30,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_other_workers_cannot_mask_a_stalled_asset(self):
         clock=[0.];callbacks={}
-        def serve(symbol,stop,progress):callbacks[symbol]=progress;progress();stop.wait(10)
+        def serve(symbol,stop,progress):progress();callbacks[symbol]=progress;stop.wait(10)
         c=MultiAssetCoordinator(lambda:['EURUSD','XAUUSD'],serve,stall_seconds=30,now=lambda:clock[0])
         self.addCleanup(c.close);c.poll();self.wait_for(lambda:len(callbacks)==2)
         clock[0]=31.;callbacks['EURUSD']()

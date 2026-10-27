@@ -8,7 +8,7 @@ from datetime import datetime,timedelta,timezone
 import json,math
 
 from .agent_model import fingerprint
-from .agent_research import simulator,request_for,SESSIONS
+from .agent_research import simulator,request_for,SESSIONS,simulation_window
 from .domain import Candidate,Candle
 from .execution_simulator import EntryRequest,Position
 from .historical.core import utc
@@ -228,10 +228,11 @@ def advance(lab,rows,at):
             # Calendar gaps are allowed; unexpected missing exposure bars are not.
             prior=Candle(utc(previous),bar.open,bar.open,bar.open,bar.open)
             valid=not gap_detector(prior,bar,300)
-        hypothesis_review.advance_portfolios(state,bar,valid,sessions.identify(bar.timestamp).active_sessions)
-        exploratory_learning.advance(state,bar,at,sessions.identify(bar.timestamp).active_sessions)
+        active,closing=simulation_window(profile,bar,sessions.identify(bar.timestamp).active_sessions)
+        hypothesis_review.advance_portfolios(state,bar,valid,active)
+        exploratory_learning.advance(state,bar,at,active)
         for variant,sim in portfolios.items():
-            fresh=sim.advance(bar,data_valid=valid,active_sessions=sessions.identify(bar.timestamp).active_sessions)
+            fresh=sim.advance(bar,data_valid=valid,active_sessions=active,force_close_reason=closing)
             for event in fresh:
                 if event['status']=='closed':
                     f=event['financial_result'];key=event['intelligence_context']['learning_context']

@@ -97,6 +97,10 @@ def record_decision(state, candle, decision):
 
 def collection_health(state, worker, now=None):
     now = utc(now or datetime.now(timezone.utc))
+    calendar=None
+    if state.get('research_profile'):
+        from .instrument_research import InstrumentResearchProfile
+        calendar=InstrumentResearchProfile.from_dict(state['research_profile']).calendar
     evolution = (((state.get('autonomy') or {}).get('continual') or {}).get('evolution') or {})
     last = evolution.get('last_bar') or (state.get('last_decision') or {}).get('candle')
     result = dict(checked_at=now.isoformat(), last_closed_bar=last, alerts=[], status='OK')
@@ -106,11 +110,13 @@ def collection_health(state, worker, now=None):
         else:result.update(status='PAUSED', message='Coleta pausada ou agente parado por solicitação.')
     elif not worker.get('available'):
         result.update(status='ERROR', message='O serviço Windows não confirma atividade. A coleta pode estar interrompida.')
+    elif calendar and state.get('state') in {'ANALYZING','POSITION_OPEN','WAITING_SOURCE','WAITING_QUOTE'} and not calendar.instant_open(now):
+        result.update(status='MARKET_CLOSED',message='Pausa prevista no calendário deste ativo; aguardando a próxima sessão.')
     elif state.get('state') in {'WAITING_SOURCE', 'ERROR', 'INSUFFICIENT_DATA'}:
         result.update(status='ERROR', message='A coleta está aguardando fonte ou dados válidos. Verifique a conexão com o MT5.')
     elif state.get('state') in {'CONNECTING', 'QUEUED', 'LOADING_HISTORY', 'ANALYSIS_WARMUP', 'RECOVERING'}:
         result.update(status='PREPARING', message='Preparando o contexto. Ainda não é ausência de oportunidades.')
-    elif not instant_open(now):
+    elif not (calendar.instant_open if calendar else instant_open)(now):
         result.update(status='MARKET_CLOSED', message='Mercado fechado pelo calendário semanal; ausência de novos candles é esperada.')
     elif state.get('state') == 'WAITING_QUOTE':
         result.update(status='ERROR', message='Aguardando cotações válidas do MT5 durante o mercado aberto.')
@@ -120,7 +126,7 @@ def collection_health(state, worker, now=None):
         closed_at = utc(last)+timedelta(minutes=5)
         if closed_at > now+timedelta(seconds=60):
             result.update(status='WARNING', message='Horário do candle está no futuro; verifique o relógio da fonte.')
-        elif closed_at < now and trading_age_seconds(max(closed_at, now-timedelta(days=7)), now) > 15*60:
+        elif closed_at < now and trading_age_seconds(max(closed_at, now-timedelta(days=7)), now,calendar=calendar) > 15*60:
             result.update(status='ERROR', message='Sem avanço da análise há mais de 15 minutos de mercado aberto. Isso não significa falta de oportunidade.')
         else:
             result['message'] = 'Coleta recente. Aguardar um gatilho não representa falha do agente.'

@@ -7,7 +7,44 @@ executar análises e operações simultâneas. Cada ativo deve ter contexto,
 experiências, hipóteses, resultados e modelos ajustados próprios. A conta mantém
 limites conjuntos de risco e margem. O projeto continua exclusivamente em demo.
 
-## Sequência e estado
+## Estado atual — 27/10/2026
+
+O coordenador e o ciclo completo do XAUUSD estão integrados. Cada símbolo possui
+coleta, sessão, hipótese, memória, resultados e retomada próprios. O EURUSD conserva
+as chaves e a sessão legadas. O XAUUSD usa um perfil congelado por conta e contrato,
+com calendário, custos e escalas próprios; não recebe resultados ou pesos ajustados
+do EURUSD. A integração não demonstra rentabilidade de nenhuma estratégia.
+
+Na instalação, `data/multi_asset.json` habilita o coordenador; o modelo portátil
+é `config/multi_asset.example.json`. O arquivo local não contém credenciais e é
+ignorado pelo Git. Alterações dessa configuração exigem reinício controlado do
+serviço Windows. O banco guarda a seleção, lotes, sessões e perfis.
+
+Antes de analisar um novo ativo, o serviço confere a conta demo e o contrato,
+importa 30 dias em M1/M5/M15/M30/H1/H4/D1 e captura contexto adicional de 60 dias
+somente em M5 para agregar os períodos superiores. Dados válidos são reutilizados.
+Baselines de perfis distintos não se misturam. A calibração inicial de spread e
+volatilidade usa os primeiros 20 dias, sem escolher parâmetros pelos dez últimos.
+
+Para XAUUSD Standard, a comissão confirmada é zero, a unidade de preço é 0,01 e
+o valor financeiro é conferido com `order_calc_profit`. Slippage de dois ticks por
+execução é uma hipótese explícita de pesquisa. O calendário observado é Nova York
+18h–17h, com pausa diária 17h–18h e fechamento semanal na sexta. O sistema impede
+novas entradas junto ao fechamento e solicita saída cinco minutos antes da pausa;
+se a conexão falhar, não há garantia de execução antes da virada.
+
+O botão Iniciar atua somente no símbolo selecionado, com seu lote. Selecionar um
+ativo não inicia automaticamente uma sessão. Sessões em execução são retomadas
+pelo supervisor após reinício, com reconciliação e sem prazo arbitrário de expiração.
+O XAUUSD integrado opera exclusivamente na conta demo, assim como o escopo autorizado.
+
+**Limitação remanescente:** treinamento e promoção de pesos próprios do Timestral
+para cada ativo ainda não estão integrados. O XAUUSD utiliza a base pré-treinada e
+aprendizado de experiências/hipóteses separado; o ajuste global legado dos pesos
+do EURUSD é desconsiderado por esse perfil. Aprender resultados não equivale a
+retreinar automaticamente o modelo neural.
+
+## Histórico das etapas anteriores à integração
 
 1. **Contratos e dados — base implementada.** Catálogo por nome exato, inspeção
    financeira usando `order_calc_profit`, arquivos históricos separados por
@@ -35,8 +72,9 @@ limites conjuntos de risco e margem. O projeto continua exclusivamente em demo.
    tempo, reinício, suspensão e reconciliação, com custos próprios. Só depois
    habilitar os novos ciclos demo; hipóteses sem confirmação continuam em espera.
 
-O objetivo permanece incompleto enquanto os itens 2–5 não forem comprovados.
-Os contratos de outros ativos não estão liberados para execução pelo motor legado.
+Os estados pendentes abaixo documentam entregas anteriores, não o estado atual.
+Contratos adicionais exigem calendário e custos explicitamente conferidos; o
+catálogo disponível no terminal não é autorização automática para todos os ativos.
 
 ## Evidência da inspeção no terminal
 
@@ -184,8 +222,8 @@ A criação dessa evidência não envia ordens nem libera o XAUUSD no motor lega
 
 ## Coordenador e risco da conta
 
-O modo `AGENTE_TRADER_MULTI_ASSET=1` está implementado em `run_agent.py`, mas ainda
-não foi habilitado na instalação. Cada ativo tem serviço, estado, geração, lease
+O modo coordenado é habilitado por `data/multi_asset.json` ou pela variável
+`AGENTE_TRADER_MULTI_ASSET=1`. Cada ativo tem serviço, estado, geração, lease
 e retomada independentes. Uma falha recebe nova tentativa sem reiniciar os demais;
 um serviço travado não é mascarado pelos sinais de atividade de outro. O supervisor
 continua responsável por encerrar a árvore de processos em caso de travamento.
@@ -194,8 +232,8 @@ O encerramento conserva o lease global enquanto algum serviço ainda pode enviar
 A capacidade inicial é de oito serviços simultâneos, com fila explícita no estado
 do coordenador. Selecionar um ativo não inicia uma sessão e cancelar/remover um
 serviço não cria uma segunda geração sobre a anterior. A preparação de símbolos
-novos continua recusada enquanto seu perfil não estiver ligado ao ciclo completo;
-o coordenador não anuncia uma capacidade de execução que ainda não foi validada.
+novos exige perfil financeiro e calendário explícitos; erros nessa etapa são
+mostrados no painel e não são substituídos por parâmetros do EURUSD.
 
 `SharedTimestralPool` fornece identificadores independentes aos serviços e mantém
 um único adaptador físico. Chamadas são serializadas; versões diferentes fecham o
@@ -225,4 +263,5 @@ Os testes do gateway com SDK simulado e PostgreSQL isolado exercitam duas entrad
 aceitas dentro do orçamento e a recusa da segunda ao ultrapassar o limite conjunto.
 Também cobrem lote autorizado, exposição externa, proteção alterada, reinício das
 referências, limites diários e ausência de encerramentos de outro instrumento.
-Essa validação ainda não equivale a ativação do XAUUSD no serviço ao vivo.
+Testes com SDK simulado não forçam entradas no terminal; a execução depende dos
+gatilhos e da autorização demo da sessão.

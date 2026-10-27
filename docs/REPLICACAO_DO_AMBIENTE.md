@@ -172,6 +172,12 @@ caminhos. Não reinstale esses serviços com caminhos do usuário antigo.
 
 ## 4. Ativar uma única instância
 
+Para reproduzir a execução coordenada de EURUSD/XAUUSD, copie
+`config/multi_asset.example.json` para `data/multi_asset.json` no Windows antes
+de iniciar o agente. A seleção e os lotes vêm do PostgreSQL restaurado. Perfis e
+autorizações são vinculados à conta e ao contrato; trocar de conta exige nova
+conferência. Consulte [múltiplos ativos](MULTIPLOS_ATIVOS.md).
+
 Uma cópia do banco pode conter uma sessão com estado desejado `running`.
 Antes de instalar os agendamentos, confirme o estado restaurado e desative as
 tarefas do equipamento antigo. Não use dois bancos clonados para controlar a
