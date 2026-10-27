@@ -47,6 +47,11 @@ class ModelHandle:
     def __init__(self,pool,config,key):
         self.pool=pool;self.config=config;self.key=key;self.closed=False
     def warmup(self):return self.pool.call(self,'warmup')
+    @property
+    def progress(self):
+        active=self.pool.active
+        if active and active.config==self.config:return dict(getattr(active,'progress',{}))
+        return dict(phase='WAITING_SHARED_ENGINE')
     def forecast(self,values):return self.pool.call(self,'forecast',values)
     def forecast_batch(self,values):return self.pool.call(self,'forecast_batch',values)
     def close(self):self.pool.release(self)

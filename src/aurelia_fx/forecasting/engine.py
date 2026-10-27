@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import time
@@ -12,8 +11,8 @@ from .config import SDK_REVISION, TimestralConfig
 
 
 def engine_main():
-    def progress(phase):
-        print(json.dumps(dict(progress=True,phase=phase)),flush=True)
+    def progress(phase,**details):
+        print(json.dumps(dict(progress=True,phase=phase,**details)),flush=True)
     try:
         progress('IMPORTING_NUMPY')
         import numpy as np
@@ -21,7 +20,7 @@ def engine_main():
         import torch
         progress('IMPORTING_SDK')
         from huggingface_hub import snapshot_download
-        from .loading import load_forecaster
+        from .loading import artifact_sha256, load_forecaster
 
         options = json.loads(sys.stdin.readline())
         options["horizons"] = tuple(options["horizons"])
@@ -50,8 +49,7 @@ def engine_main():
         )
         weights = directory / "model.safetensors"
         progress('VERIFYING_ARTIFACT')
-        with weights.open("rb") as handle:
-            artifact = hashlib.file_digest(handle, "sha256").hexdigest()
+        artifact=artifact_sha256(weights,lambda read,total:progress('VERIFYING_ARTIFACT',bytes_read=read,total_bytes=total))
         progress('LOADING_WEIGHTS')
         try:
             model = load_forecaster(

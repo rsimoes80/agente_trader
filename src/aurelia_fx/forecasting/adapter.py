@@ -33,6 +33,7 @@ class TimestralAdapter:
         self.retry_at = 0.
         self.last_failure = None
         self.cold = True
+        self.progress = {}
 
     def close(self):
         process, self.process = self.process, None
@@ -63,10 +64,12 @@ class TimestralAdapter:
         finally:
             responses.put({"ok": False, "error_type": "EngineExited"})
 
-    def _wait(self, timeout):
+    def _wait(self, timeout, *, startup=False):
         import psutil
 
-        deadline = time.monotonic() + timeout
+        started=time.monotonic();deadline=started+timeout
+        hard_deadline=started+max(timeout,min(900,5*timeout)) if startup else deadline
+        stages=set();bytes_read=0;total_bytes=None
         while time.monotonic() < deadline:
             try:
                 parent=psutil.Process(self.process.pid)
@@ -89,14 +92,29 @@ class TimestralAdapter:
                     timeout=min(0.1, max(0.001, deadline - time.monotonic()))
                 )
                 if response.get('progress'):
-                    self.phase=response.get('phase','LOADING')
+                    phase=response.get('phase')
+                    if phase not in ('IMPORTING_NUMPY','IMPORTING_TORCH','IMPORTING_SDK',
+                        'RESOLVING_ARTIFACT','VERIFYING_ARTIFACT','LOADING_WEIGHTS'):
+                        raise ModelUnavailable('Progresso do processo Timestral inválido.',code='INVALID_ENGINE_PROTOCOL',phase=self.phase)
+                    self.phase=phase
+                    advanced=False
+                    if self.phase not in stages:
+                        stages.add(self.phase);advanced=True
+                    read,total=response.get('bytes_read'),response.get('total_bytes')
+                    if (self.phase=='VERIFYING_ARTIFACT' and type(read) is int and type(total) is int
+                            and 0<read<=total and read>bytes_read and (total_bytes is None or total_bytes==total)):
+                        bytes_read,total_bytes=read,total;advanced=True
+                    self.progress=dict(phase=self.phase)
+                    if total_bytes:self.progress.update(bytes_read=bytes_read,total_bytes=total_bytes)
+                    if startup and advanced:deadline=min(hard_deadline,time.monotonic()+timeout)
                     continue
                 return response
             except queue.Empty:
                 pass
         self.close()
         raise ModelUnavailable("Timeout Timestral; nova tentativa automática.",code='LOAD_TIMEOUT' if self.phase!='INFERENCE' else 'INFERENCE_TIMEOUT',
-            phase=self.phase,details=dict(timeout_seconds=timeout))
+            phase=self.phase,details=dict(timeout_seconds=timeout,startup_max_seconds=hard_deadline-started,
+                **self.progress))
 
     def _start(self):
         if time.monotonic()<self.retry_at:
@@ -115,6 +133,12 @@ class TimestralAdapter:
         )
         if not Path(python).is_file():
             raise ModelUnavailable("Ambiente Timestral não instalado.",code='ENVIRONMENT_MISSING',phase='STARTING')
+        import psutil
+        available=psutil.virtual_memory().available
+        if available<128*1024**2:
+            raise ModelUnavailable('Timestral aguarda memória livre antes de iniciar o processo.',
+                code='WAITING_RESOURCES',phase='MEMORY_ADMISSION',retry_seconds=60,
+                details=dict(available_mb=round(available/1024**2),minimum_available_mb=128))
         env = dict(
             os.environ,
             PYTHONIOENCODING="utf-8",
@@ -145,7 +169,7 @@ class TimestralAdapter:
         self.process.stdin.write(json.dumps(self._options()) + "\n")
         self.process.stdin.flush()
         self.phase='STARTING'
-        ready = self._wait(self.config.load_timeout_seconds)
+        ready = self._wait(self.config.load_timeout_seconds,startup=True)
         if not ready.get("ready"):
             self.close()
             raise ModelUnavailable(
@@ -153,6 +177,7 @@ class TimestralAdapter:
                 code='LOAD_FAILED',phase=self.phase,details=dict(engine_error=ready.get('error_type','unknown'))
             )
         self.phase='READY'
+        self.progress=dict(phase='READY')
         self.cold=True
 
     def _command(self,python):return [python,'-u',str(ROOT/'run_timestral.py'),'--engine']
@@ -183,6 +208,7 @@ class TimestralAdapter:
                 self.process.stdin.write(json.dumps(request, allow_nan=False) + "\n")
                 self.process.stdin.flush()
                 self.phase='INFERENCE'
+                self.progress=dict(phase='INFERENCE')
                 # Mapped weights are faulted into RAM on their first forward
                 # pass. Use the bounded loading budget for that warm-up only.
                 result = self._wait(max(self.config.timeout_seconds,self.config.load_timeout_seconds)

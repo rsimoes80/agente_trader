@@ -23,7 +23,8 @@ def failure(state, exc, *, configuration, now=None):
         retry_at=stamp(at+timedelta(seconds=getattr(exc,'retry_seconds',60))))
     health=state.setdefault('forecast_health',{})
     health.update(status='WAITING_RESOURCES' if code in {'WAITING_RESOURCES','MEMORY_LIMIT'} else 'UNAVAILABLE',
-        configuration=configuration,last_attempt=stamp(at),current_failure=record,last_failure=record)
+        configuration=configuration,last_attempt=stamp(at),current_failure=record,last_failure=record,
+        progress=dict(phase=record['phase'],**{k:v for k,v in record['details'].items() if k in {'bytes_read','total_bytes'}}))
     if not record['details'].get('retry_pending'):
         health['failure_count']=health.get('failure_count',0)+1
     return record
@@ -38,6 +39,7 @@ def success(state, output, *, configuration, now=None, source='engine'):
         if health.get('status')!='AVAILABLE':health['status']='CACHE_ONLY'
         return
     health.update(status='AVAILABLE',current_failure=None,last_success=at,
+        progress=dict(phase='READY'),
         artifact_sha256=output.get('artifact_sha256'),model=output.get('model'),
         latency_ms=output.get('latency_ms'),last_success_source=source)
 
@@ -53,7 +55,11 @@ def forecast_or_wait(operation, context, decision):
 
 def consume_probe(state,probe,*,configuration):
     checked=probe.poll()
-    if not checked or checked['configuration']!=configuration:return False
+    if not checked:
+        if probe.busy and probe.progress:
+            state.setdefault('forecast_health',{})['progress']=probe.progress
+        return False
+    if checked['configuration']!=configuration:return False
     if checked['error'] is not None:
         failure(state,checked['error'],configuration=configuration)
     else:
@@ -83,6 +89,11 @@ class ForecastProbe:
     @property
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
+
+    @property
+    def progress(self):
+        owner=getattr(self.operation,'__self__',None)
+        return dict(getattr(owner,'progress',{}) or {})
 
     def _run(self,values,configuration,signal_at):
         output=None;error=None

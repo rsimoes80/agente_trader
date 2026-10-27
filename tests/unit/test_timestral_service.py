@@ -16,6 +16,8 @@ from .test_timestral_core import bars, output
 
 class TimestralServiceTests(unittest.TestCase):
     def setUp(self):
+        available=patch('psutil.virtual_memory',return_value=SimpleNamespace(available=8*1024**3))
+        available.start();self.addCleanup(available.stop)
         self.config = TimestralConfig(enabled=True)
         self.repo = MagicMock()
         self.repo.evaluate_available.return_value = 0

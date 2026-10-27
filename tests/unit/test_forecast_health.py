@@ -134,5 +134,63 @@ class ForecastHealthTests(unittest.TestCase):
         alerts=collection_health(state,{'available':True},now)['alerts']
         self.assertIn('históricas',alerts[0]);self.assertIn('12',alerts[0])
 
+    def test_low_memory_is_detected_before_starting_an_engine(self):
+        import sys
+        a=TimestralAdapter(TimestralConfig(enabled=True,python=sys.executable))
+        with patch('psutil.virtual_memory',return_value=SimpleNamespace(available=9*1024**2)),patch('subprocess.Popen') as launch:
+            with self.assertRaises(ModelUnavailable) as caught:a.forecast([1.]*64)
+        self.assertEqual(caught.exception.code,'WAITING_RESOURCES')
+        self.assertEqual(caught.exception.phase,'MEMORY_ADMISSION');launch.assert_not_called()
+
+    def test_loading_progress_extends_inactivity_budget_but_remains_bounded(self):
+        now=[0.];a=TimestralAdapter(TimestralConfig(enabled=True));a.process=MagicMock();a.process.pid=123
+        responses=iter([{'progress':True,'phase':'IMPORTING_TORCH'},
+            {'progress':True,'phase':'VERIFYING_ARTIFACT','bytes_read':16,'total_bytes':32},
+            {'progress':True,'phase':'VERIFYING_ARTIFACT','bytes_read':32,'total_bytes':32}, {'ready':True}])
+        def get(**kwargs):now[0]+=.015;return next(responses)
+        a.responses=SimpleNamespace(get=get)
+        process=SimpleNamespace(memory_info=lambda:SimpleNamespace(rss=20),children=lambda **kwargs:[],is_running=lambda:True)
+        with patch('aurelia_fx.forecasting.adapter.time.monotonic',side_effect=lambda:now[0]),patch('psutil.Process',return_value=process),patch('psutil.virtual_memory',return_value=SimpleNamespace(available=2*1024**3)):
+            self.assertEqual(a._wait(.02,startup=True),{'ready':True})
+        self.assertGreater(now[0],.02);self.assertEqual(a.progress['bytes_read'],32)
+
+    def test_repeated_progress_cannot_keep_loading_alive_forever(self):
+        for advancing in (False,True):
+            now=[0.];a=TimestralAdapter(TimestralConfig(enabled=True));a.process=MagicMock();a.process.pid=123
+            def get(**kwargs):
+                now[0]+=.015
+                return dict(progress=True,phase='VERIFYING_ARTIFACT',bytes_read=int(now[0]*1000) if advancing else 1,total_bytes=100000)
+            a.responses=SimpleNamespace(get=get)
+            process=SimpleNamespace(memory_info=lambda:SimpleNamespace(rss=20),children=lambda **kwargs:[],is_running=lambda:True)
+            with patch('aurelia_fx.forecasting.adapter.time.monotonic',side_effect=lambda:now[0]),patch('psutil.Process',return_value=process),patch('psutil.virtual_memory',return_value=SimpleNamespace(available=2*1024**3)),patch.object(a,'close'):
+                with self.assertRaises(ModelUnavailable) as caught:a._wait(.02,startup=True)
+            self.assertEqual(caught.exception.code,'LOAD_TIMEOUT');self.assertLess(now[0],.12)
+            if not advancing:self.assertLess(now[0],.08)
+
+    def test_full_checksum_reports_progress_and_rejects_a_changed_file(self):
+        import hashlib,tempfile
+        from pathlib import Path
+        from aurelia_fx.forecasting.loading import artifact_sha256
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'weights';data=bytes(range(256))*163;path.write_bytes(data);events=[]
+            result=artifact_sha256(path,lambda n,total:events.append((n,total)),block_size=1024,progress_bytes=4000)
+            self.assertEqual(result,hashlib.sha256(data).hexdigest())
+            self.assertEqual(events[-1],(len(data),len(data)))
+            self.assertTrue(all(a[0]<b[0] for a,b in zip(events,events[1:])))
+            changed=[]
+            def mutate(n,total):
+                if not changed:
+                    changed.append(True)
+                    with path.open('ab') as out:out.write(b'x')
+            with self.assertRaisesRegex(ValueError,'ARTIFACT_CHANGED'):
+                artifact_sha256(path,mutate,block_size=1024,progress_bytes=4000)
+
+    def test_progress_is_telemetry_and_never_means_a_successful_prediction(self):
+        probe=MagicMock();probe.poll.return_value=None;probe.busy=True
+        probe.progress={'phase':'VERIFYING_ARTIFACT','bytes_read':16,'total_bytes':32};state={}
+        self.assertFalse(consume_probe(state,probe,configuration='a'))
+        self.assertEqual(state['forecast_health']['progress']['bytes_read'],16)
+        self.assertNotEqual(state['forecast_health'].get('status'),'AVAILABLE')
+
 
 if __name__=='__main__':unittest.main()

@@ -4,6 +4,23 @@ Same float32 weights and forecaster defaults as SDK load_model. The sole
 nonpersistent RoPE buffer is rebuilt on the destination device, as in the SDK.
 """
 from pathlib import Path
+import hashlib
+
+
+def artifact_sha256(path,progress=None,*,block_size=1024*1024,progress_bytes=16*1024*1024):
+    """Full verification with a reusable bounded buffer and measurable progress."""
+    path=Path(path);before=path.stat();digest=hashlib.sha256();read=reported=0
+    buffer=bytearray(block_size);view=memoryview(buffer)
+    with path.open('rb') as stream:
+        while count:=stream.readinto(buffer):
+            digest.update(view[:count]);read+=count
+            if progress and read-reported>=progress_bytes:
+                progress(read,before.st_size);reported=read
+    after=path.stat()
+    if (read!=before.st_size or before.st_size!=after.st_size or before.st_mtime_ns!=after.st_mtime_ns):
+        raise ValueError('ARTIFACT_CHANGED_DURING_VERIFICATION')
+    if progress and read!=reported:progress(read,before.st_size)
+    return digest.hexdigest()
 
 
 def load_forecaster(directory, *, device, max_context):
