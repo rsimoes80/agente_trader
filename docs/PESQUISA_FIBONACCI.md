@@ -18,6 +18,8 @@ Cada ativo tem um protocolo, lote, custos, estado e carteiras próprios, identif
 
 Os valores são hipóteses de engenharia fixadas antes da coleta, não uma reprodução das regras completas do vídeo. A referência continua funcionando quando não existe âncora Fibonacci. A carteira de extensão só pode entrar com alvo adiante da entrada; a avaliação de risco do simulador também pode rejeitá-la.
 
+Existe um quarto simulador de controle interno da saída: ele recebe o mesmo fluxo elegível por âncoras da extensão, mas mantém o alvo original. A extensão é comparada com esse controle, identificado no painel, para não atribuir à saída um efeito causado pela ausência de âncoras. A variante de retração continua comparada com a referência geral. Diferenças de duração podem produzir disponibilidade de posições distinta entre carteiras.
+
 Cada carteira mantém uma posição por vez e os limites do simulador atual, incluindo custos, duração máxima, calendário, spread e risco. A soma das três carteiras não representa uma carteira operável com risco conjunto. Resultados são comparações de carteiras independentes sobre o mesmo fluxo de oportunidades, não pares obrigatórios de operações idênticas. As variantes podem ficar ocupadas em momentos diferentes.
 
 ## Âncoras e causalidade

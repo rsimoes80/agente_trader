@@ -11,13 +11,14 @@ from .structure import analyze_structure
 
 
 ARMS = {'reference': 'Estratégia atual', 'retracement': 'Contexto de retração',
-        'extension': 'Saída por extensão'}
+        'extension': 'Saída por extensão', 'extension_reference': 'Controle da saída'}
 SPEC = dict(version='fibonacci-shadow-v1', execution='M5', pivot_window=2,
     history_bars=300, minimum_impulse_atr=1., maximum_anchor_age_bars=96,
     retracement_min=.382, retracement_max=.786, extension=1.272,
     measurement='signal_close', minimum_closed=30,
     discovery_days=14, validation_days=30, minimum_paired_days=7,
     scope='independent_costed_shadow_portfolios', automatic_activation=False)
+SPEC['exit_comparison'] = 'same_anchor_eligible_stream_with_original_exit_control'
 SPEC_HASH = fingerprint(SPEC)
 
 
@@ -27,13 +28,18 @@ def initialize(parent, at):
     profile = profile_for(parent)
     expected = fingerprint(dict(spec=SPEC_HASH, reference_strategy=strategy_hash(profile), profile=parent.get('profile_id'),
                                 units=parent['units']))
-    state = parent.setdefault('fibonacci_research', dict(spec_hash=expected,
+    fresh = dict(spec_hash=expected,
         symbol=parent.get('symbol', 'EURUSD'), profile_id=parent.get('profile_id'),
         registered_at=utc(at).isoformat(), last_signal=None, last_bar=None,
         observations=[], outcomes=[], portfolios={}, counts={}, censored=0,
-        errors=0, last_error=None))
+        errors=0, last_error=None)
+    state = parent.setdefault('fibonacci_research', fresh)
     if state['spec_hash'] != expected:
-        raise ValueError('FIBONACCI_PROTOCOL_SCOPE_MISMATCH')
+        if (state['observations'] or state['outcomes'] or
+                any(p.get('request') or p.get('position') for p in state['portfolios'].values())):
+            raise ValueError('FIBONACCI_PROTOCOL_SCOPE_MISMATCH')
+        fresh['previous_empty_protocol'] = state['spec_hash']
+        parent['fibonacci_research'] = state = fresh
     return state, profile
 
 
@@ -129,11 +135,11 @@ def _consider(parent, setup, history):
             reason = facts['reason']
         elif arm == 'retracement' and not SPEC['retracement_min'] <= facts['depth'] <= SPEC['retracement_max']:
             reason = 'OUTSIDE_RETRACEMENT_ZONE'
-        elif arm == 'extension':
+        elif arm in {'extension', 'extension_reference'}:
             target = facts['extension_target']
             if (target-candidate.entry)*(1 if candidate.side == 'long' else -1) <= 0:
                 reason = 'EXTENSION_BEHIND_ENTRY'
-            else:
+            elif arm == 'extension':
                 modified = replace(candidate, target=target)
         if reason is None:
             payload = {**setup, 'candidate': modified, 'snapshot': {**setup['snapshot'],
@@ -212,6 +218,11 @@ def summary(parent):
     base_metrics = metrics(base)
     arms=[]
     for arm, name in ARMS.items():
+        if arm=='extension_reference':
+            continue
+        comparison='extension_reference' if arm=='extension' else 'reference'
+        base=[r for r in rows if r['variant']==comparison]
+        base_metrics=metrics(base)
         selected = [r for r in rows if r['variant'] == arm]
         m=metrics(selected)
         days=sorted({r['exit_at'][:10] for r in selected+base})
@@ -230,6 +241,7 @@ def summary(parent):
                 label=('CANDIDATE' if m['net_pnl']>0 and lower is not None and lower>0
                        and m['realized_drawdown']<=base_metrics['realized_drawdown'] else 'REJECTED')
         arms.append(dict(id=arm,name=name,status=label,**m,
+            comparison_reference=ARMS[comparison], comparison_closed=len(base),
             delta_baseline=m['net_pnl']-base_metrics['net_pnl'] if selected and base else None,
             daily_difference_lower_bound=lower, discovery=metrics([r for r in state['outcomes']
                 if r['cohort']=='discovery' and r['variant']==arm])))
