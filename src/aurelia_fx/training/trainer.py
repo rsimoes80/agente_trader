@@ -85,14 +85,16 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     rng=np.random.default_rng(31)
     epoch_path=output/'epoch.pt';resume=load_epoch(epoch_path,identity)
     start_epoch=1
+    weight_update=None
     if resume:
         model.head.load_state_dict(resume['head']);optimizer.load_state_dict(resume['optimizer'])
         rng.bit_generator.state=resume['numpy_rng'];torch.set_rng_state(resume['torch_rng'])
         best=resume['best'];best_epoch=resume['best_epoch'];history=resume['history']
+        weight_update=resume.get('weight_update')
         save_file(resume['best_head'],best_path);start_epoch=resume['epoch']+1
-        progress(status='TRAINING',stage='training',message='Retomando após a última época concluída',epoch=resume['epoch'],epochs=settings['epochs'])
+        progress(status='TRAINING',stage='training',message='Retomando após a última época concluída',epoch=resume['epoch'],epochs=settings['epochs'],**(dict(weight_update=weight_update) if weight_update else {}))
     for epoch in range(start_epoch,settings['epochs']+1):
-        order=rng.permutation(len(train_data['hidden']));losses=[]
+        order=rng.permutation(len(train_data['hidden']));losses=[];last_gradient_at=None;steps=0
         for offset in range(0,len(order),32):
             check();idx=order[offset:offset+32];optimizer.zero_grad(set_to_none=True)
             pred=model.head(torch.tensor(train_data['hidden'][idx]))[:,:12]
@@ -103,17 +105,23 @@ def train(root,folder,output,progress,check,recipe='conservative'):
             if not torch.isfinite(loss):raise ValueError('Nonfinite training objective')
             loss.backward()
             norm=torch.nn.utils.clip_grad_norm_(model.head.parameters(),1.,error_if_nonfinite=True)
-            optimizer.step();losses.append(float(loss.detach()))
+            optimizer.step();losses.append(float(loss.detach()));steps+=1
+            last_gradient_at=datetime.now(timezone.utc).isoformat()
             if offset%320==0:progress(status='TRAINING',stage='training',message='Ajustando somente a saida',epoch=epoch,epochs=settings['epochs'],completed=offset,total=len(order))
         value=score(predict_phase(validation),validation['target'])
         history.append(dict(epoch=epoch,training_normalized_pinball=float(np.mean(losses)),validation_pinball_pips=value/price_unit))
         if value<best:
             best=value;best_epoch=epoch;save_file({n:t.detach().contiguous() for n,t in model.head.state_dict().items()},best_path)
+        weight_update=dict(epoch=epoch,optimizer_steps_in_epoch=steps,last_gradient_at=last_gradient_at,
+            checkpoint_at=datetime.now(timezone.utc).isoformat(),
+            head_tensor_sha256=tensor_hash(model.head.state_dict().items()),
+            source_head_tensor_sha256=tensor_hash(initial_head.items()))
+        weight_update['changed_from_source']=weight_update['head_tensor_sha256']!=weight_update['source_head_tensor_sha256']
         save_epoch(epoch_path,dict(epoch=epoch,head=model.head.state_dict(),optimizer=optimizer.state_dict(),
             numpy_rng=rng.bit_generator.state,torch_rng=torch.get_rng_state(),best=best,best_epoch=best_epoch,
-            history=history,best_head=load_file(best_path)),identity)
+            history=history,best_head=load_file(best_path),weight_update=weight_update),identity)
         progress(status='TRAINING',stage='training',epoch=epoch,epochs=settings['epochs'],completed=len(order),total=len(order),
-            saved_checkpoint=dict(stage='training',epoch=epoch,epochs=settings['epochs']),message='Época concluída e salva')
+            saved_checkpoint=dict(stage='training',epoch=epoch,epochs=settings['epochs']),weight_update=weight_update,message='Época concluída e salva')
     save_file({n:t.detach().contiguous() for n,t in model.head.state_dict().items()},output/'last-trained-head.safetensors')
     model.head.load_state_dict(load_file(best_path));model.eval()
     if tensor_hash((n,p) for n,p in model.named_parameters() if not n.startswith('head.'))!=frozen_before:raise ValueError('Frozen backbone changed')
@@ -121,18 +129,20 @@ def train(root,folder,output,progress,check,recipe='conservative'):
     model.config.save(candidate/'config.json')
     save_file({n:t.detach().contiguous() for n,t in model.state_dict().items()},candidate/'model.safetensors')
     if (source/'LICENSE').exists():(candidate/'LICENSE').write_bytes((source/'LICENSE').read_bytes())
-    sealed=dict(selected_epoch=best_epoch,selected_by='validation only',candidate_sha256=file_hash(candidate/'model.safetensors'),sealed_at=datetime.now(timezone.utc).isoformat())
+    selected_head=model.head.state_dict()
+    sealed=dict(selected_epoch=best_epoch,selected_by='validation only',candidate_sha256=file_hash(candidate/'model.safetensors'),sealed_at=datetime.now(timezone.utc).isoformat(),
+        candidate_weights_changed=any(not torch.equal(t,selected_head[n]) for n,t in initial_head.items()))
     # From this point on the head is immutable. A restart evaluates this same
     # candidate; it cannot return to fitting after seeing the test period.
     atomic_json(output/'sealed-report-seed.json',dict(**scope,price_unit=price_unit,dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,
         source_revision=SOURCE_REVISION,sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,
         epochs=history,partitions={},prior_market_data_seen=True,backbone_unchanged=True,
-        live_model_changed=False,recipe=recipe,training_settings=settings))
+        live_model_changed=False,recipe=recipe,training_settings=settings,weight_update=weight_update))
     atomic_json(output/'selection.json',sealed)
     progress(status='VALIDATING',stage='validation',message='Avaliando o teste cronologico apos congelar o candidato',selection=sealed)
     report=dict(**scope,price_unit=price_unit,dataset_id=manifest['dataset_id'],source_model=SOURCE_MODEL,source_revision=SOURCE_REVISION,
                 sdk_revision=SDK_REVISION,source_sha256=source_hash,selection=sealed,epochs=history,partitions={},
-                prior_market_data_seen=True,backbone_unchanged=True,live_model_changed=False,recipe=recipe,training_settings=settings)
+                prior_market_data_seen=True,backbone_unchanged=True,live_model_changed=False,recipe=recipe,training_settings=settings,weight_update=weight_update)
     for phase in ('validation','test'):
         a=arrays(phase);idx=np.load(folder/(phase+'.npy'),allow_pickle=False)
         predicted=predict_phase(a);target=data[idx[:,None]+np.arange(12)[None,:],4]

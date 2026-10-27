@@ -60,6 +60,23 @@ não são copiados do EURUSD.
 
 ## Onde acompanhar e restaurar
 
+O painel distingue **configurado**, **último resultado utilizado**, **candidato
+treinado**, **aprovado** e **uso confirmado**. A informação do modelo vem do
+próprio serviço Windows, vinculada a ativo, perfil, sessão e identidade do worker;
+o estado do treino não é usado para presumir qual modelo está em uso.
+
+Cada época salva registra a data do último passo do otimizador e o hash dos pesos
+da saída. Preparar contextos não equivale a ajustar pesos. Dados anteriores sem
+esse registro são apresentados como legados, sem inventar uma data. Se a época
+zero vencer a seleção, o painel informa que o candidato manteve os pesos originais.
+
+As comparações mostram original/candidato, variação e leitura por métrica,
+separadas dos critérios de aprovação. Motivos identificam validação, teste,
+simulação ou execução. O histórico recente e os detalhes exibem dataset,
+períodos, protocolo, hashes e release. A confirmação de uso depende do artefato
+reportado pelo worker atual; uma previsão reaproveitada do cache é identificada
+e não recebe uma data fictícia de nova inferência.
+
 - `/treinamento?symbol=EURUSD` e `/treinamento?symbol=XAUUSD` mostram o ativo,
   estágio, recursos, checkpoint, resultados e fila compartilhada.
 - PostgreSQL guarda comandos, estados, manifestos, protocolo e observações futuras.

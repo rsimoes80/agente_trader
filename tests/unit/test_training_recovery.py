@@ -84,7 +84,7 @@ class TrainingRuntimeTests(unittest.TestCase):
             atomic_json(out/'selection.json',{'candidate_sha256':'sealed'})
             atomic_json(out/'sealed-report-seed.json',{'selection':{'candidate_sha256':'sealed'}})
             report=dict(evaluation_path='public',partitions=dict(test=dict(gate=dict(passed=False,reasons=['NO_GAIN']))),selection={})
-            repo=Mock();state=dict(run_id='same',dataset_directory='dataset',automatic=True)
+            repo=Mock();state=dict(run_id='same',dataset_directory='dataset',dataset=dict(symbol='EURUSD'),automatic=True)
             with patch.object(runner,'ROOT',root),patch('psutil.Process'),patch('aurelia_fx.training.trainer.train') as train,patch('aurelia_fx.training.evaluation.evaluate',return_value=report) as evaluate:
                 runner.worker(repo,state)
             train.assert_not_called();evaluate.assert_called_once()

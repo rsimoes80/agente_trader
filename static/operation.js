@@ -58,6 +58,10 @@
   }
   function render(data){
     current=data.state;csrf=data.csrf;
+    const model=current.model_runtime,selected=model?.selected,used=model?.last_result;
+    $('forecast-model').textContent=selected?.model||'Ainda não informado pelo serviço';
+    const confirmed=selected&&used&&used.configuration===selected.configuration&&used.worker_id===model.worker_id&&data.worker?.available&&data.worker?.heartbeat?.worker_id===model.worker_id;
+    $('forecast-model-proof').textContent=selected?`Configuração: ${selected.configuration.slice(0,12)}. `+(confirmed?`Último resultado utilizado: ${new Date(used.used_at).toLocaleString('pt-BR')} · artefato ${used.artifact_sha256.slice(0,12)}${used.source==='cache'?' · cache':''}.`:'Aguardando confirmação de uso desta versão pelo agente.'):'O estado do treinamento não determina qual modelo está sendo utilizado.';
     $("instrument-label").textContent=selectedSymbol;
     $("market-link").href='/mercado?symbol='+encodeURIComponent(selectedSymbol);
     document.querySelector('nav a[href^="/diagnostico"]').href='/diagnostico?symbol='+encodeURIComponent(selectedSymbol);

@@ -6,7 +6,7 @@ Counterfactual candidate labels are explicitly separate from portfolio results.
 from __future__ import annotations
 
 import json
-from datetime import time,timedelta
+from datetime import datetime,time,timedelta,timezone
 
 from .agent_model import fingerprint
 from .broker_calendar import slot_tradable, unexpected_broker_gap
@@ -86,8 +86,9 @@ def cached_forecast(memory, candles, config, adapter, *, profile=None):
         payload = json.loads(row["payload_json"])
         if payload.get('symbol', 'EURUSD') != (profile.symbol if profile else 'EURUSD') or payload.get('profile_id') != (profile.fingerprint if profile else None):
             raise ValueError('FORECAST_INSTRUMENT_MISMATCH')
-        return key, payload["output"]
+        return key,{**payload['output'],'execution_evidence':dict(source='cache',computed_at=payload.get('computed_at'),cache_key=key)}
     output = adapter.forecast([c.close for c in candles])
+    computed_at=datetime.now(timezone.utc).isoformat()
     memory.record_project_data(
         "agent_forecast_cache",
         key,
@@ -100,9 +101,10 @@ def cached_forecast(memory, candles, config, adapter, *, profile=None):
             input_last=candles[-1].timestamp.isoformat(),
             input_bars=len(candles),
             output=output,
+            computed_at=computed_at,
         ),
     )
-    return key, output
+    return key,{**output,'execution_evidence':dict(source='engine',computed_at=computed_at,cache_key=key)}
 
 
 def build_samples(*args, **kwargs):

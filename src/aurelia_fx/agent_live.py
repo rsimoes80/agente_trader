@@ -163,6 +163,7 @@ def commit(control, account, worker_id, *, generation=None, **view):
                 "position": data["position"],
                 "pending_execution":data.get('pending_execution',False),
                 "account": account.summary(),
+                "model_runtime":data.get('model_runtime'),
                 "autonomy": AutonomousLab("",execution_mode='demo' if native else 'paper',profile=getattr(account,'profile',None)).summary(account.data["lab_state"])
                     if data.get("research_mode") else None,
             },
@@ -263,6 +264,13 @@ def run_paper(
     )
     if not claim(control, session_id, worker_id):
         return
+    from .training.visibility import select_model,use_result
+    select_model(account,config,symbol=symbol,profile_id=profile.fingerprint if profile else None,worker_id=worker_id)
+    control.publish(session_id,expected_generation=state.get('generation'),model_runtime=account.data['model_runtime'])
+    def forecast_context(context):
+        key,result=cached_forecast(control.memory,context,config,adapter,**(dict(profile=profile) if profile else {}))
+        use_result(account,config,result)
+        return key,result
     session = intelligence_session(**(dict(profile=profile) if profile else {}))
     model = version["model"] if version else None
     threshold = version["report"]["threshold"] if version else None
@@ -376,6 +384,7 @@ def run_paper(
                         except Exception:
                             replacement.close();raise
                         adapter.close();adapter=replacement;config=new_config
+                        select_model(account,config,symbol=symbol,profile_id=profile.fingerprint if profile else None,worker_id=worker_id)
                         account.data['model_reload_pending']=False
                         learning=account.data['lab_state']['continual']
                         learning.update(registered_at=datetime.now(timezone.utc).isoformat(),outcomes=[],portfolios={},champion='baseline',
@@ -486,9 +495,7 @@ def run_paper(
                             config,
                             **(dict(calendar=profile.calendar) if profile else {}),
                         )
-                        _, output = cached_forecast(
-                            control.memory, context, config, adapter,**(dict(profile=profile) if profile else {})
-                        )
+                        _, output = forecast_context(context)
                         features = attach_forecast(setup, output)
                         if research_policy:
                             continual.consider(account.data['lab_state'],setup,features)
@@ -601,10 +608,9 @@ def run_paper(
                             ready=not history_block and not expired
                                 and not account.data.get('model_reload_pending') and 0 <= age <= 90,
                             source=account.data['clock_id'], model=config.fingerprint,
-                            forecast=lambda: output if output is not None else cached_forecast(
-                                control.memory,
+                            forecast=lambda: output if output is not None else forecast_context(
                                 prepare(session.history, utc(latest['timestamp'])+timedelta(minutes=5), config,**(dict(calendar=profile.calendar) if profile else {})),
-                                config, adapter,**(dict(profile=profile) if profile else {}))[1],
+                                )[1],
                         )
                     account.data["last_candle"] = latest["timestamp"]
                     if research_policy:

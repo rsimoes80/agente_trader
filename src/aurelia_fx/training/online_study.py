@@ -138,7 +138,9 @@ class OnlineStudy:
         key=fingerprint(dict(**self.scope,run_id=d['run_id'],reference=last));self.memory.record_project_data(self.repo.record_type('agent_model_study_forecast'),key,p)
         self.cache[key]=p;d['pending'].append(key);d['last_forecast']=last;d['forecast_count']+=1
         self.repo.publish(d['run_id'],study_summary=dict(forecasts=d['forecast_count'],evaluated=d['aggregates'].get('candidate',{}).get('windows',0),
-            closed_trades=d['closed'],registered_at=d['registered_at'],status='OBSERVING',orders_sent=0))
+            closed_trades=d['closed'],registered_at=d['registered_at'],status='OBSERVING',orders_sent=0,
+            distinct_days=len(d['day_losses']),elapsed_days=(generated-utc(d['registered_at'])).total_seconds()/86400,
+            uncertain_trades=d['uncertain']))
         if setup:
             from aurelia_fx.agent_research import SESSIONS
             from aurelia_fx.sessions import SessionEngine

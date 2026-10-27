@@ -313,6 +313,14 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         return fetch(symbol, timeframe, count, include_current=include_current)
 
     check()
+    from aurelia_fx.forecasting.config import load_config
+    from aurelia_fx.agent_live import profile_config
+    from aurelia_fx.training.visibility import select_model
+    from types import SimpleNamespace
+    config=profile_config(load_config(),profile)
+    view=SimpleNamespace(data=dict(session_id=session_id,model_runtime=state.get('model_runtime')))
+    select_model(view,config,symbol=symbol,profile_id=profile.fingerprint if profile else None,worker_id=worker_id)
+    publish(model_runtime=view.data['model_runtime'])
     publish(
         state="CONNECTING",
         stage="connection",
@@ -381,10 +389,6 @@ def prepare(control, repository, state, fetch, worker_id, stop, lease=None):
         if warmup['status']!='ready':raise ValueError('INSTRUMENT_WARMUP_HISTORY_NOT_READY')
         publish(research_profile=profile.as_dict(),profile_id=profile.fingerprint,
                 warmup_history=dict(start=warmup['start'],as_of=warmup['as_of'],baseline_id=warmup['baseline_id']))
-    from aurelia_fx.forecasting.config import load_config
-
-    from aurelia_fx.agent_live import profile_config
-    config = profile_config(load_config(),profile)
     if not config.enabled or config.revision == "main":
         raise ValueError(
             "Ative o Timestral com uma revisão imutável dos pesos antes de analisar."

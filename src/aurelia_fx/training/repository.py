@@ -42,12 +42,30 @@ class TrainingRepository:
             state=self.latest(c)
             row=c.execute("SELECT EXTRACT(EPOCH FROM(clock_timestamp()-recorded_at)) AS age FROM project_records WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1",(self.record_type('agent_training_lab_state'),)).fetchone()
             runtime=c.execute("SELECT payload_json,payload_sha256,EXTRACT(EPOCH FROM(clock_timestamp()-recorded_at)) AS age FROM project_records WHERE record_type=%s ORDER BY recorded_at DESC LIMIT 1",(self.record_type('agent_training_runtime'),)).fetchone()
+            history=c.execute("""SELECT * FROM (
+                SELECT DISTINCT ON(payload_json::jsonb->>'run_id')
+                    payload_json::jsonb->>'run_id' AS run_id,payload_json::jsonb->>'status' AS status,
+                    payload_json::jsonb->>'updated_at' AS updated_at,
+                    payload_json::jsonb->'weight_update' AS weight_update,
+                    payload_json::jsonb#>'{forecast_report,selection}' AS selection,
+                    payload_json::jsonb#>>'{dataset,dataset_id}' AS dataset_id,
+                    payload_json::jsonb#>>'{forecast_report,partitions,test,gate,pinball_improvement_pct}' AS improvement,
+                    recorded_at FROM project_records
+                WHERE record_type=%s AND COALESCE(payload_json::jsonb->>'profile_id','')=COALESCE(%s,'')
+                AND payload_json::jsonb->>'run_id' IS NOT NULL
+                ORDER BY payload_json::jsonb->>'run_id',recorded_at DESC
+                ) runs ORDER BY recorded_at DESC LIMIT 5""",(self.record_type('agent_training_lab_state'),state.get('profile_id'))).fetchall()
         resources=json.loads(runtime['payload_json']) if runtime else None
         if runtime and self.memory._encode(resources)[1]!=runtime['payload_sha256']:raise ValueError('Training runtime integrity failure')
         if resources:resources={**resources,'received_age_seconds':float(runtime['age']),
             'matches_run':resources.get('run_id')==state.get('run_id')}
+        from aurelia_fx.operation_control import OperationControl
+        from .visibility import evolution
+        control=OperationControl(self.memory,self.symbol)
+        history=[{k:v for k,v in dict(r).items() if k!='recorded_at'} for r in history]
         return {**state,'received_age_seconds':float(row['age']) if row else None,
-            'runtime':resources,'learning_summary':learning_summary(state)}
+            'runtime':resources,'learning_summary':learning_summary(state),
+            'evolution':evolution({**state,'symbol':self.symbol},control.status(),control.worker_status(),history)}
 
     def command(self,action,key):
         if action not in {'START','CANCEL'} or not isinstance(key,str) or not 16<=len(key)<=128:raise ValueError('Invalid training command')
@@ -81,7 +99,7 @@ class TrainingRepository:
             c.execute('SELECT pg_advisory_xact_lock(%s)',(LOCK,))
             state=self.latest(c)
             if state.get('run_id')!=run_id or state.get('cancel_requested'):raise Cancelled('Training cancelled')
-            if any(k in changes for k in ('completed','partition','epoch','selection','forecast_report','financial_report')):
+            if any(k in changes for k in ('completed','partition','epoch','selection','forecast_report','financial_report','weight_update')):
                 changes['last_progress_at']=datetime.now(timezone.utc).isoformat()
             return self.append(c,{**state,**changes})
 

@@ -104,11 +104,15 @@ class Handler(BaseHTTPRequestHandler):
                 symbol=symbol_name(args.get('symbol','EURUSD'));training=TrainingRepository(app.memory,symbol)
                 assets=[a['symbol'] for a in app.assets.list() if a.get('selected')]
                 if symbol not in assets:assets.append(symbol)
+                summary=training.summary()
                 queue=[]
                 for name in assets:
                     snapshot=TrainingRepository(app.memory,name).latest()
-                    queue.append(dict(symbol=name,status=snapshot['status'],run_id=snapshot.get('run_id')))
-                self.send(200,dict(ok=True,csrf=CSRF,state=training.summary(),automatic=automatic_status(app.memory,symbol),assets=assets,queue=queue));return
+                    from aurelia_fx.training.visibility import model_view
+                    control=OperationControl(app.memory,name)
+                    model=summary['evolution']['model'] if name==symbol else model_view(control.status(),control.worker_status())
+                    queue.append(dict(symbol=name,status=snapshot['status'],run_id=snapshot.get('run_id'),model=model))
+                self.send(200,dict(ok=True,csrf=CSRF,state=summary,automatic=automatic_status(app.memory,symbol),assets=assets,queue=queue));return
             if path=='/api/diagnostics/agent':
                 from aurelia_fx.learning_evolution import collection_health
                 symbol=symbol_name(args.get('symbol','EURUSD'));control=OperationControl(app.memory,symbol)
