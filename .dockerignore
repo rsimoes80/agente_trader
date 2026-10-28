@@ -1,0 +1,9 @@
+*
+!requirements.txt
+!diagnostic_server.py
+!src/
+!src/**
+!deploy/
+!deploy/fresh/
+!deploy/fresh/Dockerfile
+**/__pycache__

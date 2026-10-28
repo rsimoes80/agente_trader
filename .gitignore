@@ -1,4 +1,6 @@
 .venv/
+config/new-environment.local.json
+data/provisioning/
 .venv-timestral/
 .venv-training/
 data/training/

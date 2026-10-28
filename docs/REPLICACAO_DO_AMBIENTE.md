@@ -1,5 +1,8 @@
 # Replicar o Agente Trader - IA em outro equipamento
 
+Para começar com **banco vazio**, use [Instalação do zero](INSTALACAO_DO_ZERO.md).
+O procedimento abaixo trata da migração com preservação dos dados antigos.
+
 Referência registrada em 22/10/2026. O inventário está em
 [`config/environment.example.json`](../config/environment.example.json).
 Os arquivos `*.example.*` são modelos para consulta: **não são lidos

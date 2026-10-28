@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hmac
 import json
+import os
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 import secrets
@@ -22,7 +23,8 @@ from aurelia_fx.asset_registry import AssetRegistry
 from aurelia_fx.instruments import symbol_name
 
 CSRF=secrets.token_urlsafe(32)
-ALLOWED_ORIGINS={'http://192.168.97.221:8097','http://127.0.0.1:8770','http://localhost:8770'}
+PUBLIC_URL=os.environ.get('AGENTE_TRADER_PUBLIC_URL','http://192.168.97.221:8097').rstrip('/')
+ALLOWED_ORIGINS={PUBLIC_URL,'http://127.0.0.1:8770','http://localhost:8770'}
 STATIC={'/operacao':'operation.html','/operation.css':'operation.css','/operation.js':'operation.js',
         '/diagnostico':'diagnostics.html','/diagnostico/':'diagnostics.html',
         '/diagnostics.css':'diagnostics.css','/diagnostics.js':'diagnostics.js',
@@ -44,7 +46,7 @@ class Application:
 def inspect_remote_instrument(symbol):
     import urllib.request
     from urllib.parse import urlencode
-    url='http://192.168.97.221:8097/api/mt5/instrument?'+urlencode({'symbol':symbol})
+    url=PUBLIC_URL+'/api/mt5/instrument?'+urlencode({'symbol':symbol})
     with urllib.request.urlopen(url,timeout=8) as response:data=json.load(response)
     if data.get('ok') is not True:raise ValueError('Não foi possível verificar o contrato do ativo.')
     return data

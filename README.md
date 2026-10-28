@@ -98,6 +98,11 @@ ou pesquisa; não precisam rodar em paralelo para iniciar o agente.
 
 ## Instalação e dados
 
+**Novo servidor com banco vazio:** siga [Instalação do zero](docs/INSTALACAO_DO_ZERO.md).
+O Codex deve ler primeiro [AGENTS.md](AGENTS.md). A configuração central está em
+[`config/new-environment.example.json`](config/new-environment.example.json);
+`setup_environment.py` gera os arquivos privados e o Compose com banco, API e painel.
+
 Dependências operacionais: `requirements.txt`. O ambiente isolado do Timestral
 usa `requirements-timestral.txt`; pesos e revisão são configurados em
 `data/timestral.json`. Configuração PostgreSQL e segredos da ponte ficam fora do Git.
