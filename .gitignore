@@ -16,7 +16,6 @@ data/platform-operator.token
 .cache/
 nautilus_trader/
 avulso/
-Aprendizado/
 data/user_config.json
 data/multi_asset.json
 data/credentials.dpapi
