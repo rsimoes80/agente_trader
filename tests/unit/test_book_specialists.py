@@ -116,6 +116,18 @@ class BookSpecialistTests(unittest.TestCase):
         self.assertEqual(result['findings'][0]['sources'][0]['pdf_page'],1)
         self.assertFalse(result['findings'][0]['semantic_entailment_reviewed'])
 
+    def test_contradictory_model_support_is_explicitly_downgraded_to_uncertain(self):
+        output={'findings':[{**self.finding,'missing_conditions':['Volume traded unavailable']}]}
+        original=copy.deepcopy(output)
+        result=analyze(self.skill,self.case,model=Mock(return_value=output))
+        self.assertEqual(output,original)
+        self.assertEqual(result['findings'][0]['assessment'],'uncertain')
+        self.assertEqual(result['consistency_adjustments'][0]['reason'],'MISSING_CONDITION_CANNOT_SUPPORT')
+        self.assertEqual(result['consistency_adjustments'][0]['model_assessment'],'supports')
+        council=coordinate(self.case,[result])
+        self.assertIn('context',council['missing_stages'])
+        self.assertFalse(council['trading_authority'])
+
     def test_invented_sources_facts_order_fields_and_missing_support_rejected(self):
         for update in ({'card_ids':['invented']},{'fact_ids':['future.price']},{'entry':1.123},
                        {'stage':'order'},{'missing_conditions':['Volume unavailable']}):

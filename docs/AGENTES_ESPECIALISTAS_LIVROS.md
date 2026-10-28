@@ -52,7 +52,11 @@ acompanham o relatório; não se presume consulta ao livro inteiro.
 
 A resposta estruturada precisa vincular cada conclusão a IDs de fichas e IDs de
 fatos observados, incluindo invalidação e condições ausentes. Campos de ordens,
-fontes desconhecidas e conclusões positivas com condições ausentes são rejeitados.
+fontes desconhecidas são rejeitados. Se o modelo declara suporte mas lista condições
+ausentes, o adaptador rebaixa explicitamente a conclusão para `uncertain`, registrando
+a classificação original, a correção e o hash da resposta. O validador continua
+recusando conclusões positivas com condições ausentes. Nenhuma correção pode
+promover uma conclusão ou dispensar erro de fonte ou escopo.
 Uma citação correta não prova que a interpretação é correta: as conclusões
 continuam marcadas como pendentes de revisão semântica.
 
@@ -123,3 +127,13 @@ pareceres em casos históricos e transformação de um plano revisado em estrat�
 executável. Os testes de contrato não medem rentabilidade ou fidelidade semântica.
 As entradas do agente de negociação permanecem pausadas e o bloqueio de base
 bibliográfica continua ativo. Nenhum especialista possui cliente de execução MT5.
+
+## Evidência da primeira execução
+
+A rodada automática no mercado corrente registrou ausência de tendência H1
+confirmada. O primeiro teste histórico excedeu o timeout inicial; após ajuste
+da fila e do orçamento, o modelo respondeu, mas foi rejeitado por declarar suporte
+com condições ausentes (`MISSING_CONDITION_CANNOT_SUPPORT`). Esse caso motivou o
+rebaixamento explícito para incerteza, coberto por teste de regressão.
+O desempenho observado não autoriza uso como gatilho imediato de M5. Ainda não
+foi demonstrada qualidade semântica consistente em uma amostra de casos reais.

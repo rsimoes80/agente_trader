@@ -1,12 +1,13 @@
 """Source-constrained advisory agents sharing one local model; no broker dependency."""
 from datetime import datetime, timedelta, timezone
 import json
+import copy
 import math
 from .literature_model import completion
 
 from .book_skills import digest
 
-VERSION='book-council-v1.1'
+VERSION='book-council-v1.2'
 MODEL_SPEC=dict(model='Qwen/Qwen3-4B-GGUF',revision='bc640142c66e1fdd12af0bd68f40445458f3869b',
                 temperature=0,max_tokens=650,max_cards=6,prompt_version=VERSION)
 PRICE_STAGES={'context','region','trigger','invalidation','exit'}
@@ -130,7 +131,21 @@ Citar um fato e uma ficha não comprova a interpretação: ela será revisada.''
     content=json.dumps(dict(case=case,cards=source_packets),ensure_ascii=False,separators=(',',':'))
     if len(system)+len(content)>20000:raise ValueError('SPECIALIST_CONTEXT_BUDGET_EXCEEDED')
     messages=[dict(role='system',content=system),dict(role='user',content=content)]
-    result=validate_analysis(model(messages),skill,case)
+    output=model(messages)
+    conservative=copy.deepcopy(output);adjustments=[]
+    # Preserve an internally contradictory opinion as uncertain, never as support.
+    # Other schema/source/scope errors still reject the entire response.
+    if isinstance(conservative,dict) and isinstance(conservative.get('findings'),list):
+        for index,finding in enumerate(conservative['findings']):
+            if (isinstance(finding,dict) and finding.get('assessment')=='supports'
+                    and isinstance(finding.get('missing_conditions'),list) and finding['missing_conditions']
+                    and all(isinstance(x,str) and 0<len(x)<=400 for x in finding['missing_conditions'])):
+                finding['assessment']='uncertain'
+                adjustments.append(dict(finding_index=index,model_assessment='supports',effective_assessment='uncertain',
+                                        reason='MISSING_CONDITION_CANNOT_SUPPORT'))
+    result=validate_analysis(conservative,skill,case)
+    result['consistency_adjustments']=adjustments
+    result['raw_response_sha256']=digest(output)
     result['inference_input_sha256']=digest(messages)
     return result
 
