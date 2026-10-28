@@ -17,10 +17,15 @@ def main():
                         help='Política de direção dos workers; preservada na configuração privada')
     parser.add_argument('--observe', action='store_true',
                         help='Instalar observação de mercado/modelo sem ordens')
+    parser.add_argument('--paper-test', action='store_true',
+                        help='Persistir teste paper: ponte somente de leitura e pesos congelados')
     args = parser.parse_args()
     if sys.platform != 'linux':
         raise RuntimeError('Execute este instalador no Linux.')
     config = json.loads((ROOT / 'config/new-environment.local.json').read_text())
+    paper_test = args.paper_test or config.get('paper_test', False)
+    if type(paper_test) is not bool:
+        raise ValueError('paper_test deve ser booleano.')
     policy = args.entry_policy or config.get('entry_policy', STRICT_POLICY_ID)
     if policy not in POLICIES:
         raise ValueError('Política de entrada desconhecida.')
@@ -57,6 +62,8 @@ finally:
     environment = 'Environment=' + json.dumps(
         f"AURELIA_MT5_BRIDGE_URL=http://{config['windows_ip']}:{config['bridge_port']}") + '\n'
     environment += 'Environment=' + json.dumps('AURELIA_ENTRY_POLICY=' + policy) + '\n'
+    if paper_test:
+        environment += 'Environment=AURELIA_MT5_READ_ONLY=1\n'
     common = ('[Service]\nType=simple\nWorkingDirectory=' + directory + '\n'
               + environment + 'Environment=PYTHONUNBUFFERED=1\nUMask=0077\n')
     agent = ('[Unit]\nDescription=Agente Trader Linux worker\nAfter=network.target\n'
@@ -73,7 +80,8 @@ finally:
     generated = {'agente-trader-agent.service': agent,
                  'agente-trader-training.service': training,
                  'agente-trader-training.timer': timer}
-    enabled = ['agente-trader-agent.service', 'agente-trader-training.timer']
+    enabled = ['agente-trader-agent.service']
+    if not paper_test:enabled.append('agente-trader-training.timer')
     if args.observe:
         if not (ROOT / 'data/timestral.json').exists():
             raise RuntimeError('Configure Timestral antes de iniciar o observador.')
@@ -97,9 +105,11 @@ finally:
     for name, contents in generated.items():
         (units / name).write_text(contents)
     subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
+    if paper_test:
+        subprocess.run(['systemctl','--user','disable','--now','agente-trader-training.timer'],check=True)
     subprocess.run(['systemctl', '--user', 'enable', '--now', *enabled], check=True)
-    if args.entry_policy:
-        config['entry_policy'] = policy
+    if args.entry_policy or args.paper_test:
+        config.update(entry_policy=policy,paper_test=paper_test)
         config_path = ROOT / 'config/new-environment.local.json'
         config_path.write_text(json.dumps(config,indent=2)+'\n')
         config_path.chmod(0o600)
@@ -107,9 +117,10 @@ finally:
         if compose_path.exists():
             compose = json.loads(compose_path.read_text())
             compose['services']['api']['environment']['AURELIA_ENTRY_POLICY'] = policy
+            if paper_test:compose['services']['api']['environment']['AURELIA_MT5_READ_ONLY']='1'
             compose_path.write_text(json.dumps(compose,indent=2)+'\n')
             compose_path.chmod(0o600)
-    print('Agente e fila de treinamento instalados no Linux; nenhuma sessão iniciada.')
+    print('Serviços configurados; o instalador não altera o estado da sessão.')
 
 
 if __name__ == '__main__':

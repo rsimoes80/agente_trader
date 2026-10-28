@@ -102,6 +102,8 @@ class OperationControl:
         if action not in {"START", "PAUSE", "RESUME", "STOP"}:
             raise ValueError("Comando inválido.")
         mode=payload.get("mode", "paper")
+        if action == 'START' and mode == 'demo' and os.environ.get('AURELIA_MT5_READ_ONLY') == '1':
+            raise ValueError('A fase paper permite somente simulação; envio ao MT5 está bloqueado.')
         if mode not in {"paper","demo"}:
             raise ValueError(
                 "Esta versão permite apenas simulação. Demo e conta real não estão habilitadas."

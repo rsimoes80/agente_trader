@@ -106,3 +106,10 @@ previsões e estado ficam no banco; nenhum dado privado foi publicado no Git.
 A próxima etapa é acompanhar decisões em uma conta paper com cotações ao vivo,
 antes de habilitar qualquer sessão demo automática. Esta etapa ainda não valida
 rentabilidade, execução de saídas reais em falha de rede ou negociação autônoma.
+
+## Etapa posterior
+
+A conta paper com cotações ao vivo foi iniciada após esta etapa. Seu protocolo,
+proteções contra envio e acompanhamento estão em
+`TESTE_PAPER_COTACOES_AO_VIVO.md`. O observador independente continua sem
+permissão de execução.

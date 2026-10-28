@@ -285,7 +285,8 @@ def fetch_history(
 
 
 if sys.platform != 'win32' and os.environ.get('AURELIA_MT5_BRIDGE_URL'):
-    from src.aurelia_fx.bridge_transport import BridgeClient
+    from src.aurelia_fx.bridge_transport import bridge_client_type
+    BridgeClient = bridge_client_type(os.environ.get('AURELIA_MT5_READ_ONLY', '0'))
 
     _remote = BridgeClient(os.environ['AURELIA_MT5_BRIDGE_URL'],
                           (Path(__file__).resolve().parent / 'data/mt5_bridge.token').read_text().strip())

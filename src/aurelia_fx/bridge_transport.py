@@ -77,3 +77,12 @@ class BridgeClient:
 SDK_METHODS = frozenset({'account_info', 'terminal_info', 'symbol_info', 'symbol_info_tick',
                          'positions_get', 'orders_get', 'history_deals_get',
                          'order_calc_profit', 'order_calc_margin', 'order_check', 'order_send'})
+
+
+def bridge_client_type(read_only='0'):
+    if read_only not in {'0', '1'}:
+        raise ValueError('AURELIA_MT5_READ_ONLY deve ser 0 ou 1.')
+    if read_only == '1':
+        from .live_observation import ReadOnlyBridgeClient
+        return ReadOnlyBridgeClient
+    return BridgeClient
