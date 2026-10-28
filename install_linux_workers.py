@@ -69,6 +69,8 @@ finally:
         f"AURELIA_MT5_BRIDGE_URL=http://{config['windows_ip']}:{config['bridge_port']}") + '\n'
     environment += 'Environment=' + json.dumps('AURELIA_ENTRY_POLICY=' + policy) + '\n'
     environment += 'Environment=AURELIA_MT5_READ_ONLY=' + ('1' if paper_test else '0') + '\n'
+    if config.get('require_literature',False):
+        environment += 'Environment=AURELIA_REQUIRE_LITERATURE=1\n'
     common = ('[Service]\nType=simple\nWorkingDirectory=' + directory + '\n'
               + environment + 'Environment=PYTHONUNBUFFERED=1\nUMask=0077\n')
     agent = ('[Unit]\nDescription=Agente Trader Linux worker\nAfter=network.target\n'

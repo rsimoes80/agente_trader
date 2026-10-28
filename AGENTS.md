@@ -21,3 +21,20 @@ Peça somente os dados ausentes: IPs privados das duas máquinas e acesso à
 conta demo no terminal. Gere senhas e token com `setup_environment.py`.
 Nunca publique configuração privada, credenciais, dumps ou modelos no Git.
 Não inicie sessão de negociação ou envie ordem para validar instalação.
+
+# Estratégias baseadas na biblioteca
+
+O requisito do operador é que a análise e as estratégias se apoiem nas técnicas
+dos materiais de `Aprendizado/`, com aprendizado por resultados sem abandonar
+essa base. Não substituir esse requisito por um setup genérico de indicadores.
+Leia os originais e preserve documento, hash, página, condições, contexto,
+invalidação e distinção entre texto do autor, interpretação e política de risco.
+Extração/OCR, indexação e respostas de LLM não equivalem a compreensão integral,
+validação de uma técnica ou autorização operacional. Não invente números nem
+atribua parâmetros de implementação aos autores sem localizar a fonte.
+Identifique limites de adaptação: tick volume Forex não é volume centralizado;
+um conceito de swing em ações não está validado para M5 por simples transposição.
+As operações permanecem a favor da tendência, conforme orientação do operador.
+Hipóteses combinadas exigem rastreabilidade e avaliação própria; o leitor textual
+não pode enviar ordens nem promover suas próprias extrações. A leitura completa
+e a revisão semântica/visual devem ter progresso e pendências explícitos.

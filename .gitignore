@@ -3,6 +3,7 @@ config/new-environment.local.json
 data/provisioning/
 .venv-timestral/
 .venv-training/
+.venv-literature/
 data/training/
 vendor/timestral/
 data/models/

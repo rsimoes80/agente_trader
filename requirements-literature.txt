@@ -1,0 +1,2 @@
+# Ambiente separado do worker operacional; extração/OCR dos PDFs.
+pymupdf==2.0

@@ -15,6 +15,12 @@ def entry_blocker(snapshot, side=None, *, policy=POLICY_ID):
         return "UNKNOWN_ENTRY_POLICY"
     if not isinstance(snapshot, dict):
         return "TREND_CONTEXT_MISSING"
+    require_literature=os.environ.get('AURELIA_REQUIRE_LITERATURE','0')
+    if require_literature not in {'0','1'}:return 'LITERATURE_REQUIREMENT_INVALID'
+    if require_literature == '1':
+        from .literature_basis import basis_blocker
+        blocker=basis_blocker(snapshot.get('literature_basis'))
+        if blocker:return blocker
     if policy == STRICT_POLICY_ID and snapshot.get("regime") != "TREND":
         return "TREND_REGIME_REQUIRED"
     directions = []
