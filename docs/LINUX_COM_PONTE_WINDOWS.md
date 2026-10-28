@@ -52,6 +52,21 @@ O timer verifica a fila de treinamento a cada minuto, sem executar dois jobs
 da mesma unidade simultaneamente. Linger permite iniciar o gerenciador do
 usuário no boot; pode exigir privilégios conforme a política do sistema.
 
+Para coletar e validar inicialmente 30 dias de EURUSD sem iniciar negociação:
+
+```bash
+AURELIA_MT5_BRIDGE_URL=http://IP_WINDOWS:PORTA_PONTE .venv/bin/python run_history.py --days 30 --full
+python3 install_linux_workers.py --history
+systemctl --user status agente-trader-history.timer
+```
+
+Substitua o endereço da primeira linha pelos valores privados reais. A opção
+`--history` instala uma atualização incremental a cada 15 minutos. Cada execução
+verifica se a sessão está parada antes da coleta; durante uma sessão ativa,
+delega a coleta ao ciclo principal. O relatório de cobertura fica no PostgreSQL
+e em `journalctl --user -u agente-trader-history.service`. Não substitua lacunas
+por candles sintéticos nem confunda cobertura aprovada com estratégia validada.
+
 ## Windows: somente a ponte
 
 Use um clone exclusivo do mesmo commit Linux, Python 3.14 x64 e MT5 aberto

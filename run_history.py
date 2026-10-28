@@ -24,6 +24,8 @@ def main():
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--study", action="store_true")
+    parser.add_argument("--idle-only", action="store_true",
+                        help="Coletar somente enquanto a sessão do agente estiver parada")
     args = parser.parse_args()
     full_due = args.full
     study_day = None
@@ -44,6 +46,14 @@ def main():
             try:
                 while not stop.is_set():
                     lease.execute("SELECT 1")
+                    if args.idle_only:
+                        from aurelia_fx.operation_control import OperationControl
+                        if OperationControl(memory).status().get('desired') != 'stopped':
+                            print('Coleta delegada ao agente: sessão não está parada.', flush=True)
+                            if not args.watch:
+                                return 0
+                            stop.wait(60)
+                            continue
                     try:
                         current_day = datetime.now(timezone.utc).date().isoformat()
                         baseline = collect(
