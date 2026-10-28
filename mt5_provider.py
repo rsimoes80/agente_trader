@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import os
 import sys
 import threading
 import time
@@ -281,3 +282,23 @@ def fetch_history(
         finally:
             if mt5 is not None:
                 mt5.shutdown()
+
+
+if sys.platform != 'win32' and os.environ.get('AURELIA_MT5_BRIDGE_URL'):
+    from src.aurelia_fx.bridge_transport import BridgeClient
+
+    _remote = BridgeClient(os.environ['AURELIA_MT5_BRIDGE_URL'],
+                          (Path(__file__).resolve().parent / 'data/mt5_bridge.token').read_text().strip())
+    mt5 = _remote
+    _open_terminal = _remote.open
+    _resolve_symbol = lambda *a, **kw: _remote.call('resolve_symbol', *a, **kw)
+    status = lambda: _remote.call('status')
+    fetch_history = lambda *a, **kw: _remote.call('fetch_history', *a, **kw)
+    instrument_catalog = lambda *a, **kw: _remote.call('instrument_catalog', *a, **kw)
+    inspect_instrument = lambda *a, **kw: _remote.call('inspect_instrument', *a, **kw)
+
+    class RemoteClock:
+        def resolve(self, *a, **kw):
+            return _remote.call('clock', *a, **kw)
+
+    _CLOCK = RemoteClock()

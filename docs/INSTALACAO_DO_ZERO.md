@@ -1,5 +1,10 @@
 # Instalar do zero em outro ambiente
 
+Para executar também agente, modelos e treinamento no Linux, use a
+infraestrutura das seções 1 e 2 abaixo e depois siga
+[`LINUX_COM_PONTE_WINDOWS.md`](LINUX_COM_PONTE_WINDOWS.md). Nessa topologia,
+não instale os workers Windows das seções 3 a 5; o Windows executa apenas a ponte.
+
 Este procedimento prepara um banco novo e persistente, sem restaurar o banco
 antigo. O repositório fornece código, catálogo, requisitos, configuração de
 infraestrutura e gerador dos arquivos privados. Modelos são baixados novamente.

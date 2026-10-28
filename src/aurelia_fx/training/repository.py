@@ -87,7 +87,7 @@ class TrainingRepository:
                         agent=OperationControl(self.memory,self.symbol).status()
                         scope=dict(profile_id=profile.fingerprint,research_profile=profile.as_dict(),source_clock_id=agent['history']['clock_id'])
                     state=self.append(c,dict(run_id=str(uuid4()),status='QUEUED',stage='dataset',cancel_requested=False,
-                        created_at=datetime.now(timezone.utc).isoformat(),dataset_policy='rolling',**scope,message='Treino de '+self.symbol+' solicitado. Aguardando o servico Windows.',live_model_changed=False))
+                        created_at=datetime.now(timezone.utc).isoformat(),dataset_policy='rolling',**scope,message='Treino de '+self.symbol+' solicitado. Aguardando o serviço de treinamento.',live_model_changed=False))
             elif state['status'] in ACTIVE:
                 state=self.append(c,{**state,'cancel_requested':True,'message':'Cancelamento solicitado somente para o laboratorio.'})
             payload={'action':action,'state':state};text,digest=self.memory._encode(payload)

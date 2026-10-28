@@ -149,7 +149,7 @@ def main():
             repo.publish(run_id,status='TRAINING',stage='features',protocol_id=protocol_id,retry_not_before=None,completed=None,total=None,message='Iniciando ou retomando prova CPU com dados reais.')
             env={**os.environ,'HF_HOME':str(ROOT/'data/training/hf-home'),'HF_XET_CACHE':str(ROOT/'data/training/cache/xet')}
             with (output/'worker.log').open('a',encoding='utf-8') as log:
-                child=subprocess.Popen([str(ROOT/'.venv-training/Scripts/python.exe'),'-u',str(Path(__file__).resolve()),'--worker','--run-id',run_id,'--symbol',repo.symbol],
+                child=subprocess.Popen([str(ROOT / '.venv-training' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')),'-u',str(Path(__file__).resolve()),'--worker','--run-id',run_id,'--symbol',repo.symbol],
                     cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             birth=psutil.Process(child.pid).create_time();started=time.monotonic();peak=0;last_runtime=0
             try:

@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import unittest
 import urllib.request
@@ -39,6 +40,26 @@ class InstrumentBridgeTests(unittest.TestCase):
         with patch.object(mt5_bridge,'inspect_instrument',return_value={'status':'CONTRACT_VERIFIED'}) as inspect:
             self.assertEqual(self.get('/api/mt5/instrument?symbol=XAUUSD247')['status'],'CONTRACT_VERIFIED')
             inspect.assert_called_once_with('XAUUSD247')
+
+    def test_rpc_requires_both_token_and_allowed_linux_address(self):
+        from aurelia_fx.bridge_transport import BridgeClient
+        with patch.dict(os.environ, {'AURELIA_MT5_BRIDGE_LINUX_IP': '127.0.0.2'}), patch.object(mt5_bridge, 'dispatch') as dispatch:
+            with self.assertRaises(RuntimeError):
+                BridgeClient(self.base, 'fixture-token').call('status')
+            dispatch.assert_not_called()
+        with patch.dict(os.environ, {'AURELIA_MT5_BRIDGE_LINUX_IP': '127.0.0.1'}), patch.object(mt5_bridge, 'dispatch') as dispatch:
+            with self.assertRaises(RuntimeError):
+                BridgeClient(self.base, 'wrong-token').call('status')
+            dispatch.assert_not_called()
+
+    def test_linux_client_round_trip_preserves_history_arguments(self):
+        from aurelia_fx.bridge_transport import BridgeClient
+        with patch.dict(os.environ, {'AURELIA_MT5_BRIDGE_LINUX_IP': '127.0.0.1'}), patch.object(mt5_bridge, 'dispatch', return_value={'candles': [], 'symbol': 'XAUUSD'}) as dispatch:
+            result = BridgeClient(self.base, 'fixture-token').call('fetch_history', 'XAUUSD', 'M5', 100, include_current=True)
+            self.assertEqual(result['symbol'], 'XAUUSD')
+            payload = dispatch.call_args.args[1]
+            self.assertEqual(payload['args'], ['XAUUSD', 'M5', 100])
+            self.assertEqual(payload['kwargs'], {'include_current': True})
 
 
 if __name__=='__main__':unittest.main()

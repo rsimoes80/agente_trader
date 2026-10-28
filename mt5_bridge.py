@@ -1,4 +1,4 @@
-"""Read-only HTTP bridge from the local Windows MT5 terminal to the Linux UI."""
+"""Windows MT5 boundary for Linux workers and dashboard market queries."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from mt5_provider import fetch_history, instrument_catalog, inspect_instrument
+import mt5_provider
+from src.aurelia_fx.bridge_rpc import dispatch
 
 HOST = os.environ.get("AURELIA_MT5_BRIDGE_HOST", "192.168.200.1")
 PORT = int(os.environ.get("AURELIA_MT5_BRIDGE_PORT", "8769"))
@@ -42,7 +44,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             # Keep the wire identity expected by supervisors already running.
             self._send(200, {"ok": True, "service": "Aurelia FX MT5 read-only bridge",
-                             "display_name": "Agente Trader - IA MT5 read-only bridge"})
+                             "display_name": "Agente Trader - IA MT5 terminal bridge"})
             return
         if path not in {"/api/mt5/chart","/api/mt5/instruments","/api/mt5/instrument"}:
             self._send(404, {"ok": False, "error": "Rota não encontrada."})
@@ -64,6 +66,26 @@ class Handler(BaseHTTPRequestHandler):
         except (RuntimeError, ValueError, OSError) as exc:
             self._send(503, {"ok": False, "error": str(exc)})
 
+    def do_POST(self):
+        if urlparse(self.path).path != '/api/mt5/rpc':
+            self._send(404, {'ok': False}); return
+        supplied = self.headers.get('X-Bridge-Token', '')
+        allowed = os.environ.get('AURELIA_MT5_BRIDGE_LINUX_IP', '')
+        if (not TOKEN or not hmac.compare_digest(supplied, TOKEN)
+                or not allowed or self.client_address[0] != allowed):
+            self._send(403, {'ok': False}); return
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 65536:
+                raise ValueError('Tamanho inválido.')
+            payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError('Objeto JSON obrigatório.')
+            result = dispatch(mt5_provider, payload, Path(__file__).resolve().parent / 'data/bridge-sends.sqlite3')
+            self._send(200, {'ok': True, 'result': result})
+        except (RuntimeError, ValueError, TypeError, KeyError, OSError):
+            self._send(503, {'ok': False, 'error': 'Operação MT5 indisponível ou recusada.'})
+
 
 class BridgeServer(HTTPServer):
     allow_reuse_address = True
@@ -83,7 +105,7 @@ def main() -> None:
     server = BridgeServer((HOST, PORT), Handler)
     pid_path = Path(__file__).resolve().parent / "data/mt5_bridge.pid"
     pid_path.write_text(str(os.getpid()), encoding="ascii")
-    print(f"Ponte MT5 somente leitura em http://{HOST}:{PORT}")
+    print(f"Ponte MT5 em http://{HOST}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

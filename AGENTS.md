@@ -11,8 +11,11 @@ anterior. Não apague bancos ou volumes existentes para obter esse resultado:
 use instalação isolada. O fluxo antigo em `docs/REPLICACAO_DO_AMBIENTE.md`
 é para preservar dados; para instalação nova prevalece o guia do zero.
 
-Linux hospeda PostgreSQL/API/Nginx; Windows com sessão interativa e MT5 demo
-hospeda agente, ponte e treinamento. Linux sozinho não substitui o MT5.
+Na arquitetura com ponte, Linux hospeda PostgreSQL/API/Nginx, agente, modelos
+e treinamento. Windows com sessão interativa e MT5 demo hospeda somente a
+ponte do terminal. Siga `docs/LINUX_COM_PONTE_WINDOWS.md` para essa topologia.
+O guia original também descreve a topologia anterior com workers no Windows.
+Linux sozinho não substitui o terminal MT5.
 Não reutilize os IPs/caminhos históricos do README como destino novo.
 Peça somente os dados ausentes: IPs privados das duas máquinas e acesso à
 conta demo no terminal. Gere senhas e token com `setup_environment.py`.

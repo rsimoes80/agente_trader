@@ -1,0 +1,5 @@
+# Windows terminal boundary only: no database, forecasting or training packages.
+numpy>=2.0,<3
+psutil>=7,<8
+MetaTrader5>=5.0.45; platform_system == "Windows"
+tzdata>=2025.2; platform_system == "Windows"
