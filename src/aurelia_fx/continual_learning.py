@@ -111,6 +111,9 @@ def accepts(variant,features):
     return (rule!='forecast' or all(features.get('forecast_'+str(h)+'_atr',-1)>0 for h in (3,6))) and (rule!='body' or features.get('body_atr',0)>=.5)
 
 def apply(setup,variant):
+    # Legacy target variants have no authority to rewrite a source-linked plan.
+    if setup.get('snapshot',{}).get('literature_basis') is not None:
+        raise ValueError('LITERATURE_PLAN_REQUIRES_SEPARATE_LEARNING')
     if variant not in VARIANTS:raise ValueError('Unknown strategy variant')
     original=setup['candidate'];blocker=entry_blocker(setup['snapshot'],original.side)
     if blocker:raise ValueError(blocker)

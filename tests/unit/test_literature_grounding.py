@@ -50,6 +50,11 @@ class LiteratureGroundingTests(unittest.TestCase):
         approval['cards']['card']['semantic_entailment_reviewed']=False
         self.assertEqual(basis_blocker(basis,approval),'LITERATURE_RULE_NOT_APPROVED')
 
+    def test_legacy_learning_cannot_rewrite_book_plan(self):
+        from aurelia_fx.continual_learning import apply
+        with self.assertRaisesRegex(ValueError,'LITERATURE_PLAN_REQUIRES_SEPARATE_LEARNING'):
+            apply({'snapshot':{'literature_basis':{'plan_id':'reviewed-plan'}}},'target_3r')
+
     def test_guard_blocks_legacy_snapshot(self):
         with patch.dict('os.environ',{'AURELIA_REQUIRE_LITERATURE':'1'}):
             self.assertEqual(entry_blocker({'regime':'TREND'}),'LITERATURE_BASIS_REQUIRED')

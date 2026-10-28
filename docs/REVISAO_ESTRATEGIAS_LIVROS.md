@@ -22,7 +22,7 @@ mesma obra, não duas confirmações independentes.
 |---|---|---|
 | `agent_strategy.py` | EMA/ATR e gatilho curto | Contexto, qualidade da correção, região, gatilho, invalidação e saída com fontes |
 | `literature_strategies.py` | Famílias de pesquisa parametrizadas | Não tratar nomes de famílias como comprovação da técnica do autor |
-| `continual_learning.py` | Variantes de alvo 2,5R/3R/3,5R | Não substituir alvo estrutural de um plano novo; versionar aprendizado por plano |
+| `continual_learning.py` | Variantes de alvo 2,5R/3R/3,5R | Reescrita de plano com base bibliográfica agora bloqueada; falta aprendizado por plano |
 | Catálogo de conhecimento | Resumos e referências gerais | Revisar contra página original e registrar limites de interpretação |
 | Timestral | Previsão numérica de séries | Não equivale a leitor textual nem comprova técnica dos livros |
 
@@ -84,8 +84,8 @@ próprio e não contam como leitura bem-sucedida. O serviço retoma páginas pen
   experimentais das regras literalmente sustentadas pelas fontes.
 - Validar estrutura, gatilhos, stops, alvos, custos e horário em replay e período
   separado; comparar com a versão antiga, sem pressupor rentabilidade.
-- Impedir que as variantes antigas de aprendizado reescrevam o plano novo e
-  registrar resultados com versão do plano, fichas e contexto da decisão.
+- Criar aprendizado próprio para os planos novos (a aplicação das variantes
+  antigas já é recusada para propostas com base bibliográfica) e registrar resultados com versão do plano, fichas e contexto da decisão.
 - Registrar aprovação específica após os testes e só então retomar a demo.
 
 ## Verificação
