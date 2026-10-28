@@ -12,10 +12,31 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--history', action='store_true',
                         help='Atualizar histórico a cada 15 minutos enquanto a sessão estiver parada')
+    from src.aurelia_fx.entry_trend import POLICIES, STRICT_POLICY_ID
+    parser.add_argument('--entry-policy', choices=POLICIES,
+                        help='Política de direção dos workers; preservada na configuração privada')
     args = parser.parse_args()
     if sys.platform != 'linux':
         raise RuntimeError('Execute este instalador no Linux.')
     config = json.loads((ROOT / 'config/new-environment.local.json').read_text())
+    policy = args.entry_policy or config.get('entry_policy', STRICT_POLICY_ID)
+    if policy not in POLICIES:
+        raise ValueError('Política de entrada desconhecida.')
+    if args.entry_policy and policy != config.get('entry_policy', STRICT_POLICY_ID):
+        # System Python is sufficient for this installer; DB dependencies live in .venv.
+        probe = """from src.aurelia_fx.storage import open_memory
+from src.aurelia_fx.asset_registry import AssetRegistry
+from src.aurelia_fx.operation_control import OperationControl
+memory = open_memory()
+try:
+    for asset in AssetRegistry(memory).list():
+        state = OperationControl(memory, asset['symbol']).status()
+        if state.get('desired') != 'stopped' or state.get('position') or state.get('pending_execution'):
+            raise RuntimeError('Pare e reconcilie todas as sessões antes de mudar a política.')
+finally:
+    memory.close()
+"""
+        subprocess.run([str(ROOT / '.venv/bin/python'), '-c', probe], cwd=ROOT, check=True)
     for relative in ('.venv/bin/python', '.venv-training/bin/python', 'data/database.json'):
         if not (ROOT / relative).exists():
             raise RuntimeError('Pré-requisito ausente: ' + relative)
@@ -33,6 +54,7 @@ def main():
     directory = str(ROOT).replace('%', '%%')
     environment = 'Environment=' + json.dumps(
         f"AURELIA_MT5_BRIDGE_URL=http://{config['windows_ip']}:{config['bridge_port']}") + '\n'
+    environment += 'Environment=' + json.dumps('AURELIA_ENTRY_POLICY=' + policy) + '\n'
     common = ('[Service]\nType=simple\nWorkingDirectory=' + directory + '\n'
               + environment + 'Environment=PYTHONUNBUFFERED=1\nUMask=0077\n')
     agent = ('[Unit]\nDescription=Agente Trader Linux worker\nAfter=network.target\n'
@@ -65,6 +87,17 @@ def main():
         (units / name).write_text(contents)
     subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
     subprocess.run(['systemctl', '--user', 'enable', '--now', *enabled], check=True)
+    if args.entry_policy:
+        config['entry_policy'] = policy
+        config_path = ROOT / 'config/new-environment.local.json'
+        config_path.write_text(json.dumps(config,indent=2)+'\n')
+        config_path.chmod(0o600)
+        compose_path = ROOT / 'data/provisioning/compose.json'
+        if compose_path.exists():
+            compose = json.loads(compose_path.read_text())
+            compose['services']['api']['environment']['AURELIA_ENTRY_POLICY'] = policy
+            compose_path.write_text(json.dumps(compose,indent=2)+'\n')
+            compose_path.chmod(0o600)
     print('Agente e fila de treinamento instalados no Linux; nenhuma sessão iniciada.')
 
 

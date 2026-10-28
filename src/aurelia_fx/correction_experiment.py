@@ -5,7 +5,7 @@ from datetime import timedelta
 from .agent_research import SESSIONS, intelligence_session, request_for, simulator
 from .agent_strategy import propose_pullback
 from .broker_calendar import unexpected_broker_gap
-from .entry_trend import entry_blocker
+from .entry_trend import entry_blocker, STRICT_POLICY_ID
 from .historical.core import utc
 from .regime_study import candles_from
 from .research_levels import ResearchLevels
@@ -101,7 +101,7 @@ def generate(rows, *, start, progress=lambda *_:None):
         phases[p['phase']]+=1
         side=setup['candidate'].side
         expected='long' if p.get('direction')=='bullish' else 'short' if p.get('direction')=='bearish' else None
-        strict=entry_blocker(snapshot,side) is None
+        strict=entry_blocker(snapshot,side,policy=STRICT_POLICY_ID) is None
         extra=p['allowed'] and side==expected
         counts['technical_candidates']+=1
         counts['strict_signals']+=strict;counts['additional_guarded_signals']+=extra

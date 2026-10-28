@@ -18,6 +18,7 @@ class ExploratoryLearningTests(unittest.TestCase):
         self.parent = self.lab['continual']
         self.setup = copy.deepcopy(self.fixture.setup)
         self.setup['snapshot']['regime'] = 'RANGE'
+        self.setup['snapshot']['context_trend']['state'] = 'UNKNOWN'
         self.setup['features'] = self.fixture.features
         el.initialize(self.parent, self.at-timedelta(minutes=5))
 

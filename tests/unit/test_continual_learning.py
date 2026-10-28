@@ -16,7 +16,8 @@ class ContinualLearningTests(unittest.TestCase):
         original=cl.apply(self.setup,'baseline')['candidate'];other=cl.apply(self.setup,'target_3r')['candidate']
         self.assertEqual(other.stop,original.stop);self.assertGreater(other.target,original.target)
         self.assertFalse(cl.accepts('forecast',{**self.features,'forecast_3_atr':-1}))
-        with self.assertRaises(ValueError):cl.apply({**self.setup,'snapshot':{**self.setup['snapshot'],'regime':'RANGE'}},'target_3r')
+        with self.assertRaises(ValueError):cl.apply({**self.setup,'snapshot':{**self.setup['snapshot'],
+            'context_trend':{**self.setup['snapshot']['context_trend'],'state':'UNKNOWN'}}},'target_3r')
 
     def test_prospective_targets_are_not_scored_until_observed_and_restart_is_exact(self):
         cl.advance(self.lab,[self.bar(self.at-timedelta(minutes=5))],self.at)

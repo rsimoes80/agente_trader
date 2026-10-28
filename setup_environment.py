@@ -98,7 +98,8 @@ def configure(root, config_path, role):
                 "build": {"context": root.as_posix(), "dockerfile": "deploy/fresh/Dockerfile"},
                 "network_mode": "host", "restart": "unless-stopped",
                 "depends_on": {"db": {"condition": "service_healthy"}},
-                "environment": {"AGENTE_TRADER_PUBLIC_URL": f"http://{linux}:{web_port}"},
+                "environment": {"AGENTE_TRADER_PUBLIC_URL": f"http://{linux}:{web_port}",
+                                "AURELIA_ENTRY_POLICY": config.get('entry_policy', 'trend-only-h4-h1-confirmed-v1')},
                 "volumes": [f"{data.as_posix()}:/app/data"]},
             "web": {
                 "image": "nginx:1.28-alpine", "network_mode": "host",

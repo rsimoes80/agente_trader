@@ -52,6 +52,37 @@ O timer verifica a fila de treinamento a cada minuto, sem executar dois jobs
 da mesma unidade simultaneamente. Linger permite iniciar o gerenciador do
 usuário no boot; pode exigir privilégios conforme a política do sistema.
 
+### Política de daytrade
+
+Com as sessões paradas e sem exposição, configure a política de direção H1:
+
+```bash
+python3 install_linux_workers.py --history --entry-policy daytrade-h1-confirmed-v1
+systemctl --user restart agente-trader-agent.service
+docker compose -f data/provisioning/compose.json up -d --build api
+```
+
+O instalador recusa mudar a política com sessão ativa ou exposição pendente.
+Ele persiste `entry_policy` no JSON privado e o ambiente dos serviços, além de
+atualizar o ambiente da API no Compose gerado. O serviço de treinamento recebe
+a mesma identidade. Scripts CLI isolados usam a política estrita por padrão;
+para reproduzir a política configurada, prefixe o comando com
+`AURELIA_ENTRY_POLICY=daytrade-h1-confirmed-v1`. A importação recusa valores
+desconhecidos. A configuração da API é aplicada ao recriar seu container.
+
+Nesta política, H1 precisa estar confirmado em alta para compras ou em baixa
+para vendas. H4/D1, regime e divergências continuam como contexto e features,
+sem vetos adicionais de regime ou confirmação macro. O gatilho de pullback,
+dados válidos, spread, stop, custos e limites de risco permanecem exigidos.
+Limites de horário e fechamento da sessão continuam aplicados. A mudança gera
+outra identidade de estratégia e de aprendizado; não converte estatísticas
+antigas em evidência da política nova. Não inicia negociação automaticamente.
+
+As hipóteses `trend-only-h4-h1-confirmed-v1` (original) e
+`daytrade-h1-continuation-v1` (gatilho de continuação mais flexível) são
+reproduzíveis e podem ser comparadas offline com `run_operational_audit.py
+--compare-daytrade`. Veja a comparação em `FLEXIBILIZACAO_DAYTRADE_H1.md`.
+
 Para coletar e validar inicialmente 30 dias de EURUSD sem iniciar negociação:
 
 ```bash

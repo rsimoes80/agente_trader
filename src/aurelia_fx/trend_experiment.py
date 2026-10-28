@@ -5,7 +5,7 @@ from math import sqrt
 
 from .agent_research import SESSIONS, request_for, simulator
 from .domain import Candidate
-from .entry_trend import entry_blocker
+from .entry_trend import entry_blocker, STRICT_POLICY_ID
 from .historical.core import utc
 from .sessions import SessionEngine
 
@@ -16,7 +16,7 @@ def eligible(sample, policy):
     snapshot=sample['snapshot']
     side=sample['candidate']['side']
     if policy=='h4_h1':
-        return entry_blocker(snapshot,side) is None
+        return entry_blocker(snapshot,side,policy=STRICT_POLICY_ID) is None
     # Only remove the H4 requirement. Regime, H1 confirmation and side stay fixed.
     context=snapshot.get('context_trend') or {}
     expected={'long':('bullish','BULL_CONFIRMED'),'short':('bearish','BEAR_CONFIRMED')}.get(side)

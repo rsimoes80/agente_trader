@@ -14,10 +14,10 @@ from .execution_simulator import EntryRequest,Position
 from .historical.core import utc
 from .sessions import SessionEngine
 from .broker_calendar import unexpected_broker_gap
-from .entry_trend import entry_blocker
+from .entry_trend import entry_blocker, POLICY_ID, STRICT_POLICY_ID
 from . import hypothesis_review, exploratory_learning
 
-VERSION='continual-context-v1'
+VERSION='continual-context-v1' if POLICY_ID == STRICT_POLICY_ID else 'continual-context-v2-'+POLICY_ID
 VARIANTS={
     'baseline':dict(name='Pullback atual · alvo 2,5R',arm='context_pullback',reward=2.5,filter='none'),
     'target_3r':dict(name='Pullback · alvo 3R',arm='context_pullback',reward=3.,filter='none'),
@@ -29,7 +29,8 @@ SPEC=dict(version=VERSION,variants=VARIANTS,min_days=7,min_trades=20,min_context
     online_half_life_trades=20,rollback_after=10,rollback_mean_r=-.25,
     model_rollback_after=20,model_rollback_loss_fraction=.7,reward_clip_r=3,
     scope='prospective costed shadow portfolios, real outcomes separate',
-    risk='existing limits unchanged; H4/H1 trend mandatory',auto_promote=True)
+    risk=('existing limits unchanged; H4/H1 trend mandatory' if POLICY_ID == STRICT_POLICY_ID else
+          'existing limits unchanged; confirmed H1 and matching side mandatory'),auto_promote=True)
 SPEC_HASH=fingerprint(SPEC)
 
 def profile_for(state):

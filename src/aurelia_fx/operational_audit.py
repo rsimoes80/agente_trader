@@ -23,13 +23,14 @@ def verify_partition(rows, partition):
     return digest
 
 
-def scan(rows, *, start, end, progress=lambda **kw: None):
+def scan(rows, *, start, end, progress=lambda **kw: None, compare_policies=()):
     """Use only past closed candles; earlier rows initialize the live warmup path."""
     start, end = utc(start), utc(end)
     session = intelligence_session()
     reasons, regimes, classifications, funnel = Counter(), Counter(), Counter(), Counter()
     samples, gaps, daily_counts = [], [], []
     warmup = evaluated = 0
+    comparisons = {policy: dict(reasons=Counter(), samples=[]) for policy in compare_policies}
     for index, row in enumerate(rows):
         stamp = utc(row['timestamp'])
         if stamp >= end:
@@ -50,6 +51,15 @@ def scan(rows, *, start, end, progress=lambda **kw: None):
             daily = session.aggregator.history['D1']
             daily_counts.append(len(daily))
             setup, reason = propose_pullback(snapshot, session.history, daily_history=daily)
+            for policy, comparison in comparisons.items():
+                alternative, blocked = propose_pullback(snapshot, session.history, daily_history=daily, entry_policy=policy)
+                comparison['reasons'][blocked or 'PROPOSAL'] += 1
+                if alternative:
+                    candidate = alternative['candidate']
+                    comparison['samples'].append(dict(sample_id=policy + ':' + alternative['signal_at'],
+                        signal_at=alternative['signal_at'], entry_at=alternative['signal_at'], snapshot=alternative['snapshot'],
+                        candidate=dict(side=candidate.side,entry=candidate.entry,stop=candidate.stop,target=candidate.target,
+                                       expires_at=candidate.expires_at.isoformat(),evidence=list(candidate.evidence))))
             data = snapshot.as_dict()
             regimes[snapshot.regime] += 1
             classification = (data.get('regime_state') or {}).get('features', {}).get('classification_reason')
@@ -86,4 +96,5 @@ def scan(rows, *, start, end, progress=lambda **kw: None):
                 regime_classifications=dict(classifications), cumulative_funnel=dict(funnel),
                 daily_context=dict(min=min(daily_counts) if daily_counts else None,
                                    max=max(daily_counts) if daily_counts else None),
-                unexpected_gaps=gaps, samples=samples)
+                unexpected_gaps=gaps, samples=samples,
+                policy_comparisons={key: {**value, 'reasons':dict(value['reasons'])} for key,value in comparisons.items()})

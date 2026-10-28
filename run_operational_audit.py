@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--warmup', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=ROOT / 'data/reports')
+    parser.add_argument('--compare-daytrade', action='store_true',help='Compare frozen H1-only and continuation hypotheses offline')
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text())
     warmup = json.loads(args.warmup.read_text())
@@ -48,11 +49,16 @@ def main():
             raise ValueError('Reserva final invadida ou fonte vazia.')
         verified = {label: verify_partition(rows, plan['partitions'][label])
                     for label in ('development', 'validation')}
+        from aurelia_fx.entry_trend import H1_POLICY_ID, CONTINUATION_POLICY_ID
+        comparisons=(H1_POLICY_ID,CONTINUATION_POLICY_ID) if args.compare_daytrade else ()
         protocol = dict(version='operational-proposal-audit-v1', reference_plan=plan['plan_id'],
+            comparison_policies=list(comparisons),selection='No automatic winner selection or live promotion',
             code_version=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             dirty_worktree=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip()),
             runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             audit_sha256=hashlib.sha256((ROOT/'src/aurelia_fx/operational_audit.py').read_bytes()).hexdigest(),
+            strategy_source_sha256=hashlib.sha256((ROOT/'src/aurelia_fx/agent_strategy.py').read_bytes()).hexdigest(),
+            guard_source_sha256=hashlib.sha256((ROOT/'src/aurelia_fx/entry_trend.py').read_bytes()).hexdigest(),
             dataset_sha256=memory._encode(rows)[1], source_known_by=record['recorded_at'].isoformat(),
             original_partition_hashes_verified=verified,
             holdout_start=cutoff.isoformat(), holdout='reserved_not_evaluated',
@@ -70,7 +76,7 @@ def main():
             partition=plan['partitions'][label]
             a=utc(partition['first_open']);b=utc(partition['last_open'])+timedelta(minutes=5)
             if b>cutoff:raise ValueError('Partição invade a reserva.')
-            report=scan(rows,start=a,end=b,progress=lambda **kw:emit(partition=label,**kw))
+            report=scan(rows,start=a,end=b,progress=lambda **kw:emit(partition=label,**kw),compare_policies=comparisons)
             if report['evaluated_bars'] != partition['bars']:
                 raise ValueError('A revisão do histórico mudou a partição selada.')
             candles=[Candle(utc(r['timestamp']),*(r[k] for k in ('open','high','low','close')),
@@ -78,6 +84,9 @@ def main():
             report['hypothetical_portfolios']={
                 key:simulate(report['samples'],candles,start=a,end=b,stress=stress,holding_bars=12,purge_hours=1)
                 for key,stress in (('normal',False),('stress',True))}
+            for policy,comparison in report['policy_comparisons'].items():
+                comparison['hypothetical_portfolios']={key:simulate(comparison['samples'],candles,start=a,end=b,
+                    stress=stress,holding_bars=12,purge_hours=1) for key,stress in (('normal',False),('stress',True))}
             reports[label]=report
             (output/(label+'.json')).write_text(json.dumps(report,indent=2)+'\n')
             emit(stage='partition_complete',partition=label,reasons=report['reasons'],

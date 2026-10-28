@@ -54,4 +54,5 @@ class AutonomousLabTests(unittest.TestCase):
         self.assertIn(result["id"],["context_pullback","price_action_pullback"])
         self.assertNotIn("probability",result)
         with self.assertRaises(ValueError):
-            self.lab.select(features,{**self.snapshot,'regime':'UNKNOWN'},state)
+            self.lab.select(features,{**self.snapshot,'context_trend':{
+                **self.snapshot['context_trend'],'state':'UNKNOWN'}},state)

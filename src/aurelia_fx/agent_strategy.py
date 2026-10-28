@@ -12,10 +12,11 @@ from datetime import timedelta
 from statistics import mean
 
 from .domain import Candidate
-from .entry_trend import entry_blocker, POLICY_ID
+from .entry_trend import entry_blocker, POLICY_ID, STRICT_POLICY_ID, CONTINUATION_POLICY_ID
 
 STRATEGY_ID = "agent_pullback_timestral"
-VERSION = "research-v3-counterfactual-context"
+VERSION = ("research-v3-counterfactual-context" if POLICY_ID == STRICT_POLICY_ID else
+           "daytrade-h1-context-v1")
 FEATURES = (
     "side",
     "body_atr",
@@ -69,6 +70,13 @@ SPEC = dict(
     automatic_live_promotion=False,
 )
 SPEC_HASH = hashlib.sha256(json.dumps(SPEC, sort_keys=True).encode()).hexdigest()
+if POLICY_ID != STRICT_POLICY_ID:
+    SPEC.update(entry_policy=POLICY_ID, direction_policy='Confirmed H1 defines trade side; H4/D1 and regime are analysis features',
+                regimes=['TREND','RANGE','TRANSITION','UNKNOWN'],
+                trigger=('close beyond prior close and EMA in trend direction' if POLICY_ID == CONTINUATION_POLICY_ID else
+                         'existing pullback with close beyond prior extreme'),
+                context_authority='No regime/H4/D1 veto; confirmed H1, data, session, spread and risk gates still required')
+    SPEC_HASH = hashlib.sha256(json.dumps(SPEC, sort_keys=True).encode()).hexdigest()
 
 
 def strategy_spec(profile=None):
@@ -88,7 +96,8 @@ def strategy_hash(profile=None):
 
 
 def propose_pullback(
-    snapshot, history, *, daily_history=None, pip_size=0.0001, research=False, profile=None
+    snapshot, history, *, daily_history=None, pip_size=0.0001, research=False, profile=None,
+    entry_policy=POLICY_ID,
 ):
     """A closed trigger after a correction, eligible only in a confirmed trend."""
     if profile:
@@ -100,10 +109,10 @@ def propose_pullback(
     if daily_history is None or len(daily_history) < 20:
         return None, "DAILY_CONTEXT_INSUFFICIENT"
     if not research:
-        blocker = entry_blocker(snapshot.as_dict())
+        blocker = entry_blocker(snapshot.as_dict(), policy=entry_policy)
         if blocker:
             return None, blocker
-    if snapshot.regime != "TREND" and not research:
+    if entry_policy == STRICT_POLICY_ID and snapshot.regime != "TREND" and not research:
         return None, "REGIME_" + snapshot.regime
     if not snapshot.session:
         return None, "OUTSIDE_SESSION"
@@ -163,6 +172,10 @@ def propose_pullback(
             and current.close < current.open
         )
     )
+    if entry_policy == CONTINUATION_POLICY_ID:
+        trigger = ((current.close > previous.close and current.close > ema and current.close > current.open)
+                   if long else
+                   (current.close < previous.close and current.close < ema and current.close < current.open))
     if not correction or not trigger:
         return None, "WAITING_PULLBACK_TRIGGER"
     stop = (
@@ -221,9 +234,11 @@ def propose_pullback(
         snapshot={**snapshot.as_dict(), 'symbol': profile.symbol, 'profile_id': profile.fingerprint} if profile else snapshot.as_dict(),
         strategy_id=STRATEGY_ID,
         strategy_version=VERSION,
-        spec_hash=strategy_hash(profile),
-        entry_policy=POLICY_ID if not research else "offline_counterfactual",
-        production_eligible=snapshot.regime == "TREND" and h1_known,
+        spec_hash=(strategy_hash(profile) if entry_policy == POLICY_ID else
+                   hashlib.sha256(json.dumps(dict(base=strategy_hash(profile),entry_policy=entry_policy),sort_keys=True).encode()).hexdigest()),
+        entry_policy=entry_policy if not research else "offline_counterfactual",
+        production_eligible=entry_blocker(snapshot.as_dict(),candidate.side) is None,
+        policy_eligible=entry_blocker(snapshot.as_dict(),candidate.side,policy=entry_policy) is None,
         candidate_scope="counterfactual_research"
         if research
         else "production_proposal",
