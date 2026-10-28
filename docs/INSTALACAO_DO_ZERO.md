@@ -68,6 +68,21 @@ automaticamente com Docker. O estado do banco permanece no volume; arquivos
 da aplicação permanecem em `data/`. Não execute `docker compose down -v`.
 
 Se falhar, use `docker compose -f data/provisioning/compose.json logs --tail 100`.
+No Linux, o gerador mantém `data/provisioning/` privado (0700), mas permite
+leitura do `init.sql` montado diretamente pelo usuário PostgreSQL do container
+(0644). Não torne a pasta pública: o SQL contém a senha da aplicação.
+Se uma instalação gerada anteriormente falhou com `01-app.sql: Permission denied`,
+confirme que o papel `agente_trader_app` e o banco `agente_trader` ainda não
+existem. Somente nesse caso, corrija as permissões e conclua o bootstrap sem
+apagar o volume:
+
+```bash
+chmod 700 data/provisioning
+chmod 644 data/provisioning/init.sql
+docker compose -f data/provisioning/compose.json exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres < data/provisioning/init.sql
+docker compose -f data/provisioning/compose.json restart api
+```
+
 Não tente corrigir falha de senha apagando o volume: verifique se o projeto
 Compose/volume já existia e preserve seus dados. Mudanças posteriores nas
 senhas do JSON não alteram usuários de banco já inicializado.

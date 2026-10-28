@@ -78,6 +78,11 @@ def configure(root, config_path, role):
     write(provisioning / "init.sql",
           f"CREATE ROLE agente_trader_app LOGIN PASSWORD '{password}';\n"
           "CREATE DATABASE agente_trader OWNER agente_trader_app;\n")
+    if os.name != "nt":
+        # Docker mounts this file directly; postgres must read it as its own UID.
+        # Keep the parent private so other host users cannot read the secret.
+        provisioning.chmod(0o700)
+        (provisioning / "init.sql").chmod(0o644)
     compose = {
         "name": "agente-trader-fresh",
         "services": {

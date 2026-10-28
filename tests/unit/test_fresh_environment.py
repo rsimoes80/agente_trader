@@ -1,5 +1,6 @@
 """Fresh provisioning must share credentials and preserve existing installations."""
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -29,6 +30,11 @@ class FreshEnvironmentTests(unittest.TestCase):
                     self.assertNotIn('192.168.97.221', nginx)
                     self.assertNotIn('${MT5_BRIDGE_TOKEN}', nginx)
                     self.assertIn('192.168.1.20:8769', nginx)
+                    if os.name != 'nt':
+                        provisioning = root / 'data/provisioning'
+                        self.assertEqual(provisioning.stat().st_mode & 0o777, 0o700)
+                        self.assertEqual((provisioning / 'init.sql').stat().st_mode & 0o777, 0o644)
+                        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
                 else:
                     self.assertEqual((root / 'data/mt5_bridge.token').read_text().strip(),
                                      settings['bridge_token'])
