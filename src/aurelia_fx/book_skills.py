@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+from uuid import uuid4
 
 from .book_profiles import PROFILES
 from .literature_learning import validate_techniques
@@ -17,8 +18,12 @@ def digest(value):
 def private_write(path, text):
     path.parent.mkdir(parents=True,exist_ok=True)
     path.parent.chmod(0o700)
-    temporary=path.with_suffix(path.suffix+'.tmp')
-    temporary.write_text(text,encoding='utf-8');temporary.chmod(0o600);temporary.replace(path)
+    temporary=path.with_name(path.name+'.'+uuid4().hex+'.tmp')
+    try:
+        temporary.touch(mode=0o600,exist_ok=False)
+        temporary.write_text(text,encoding='utf-8');temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def build_skills(cards, *, root=ROOT):
