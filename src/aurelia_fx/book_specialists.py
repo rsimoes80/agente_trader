@@ -3,13 +3,13 @@ from datetime import datetime, timedelta, timezone
 import json
 import copy
 import math
-from .literature_model import completion
+from .literature_model import completion, runtime_spec
 
 from .book_skills import digest
 
 VERSION='book-council-v1.2'
 MODEL_SPEC=dict(model='Qwen/Qwen3-4B-GGUF',revision='bc640142c66e1fdd12af0bd68f40445458f3869b',
-                temperature=0,max_tokens=650,max_cards=6,prompt_version=VERSION)
+                temperature=0,max_tokens=650,max_cards=6,prompt_version=VERSION,runtime=runtime_spec())
 PRICE_STAGES={'context','region','trigger','invalidation','exit'}
 
 

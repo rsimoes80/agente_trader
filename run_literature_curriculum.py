@@ -11,6 +11,7 @@ sys.path.insert(0,str(ROOT/'src'))
 def main():
     from aurelia_fx.literature_learning import read_page,validate_techniques
     from aurelia_fx.storage import open_memory
+    from aurelia_fx.literature_model import runtime_spec
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--limit',type=int)
     args=parser.parse_args();cache=ROOT/'data/references_cache/learning-library'
     m=open_memory();count=0
@@ -48,7 +49,7 @@ def main():
                     for card in cards:m.record_project_data('literature_technique_card',card['card_id'],card)
                     m.record_project_data('literature_semantic_page',key,dict(document=source['document'],page=page['page'],
                         source_sha256=source['sha256'],text_sha256=page['text_sha256'],status=status,cards=[x['card_id'] for x in cards],
-                        reader='Qwen/Qwen3-4B-GGUF',reader_revision='bc640142c66e1fdd12af0bd68f40445458f3869b',read_at=at,
+                        reader='Qwen/Qwen3-4B-GGUF',reader_runtime=runtime_spec(),reader_revision='bc640142c66e1fdd12af0bd68f40445458f3869b',read_at=at,
                         visual_figures_reviewed=False,trading_authority=False))
                     processed+=1;count+=1
                     progress=dict(at=at,pages_read_this_process=count,last_document=source['document'],last_page=page['page'],last_status=status,

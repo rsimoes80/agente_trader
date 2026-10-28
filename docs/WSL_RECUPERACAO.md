@@ -52,3 +52,6 @@ systemctl --user show agente-trader-literature-model.service -p MemoryHigh -p Me
 
 A recuperação de infraestrutura não autoriza START ou RESUME de negociação.
 O estado operacional deve ser conferido no painel após a reconexão.
+
+A aceleração CUDA foi configurada posteriormente para o leitor; consulte
+[GPU_WSL.md](GPU_WSL.md). Os limites de memória continuam válidos também com GPU.

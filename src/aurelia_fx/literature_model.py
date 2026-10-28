@@ -8,6 +8,15 @@ from urllib.request import Request,urlopen
 ROOT=Path(__file__).resolve().parents[2]
 
 
+def runtime_spec():
+    path=ROOT/'data/references_cache/literature-runtime.json'
+    if not path.exists():return dict(backend='CPU',runtime='llama.cpp',release='b11962',offloaded_layers=0)
+    value=json.loads(path.read_text())
+    if not isinstance(value,dict) or value.get('backend') not in ('CPU','CUDA'):
+        raise ValueError('LITERATURE_RUNTIME_METADATA_INVALID')
+    return value
+
+
 @contextmanager
 def model_slot(path=None):
     path=Path(path) if path else ROOT/'data/references_cache/literature-model.lock'
