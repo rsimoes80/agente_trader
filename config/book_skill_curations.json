@@ -1,0 +1,131 @@
+{
+  "source_document": "EBOOK-MANUAL-DO-PULLBACK.pdf",
+  "source_sha256": "324ddfc6a021fbd95877cb41ef67559da9a7e1261a0fc8803b7d5731c0d91c3b",
+  "scope": "Revisão textual parcial do Manual do Pullback. Exemplos visuais não revisados; adaptação a Forex M5 ainda experimental.",
+  "techniques": [
+    {
+      "page": 6,
+      "anchor": "Uma correção saudável",
+      "name": "Profundidade relativa da correção",
+      "kind": "context",
+      "summary": "Compare a correção com a perna anterior; uma devolução profunda enfraquece a hipótese de continuação.",
+      "conditions": [
+        "Perna anterior e correção identificadas sem informação futura"
+      ],
+      "invalidations": [
+        "Correção devolve grande parte do impulso"
+      ]
+    },
+    {
+      "page": 7,
+      "anchor": "Presta atenção",
+      "name": "Velocidade relativa da correção",
+      "kind": "context",
+      "summary": "Compare velocidade, amplitude e corpos dos candles da correção com os do impulso.",
+      "conditions": [
+        "Impulso e correção delimitados",
+        "Mesma escala temporal na comparação"
+      ],
+      "invalidations": [
+        "Correção agressiva em relação ao impulso"
+      ]
+    },
+    {
+      "page": 8,
+      "anchor": "A lógica é quase",
+      "name": "Contração do volume na correção",
+      "kind": "context",
+      "summary": "O volume integra a leitura da correção; no Forex, volume de ticks deixa a confirmação do volume negociado pendente.",
+      "conditions": [
+        "Volume negociado comparável disponível"
+      ],
+      "invalidations": [
+        "Aumento de volume negociado contra a tendência"
+      ]
+    },
+    {
+      "page": 9,
+      "anchor": "Uma tendência de alta",
+      "name": "Preservação da estrutura",
+      "kind": "invalidation",
+      "summary": "Na hipótese de compra, a correção precisa preservar o fundo relevante que sustenta a tendência.",
+      "conditions": [
+        "Fundo relevante confirmado sem antecipar pivôs"
+      ],
+      "invalidations": [
+        "Perda do fundo anterior"
+      ]
+    },
+    {
+      "page": 17,
+      "anchor": "Sem gatilho",
+      "name": "Região precisa de gatilho",
+      "kind": "entry",
+      "summary": "Chegar a uma região não basta: é necessária confirmação de entrada observada após a correção.",
+      "conditions": [
+        "Região identificada",
+        "Gatilho observado em candle fechado"
+      ],
+      "invalidations": [
+        "Antecipação do gatilho"
+      ]
+    },
+    {
+      "page": 17,
+      "anchor": "O stop nasce",
+      "name": "Stop estrutural",
+      "kind": "invalidation",
+      "summary": "Na hipótese de compra descrita, a mínima da correção determina a invalidação; não ajustar o stop para acomodar tamanho.",
+      "conditions": [
+        "Mínima da correção identificada"
+      ],
+      "invalidations": [
+        "Stop escolhido apenas por percentual"
+      ]
+    },
+    {
+      "page": 17,
+      "anchor": "O tamanho da posição",
+      "name": "Tamanho subordinado ao stop",
+      "kind": "risk",
+      "summary": "Dimensionar a posição depois de definir a invalidação; se o risco não couber, reduzir tamanho ou dispensar a operação.",
+      "conditions": [
+        "Distância até o stop e risco permitido conhecidos"
+      ],
+      "invalidations": [
+        "Reduzir artificialmente o stop para aumentar a posição"
+      ]
+    },
+    {
+      "page": 17,
+      "anchor": "O primeiro alvo",
+      "name": "Primeiro obstáculo e saída estrutural",
+      "kind": "management",
+      "summary": "Na compra, o primeiro alvo é o topo anterior; o autor exige retorno de pelo menos duas vezes o risco até esse obstáculo. A adaptação precisa ainda avaliar custos.",
+      "conditions": [
+        "Topo anterior identificado",
+        "Retorno até o primeiro obstáculo compatível com o critério do autor e com os custos"
+      ],
+      "invalidations": [
+        "Primeiro obstáculo próximo demais em relação ao risco"
+      ],
+      "numeric_values": [
+        "duas"
+      ]
+    },
+    {
+      "page": 24,
+      "anchor": "Existe pelo menos",
+      "name": "Confluência de regiões",
+      "kind": "entry",
+      "summary": "A entrada requer uma região pertinente; a sobreposição de regiões reforça a análise, sem dispensar gatilho e estrutura.",
+      "conditions": [
+        "Regiões medidas no gráfico",
+        "Gatilho confirmado"
+      ],
+      "invalidations": [
+        "Região inexistente ou gatilho antecipado"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 """Page-grounded literature memory. Text generation never grants trading authority."""
 import hashlib,json,re,unicodedata
-from urllib.request import Request,urlopen
+from .literature_model import completion
 
 KINDS={'context','entry','invalidation','risk','management','psychology'}
 
@@ -54,7 +54,6 @@ def read_page(source,page,*,endpoint='http://127.0.0.1:8791/v1/chat/completions'
         dict(document=source['document'],pdf_page=page['page'],text=redact(page['text'])[:18000]),ensure_ascii=False))],
         temperature=0,max_tokens=1000,response_format={'type':'json_object'},
         chat_template_kwargs={'enable_thinking':False})
-    request=Request(endpoint,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
-    with urlopen(request,timeout=240) as response:result=json.load(response)
+    result=completion(payload,endpoint=endpoint,timeout=240)
     if result['choices'][0].get('finish_reason')=='length':raise ValueError('READER_RESPONSE_TRUNCATED')
     return json.loads(result['choices'][0]['message']['content'])

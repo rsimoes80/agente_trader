@@ -25,6 +25,7 @@ def main():
     from aurelia_fx.historical.repository import HistoricalRepository
     from aurelia_fx.source_clock import validate_source_clock
     from aurelia_fx.storage import open_memory
+    from aurelia_fx.book_specialists import market_case
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--once',action='store_true')
     parser.add_argument('--interval',type=float,default=10)
@@ -49,7 +50,7 @@ def main():
     memory.record_project_data('live_observation_protocol',run_id,dict(**status,
         code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         forecasting=adapter.config.fingerprint,scope='prospective diagnostics, no orders, no training/promotion'))
-    last_forecast=None;initialized=False;last_recorded=None;model_retry_at=None
+    last_forecast=None;initialized=False;last_recorded=None;model_retry_at=None;last_book_case=None
     try:
         while not stop.is_set():
             try:
@@ -77,6 +78,11 @@ def main():
                               h4={k:snapshot.macro_trend.get(k) for k in ('timeframe','timestamp_utc','direction','state')},
                               last_source_ok=now.isoformat())
                 status.pop('error_type',None)
+                if last_book_case!=latest['timestamp']:
+                    # Immutable closed-bar case shared by all book specialists, independent of trade proposals.
+                    case=market_case(snapshot.as_dict(),[bar.as_dict() for bar in session.history[-12:]])
+                    memory.record_project_data('book_market_case',case['case_id'],case)
+                    last_book_case=latest['timestamp']
                 output=None
                 if last_forecast!=latest['timestamp'] and (model_retry_at is None or now>=model_retry_at):
                     try:

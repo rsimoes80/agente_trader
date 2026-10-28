@@ -18,7 +18,10 @@ def main():
               'analise-tecnica-explicadapdf-pdf-free.pdf':[16,17,20,24,25,26,68,69,70,71,72],
               'wyckoff-20-portugues-pr.pdf':[32,33,69,70,71,74,75,287,292],
               'operando-price-action-tendencias-al-brooks-5-pdf-free.pdf':[103,107,127,135,233,341],
-              'Trading_in_the_Zone.PDF':[130,133,134,136]}
+              'Trading_in_the_Zone.PDF':[130,133,134,136],
+              'Smart Money Concepts - MARRAIK SMC 2 (1).pdf':[13,112],
+              'Reminiscências de Um Especulador Financeiro por Jesse Livermore e Edward Lefèvre.pdf':[157,79],
+              'Operando Price Actions - Lateralidades (Al Brooks) (z-library.sk, 1lib.sk, z-lib.sk).pdf':[21,31,45]}
     try:
         while True:
             if not (cache/'inventory.json').exists():time.sleep(10);continue

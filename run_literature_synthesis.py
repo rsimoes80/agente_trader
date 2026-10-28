@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import sys
-from urllib.request import Request, urlopen
+
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'src'))
@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 
 def main():
     from aurelia_fx.storage import open_memory
+    from aurelia_fx.literature_model import completion
     from aurelia_fx.literature_blueprint import validate_blueprint
     memory = open_memory()
     try:
@@ -35,10 +36,7 @@ Citações literais verificadas ainda precisam de revisão semântica; não prom
         payload = dict(messages=[dict(role='system',content=prompt),dict(role='user',content=json.dumps(cards,ensure_ascii=False))],
                        temperature=0,max_tokens=1500,response_format={'type':'json_object'},
                        chat_template_kwargs={'enable_thinking':False})
-        request=Request('http://127.0.0.1:8791/v1/chat/completions',data=json.dumps(payload).encode(),
-                        headers={'Content-Type':'application/json'})
-        with urlopen(request,timeout=360) as response:
-            choice=json.load(response)['choices'][0]
+        choice=completion(payload,endpoint='http://127.0.0.1:8791/v1/chat/completions',timeout=600)['choices'][0]
         if choice.get('finish_reason')=='length':raise ValueError('SYNTHESIS_RESPONSE_TRUNCATED')
         output=json.loads(choice['message']['content'])
         if output.get('insufficient_sources'):
