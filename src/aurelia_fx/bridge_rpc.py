@@ -50,7 +50,11 @@ def dispatch(provider, payload, journal_path):
                             connection.execute('INSERT INTO sends VALUES (?, ?)', (identity, request['comment']))
                         except sqlite3.IntegrityError:
                             raise ValueError('Envio já registrado; reconciliação necessária.') from None
-            return encode(getattr(sdk, method)(*args, **kwargs))
+            function = getattr(sdk, method)
+            # MT5's C extension distinguishes absent kwargs from an empty dict.
+            # Passing **{} makes order_check/order_send reject positional requests.
+            result = function(*args, **kwargs) if kwargs else function(*args)
+            return encode(result)
         finally:
             if provider.mt5 is not None:
                 provider.mt5.shutdown()
