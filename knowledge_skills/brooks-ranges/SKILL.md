@@ -1,5 +1,5 @@
 ---
-name: trading-brooks-ranges
+name: brooks-ranges
 description: Analisar situações de mercado com as fichas verificadas de Brooks — Lateralidades, dentro do projeto agente_trader.
 ---
 

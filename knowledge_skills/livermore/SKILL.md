@@ -1,5 +1,5 @@
 ---
-name: trading-livermore
+name: livermore
 description: Analisar situações de mercado com as fichas verificadas de Reminiscências de um Especulador Financeiro, dentro do projeto agente_trader.
 ---
 

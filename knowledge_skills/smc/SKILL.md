@@ -1,5 +1,5 @@
 ---
-name: trading-smc
+name: smc
 description: Analisar situações de mercado com as fichas verificadas de Smart Money Concepts, dentro do projeto agente_trader.
 ---
 

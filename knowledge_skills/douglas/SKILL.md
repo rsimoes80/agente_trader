@@ -1,5 +1,5 @@
 ---
-name: trading-douglas
+name: douglas
 description: Analisar situações de mercado com as fichas verificadas de Trading in the Zone, dentro do projeto agente_trader.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: trading-pullback
+name: pullback
 description: Analisar situações de mercado com as fichas verificadas de Manual do Pullback, dentro do projeto agente_trader.
 ---
 

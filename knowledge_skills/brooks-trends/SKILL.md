@@ -1,5 +1,5 @@
 ---
-name: trading-brooks-trends
+name: brooks-trends
 description: Analisar situações de mercado com as fichas verificadas de Brooks — Tendências, dentro do projeto agente_trader.
 ---
 

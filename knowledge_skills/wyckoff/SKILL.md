@@ -1,5 +1,5 @@
 ---
-name: trading-wyckoff
+name: wyckoff
 description: Analisar situações de mercado com as fichas verificadas de Wyckoff, dentro do projeto agente_trader.
 ---
 

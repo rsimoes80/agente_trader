@@ -1,5 +1,5 @@
 ---
-name: trading-pring
+name: pring
 description: Analisar situações de mercado com as fichas verificadas de Análise Técnica Explicada, dentro do projeto agente_trader.
 ---
 
