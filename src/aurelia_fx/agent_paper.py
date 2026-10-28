@@ -176,6 +176,10 @@ class PaperAccount:
 
     def mark(self, quote, *, force_close=None):
         at = utc(quote.get("observed_at", quote["at"]))
+        from .entry_trend import POLICY_ID, STRICT_POLICY_ID
+        if POLICY_ID != STRICT_POLICY_ID:
+            from .daytrade import closing_reason
+            force_close=force_close or closing_reason(at,profile=self._research_profile)
         if self._research_profile and not self._research_profile.allows_entry(at):force_close=force_close or 'CALENDAR_CLOSE'
         previous = self.data["last_quote"]
         if previous and at < utc(previous.get("observed_at", previous["at"])):
@@ -242,6 +246,11 @@ class PaperAccount:
         self.data["peak"] = max(self.data["peak"], self.equity(quote))
 
     def open(self, setup, features, probability, quote, *, active_sessions, hypothesis=None):
+        from .entry_trend import POLICY_ID, STRICT_POLICY_ID
+        if POLICY_ID != STRICT_POLICY_ID:
+            from .daytrade import closing_reason
+            reason=closing_reason(quote.get('observed_at',quote['at']),profile=self._research_profile)
+            if reason:return dict(approved=False,reasons=[reason])
         if self._research_profile and setup.get('snapshot',{}).get('symbol')!=self._research_profile.symbol:
             raise ValueError('PAPER_STUDY_INSTRUMENT_MISMATCH')
         from .entry_trend import entry_blocker

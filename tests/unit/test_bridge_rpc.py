@@ -76,3 +76,15 @@ def test_client_does_not_retry_uncertain_send(monkeypatch):
     with pytest.raises(RuntimeError, match='reconciliar'):
         client.call('sdk.order_send', {})
     call.assert_called_once()
+
+
+def test_lost_send_response_stays_uncertain_after_bridge_restart(tmp_path):
+    provider, account, info = terminal()
+    payload = send_payload(account, info)
+    provider.mt5.order_send.side_effect=TimeoutError('synthetic lost reply')
+    journal=tmp_path/'restart.sqlite3'
+    with pytest.raises(TimeoutError):dispatch(provider,payload,journal)
+    restarted, _, _=terminal()
+    with pytest.raises(ValueError,match='registrado'):dispatch(restarted,payload,journal)
+    restarted.mt5.order_send.assert_not_called()
+    provider.mt5.order_send.assert_called_once()

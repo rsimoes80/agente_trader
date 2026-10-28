@@ -116,6 +116,10 @@ def propose_pullback(
         return None, "REGIME_" + snapshot.regime
     if not snapshot.session:
         return None, "OUTSIDE_SESSION"
+    if entry_policy != STRICT_POLICY_ID:
+        from .daytrade import closing_reason
+        reason=closing_reason(history[-1].timestamp+timedelta(minutes=5),profile=profile)
+        if reason:return None,reason
     direction = snapshot.context_trend.get("direction")
     h1_known = direction in {"bullish", "bearish"}
     if not h1_known and not research:

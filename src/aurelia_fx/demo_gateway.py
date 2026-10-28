@@ -8,7 +8,7 @@ from .agent_model import fingerprint
 from .demo_intents import DemoIntentJournal
 from .operation_control import LOCK, validate_lot
 from .historical.core import utc
-from .entry_trend import entry_blocker, POLICY_ID
+from .entry_trend import entry_blocker, POLICY_ID, STRICT_POLICY_ID
 from .account_risk import AccountRiskBook,AccountRiskSnapshot,known_position_tickets
 
 MAGIC=70616041
@@ -70,6 +70,10 @@ class DemoGateway:
                     clock_id=self.authorization["clock_id"])
 
     def entry_request(self,terminal,setup,lot,risk_state,*,exposure=None):
+        if POLICY_ID != STRICT_POLICY_ID:
+            from .daytrade import closing_reason
+            reason=closing_reason(datetime.now(timezone.utc),profile=self.profile)
+            if reason:raise ValueError(reason)
         if self.profile:
             if setup['snapshot'].get('symbol')!=self.profile.symbol or setup['snapshot'].get('profile_id')!=self.profile.fingerprint:
                 raise ValueError('DEMO_SETUP_INSTRUMENT_MISMATCH')
@@ -130,6 +134,10 @@ class DemoGateway:
         previous=scope.latest(client_id)
         if previous:return previous
         if 'position' not in request:
+            if POLICY_ID != STRICT_POLICY_ID:
+                from .daytrade import closing_reason
+                reason=closing_reason(datetime.now(timezone.utc),profile=self.profile)
+                if reason:raise ValueError(reason)
             side={0:'long',1:'short'}.get(request.get('type'),'invalid')
             blocker=entry_blocker(metadata.get('trend_snapshot'),side)
             if blocker:raise ValueError(blocker)
@@ -256,6 +264,9 @@ class DemoGateway:
             return result
 
     def reconcile(self,*,force_close=False,close_expired=True):
+        if POLICY_ID != STRICT_POLICY_ID:
+            from .daytrade import closing_reason
+            force_close=force_close or bool(closing_reason(datetime.now(timezone.utc),profile=self.profile))
         with self.journal.locked() as scope, self.terminal() as terminal:
             resolved=[]
             # Reconcile old close requests first; they may have completed while offline.

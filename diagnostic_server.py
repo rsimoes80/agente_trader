@@ -101,6 +101,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-cache')
                 self.end_headers();self.wfile.write(body);return
             app=self.server.app
+            if path=='/api/diagnostics/observation':
+                from aurelia_fx.live_observation import observation_status
+                self.send(200,dict(ok=True,observer=observation_status(app.memory)));return
             if path=='/api/diagnostics/training':
                 from aurelia_fx.training.automatic import status as automatic_status
                 symbol=symbol_name(args.get('symbol','EURUSD'));training=TrainingRepository(app.memory,symbol)

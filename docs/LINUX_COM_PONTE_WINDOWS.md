@@ -142,3 +142,12 @@ Inclua ambos os journals nos backups. A ponte não decide entradas nem treina.
 
 Continue aplicando o backup, controle de acesso à rede privada e verificações
 de aceite do guia original. Não publique arquivos privados, dumps ou modelos.
+
+## Observação ao vivo sem ordens
+
+O instalador aceita `--observe` para habilitar o serviço independente
+`agente-trader-observation.service`. Ele aquece contexto e verifica inferência,
+mas usa um cliente de ponte restrito a consultas e não inicia negociação.
+Consulte `TESTES_AO_VIVO_SEM_ORDENS.md` para instalação, diagnóstico, regras
+verificadas de encerramento e testes de falha. Use o caminho literal do Python
+na venv Timestral; resolver seu symlink perde o ambiente de dependências.

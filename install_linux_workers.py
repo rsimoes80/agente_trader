@@ -15,6 +15,8 @@ def main():
     from src.aurelia_fx.entry_trend import POLICIES, STRICT_POLICY_ID
     parser.add_argument('--entry-policy', choices=POLICIES,
                         help='Política de direção dos workers; preservada na configuração privada')
+    parser.add_argument('--observe', action='store_true',
+                        help='Instalar observação de mercado/modelo sem ordens')
     args = parser.parse_args()
     if sys.platform != 'linux':
         raise RuntimeError('Execute este instalador no Linux.')
@@ -72,6 +74,15 @@ finally:
                  'agente-trader-training.service': training,
                  'agente-trader-training.timer': timer}
     enabled = ['agente-trader-agent.service', 'agente-trader-training.timer']
+    if args.observe:
+        if not (ROOT / 'data/timestral.json').exists():
+            raise RuntimeError('Configure Timestral antes de iniciar o observador.')
+        generated['agente-trader-observation.service'] = (
+            '[Unit]\nDescription=Read-only market and model observation\n'
+            + common + 'ExecStart=' + json.dumps(str(ROOT / '.venv/bin/python')) + ' '
+            + json.dumps(str(ROOT / 'run_live_observation.py'))
+            + '\nRestart=on-failure\nRestartSec=15\n[Install]\nWantedBy=default.target\n')
+        enabled.append('agente-trader-observation.service')
     if args.history:
         generated['agente-trader-history.service'] = (
             '[Unit]\nDescription=Refresh idle EURUSD historical archive\n'

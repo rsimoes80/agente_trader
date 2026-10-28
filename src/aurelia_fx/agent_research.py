@@ -6,7 +6,7 @@ Counterfactual candidate labels are explicitly separate from portfolio results.
 from __future__ import annotations
 
 import json
-from datetime import datetime,time,timedelta,timezone
+from datetime import datetime,timedelta,timezone
 
 from .agent_model import fingerprint
 from .broker_calendar import slot_tradable, unexpected_broker_gap
@@ -15,13 +15,9 @@ from .domain import RiskLimits
 from .execution_simulator import EntryRequest, ExecutionConfig, ExecutionSimulator
 from .historical.core import utc
 from .market_intelligence import MarketIntelligenceSession
-from .sessions import SessionWindow
 from .trend import HierarchyConfig
 
-SESSIONS = (
-    SessionWindow("london", "Europe/London", time(8), time(17)),
-    SessionWindow("new_york", "America/New_York", time(8), time(17)),
-)
+from .daytrade import SESSIONS
 
 
 def intelligence_session(*, profile=None):

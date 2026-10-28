@@ -14,7 +14,7 @@ from .agent_forecast_view import forecast_view
 from .agent_paper import PaperAccount, observed_quote
 from .agent_research import SESSIONS, cached_forecast, intelligence_session
 from .agent_strategy import attach_forecast, propose_pullback
-from .entry_trend import POLICY_ID
+from .entry_trend import POLICY_ID, STRICT_POLICY_ID
 from .autonomous_lab import REGIME_HASH
 from .forecasting.adapter import ModelUnavailable, TimestralAdapter
 from .forecasting import health as forecast_health
@@ -42,6 +42,10 @@ def profile_config(config,profile):
 
 def forced_exit(state,quote,profile):
     if state['desired']=='stopped':return 'OPERATOR_STOP'
+    if POLICY_ID != STRICT_POLICY_ID:
+        from .daytrade import closing_reason
+        reason=closing_reason(quote.get('observed_at',quote['at']),profile=profile)
+        if reason:return reason
     if profile and not profile.allows_entry(utc(quote.get('observed_at',quote['at']))):return 'CALENDAR_CLOSE'
     return None
 
