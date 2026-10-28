@@ -135,3 +135,6 @@ terminais por si só e não valida uma estratégia. Uma primeira rodada bem-suce
 mostra colaboração e rastreabilidade; qualidade semântica e execução operacional
 continuam exigindo avaliação própria. As skills permanecem parciais e as entradas
 continuam pausadas até a validação da estratégia.
+
+Se a lista de distribuições WSL não carregar no Maestri, siga
+[WSL_RECUPERACAO.md](WSL_RECUPERACAO.md) antes de recriar terminais ou responsabilidades.
