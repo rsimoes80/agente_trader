@@ -77,3 +77,10 @@ novos candles e condições válidas, sem forçar entradas para produzir amostra
 
 O início técnico não valida rentabilidade. O teste deve acumular decisões e
 operações prospectivas antes de avaliar desempenho ou passar a demo automática.
+
+## Transição posterior autorizada
+
+A sessão paper foi encerrada por solicitação do operador e substituída por
+execução demo. Consulte `EXECUCAO_DEMO_AO_VIVO.md` para o estado posterior e as
+proteções preservadas. Este documento registra o protocolo da etapa paper;
+não representa o modo atual após essa transição.

@@ -17,19 +17,25 @@ def main():
                         help='Política de direção dos workers; preservada na configuração privada')
     parser.add_argument('--observe', action='store_true',
                         help='Instalar observação de mercado/modelo sem ordens')
-    parser.add_argument('--paper-test', action='store_true',
+    phase = parser.add_mutually_exclusive_group()
+    phase.add_argument('--paper-test', action='store_true',
                         help='Persistir teste paper: ponte somente de leitura e pesos congelados')
+    phase.add_argument('--demo-execution', action='store_true',
+                       help='Liberar transporte demo somente com todas as sessões paradas')
     args = parser.parse_args()
     if sys.platform != 'linux':
         raise RuntimeError('Execute este instalador no Linux.')
     config = json.loads((ROOT / 'config/new-environment.local.json').read_text())
-    paper_test = args.paper_test or config.get('paper_test', False)
+    paper_test = False if args.demo_execution else args.paper_test or config.get('paper_test', False)
+    freeze_weights = paper_test or config.get('freeze_weights', config.get('paper_test', False))
+    if type(freeze_weights) is not bool:
+        raise ValueError('freeze_weights deve ser booleano.')
     if type(paper_test) is not bool:
         raise ValueError('paper_test deve ser booleano.')
     policy = args.entry_policy or config.get('entry_policy', STRICT_POLICY_ID)
     if policy not in POLICIES:
         raise ValueError('Política de entrada desconhecida.')
-    if args.entry_policy and policy != config.get('entry_policy', STRICT_POLICY_ID):
+    if args.demo_execution or (args.entry_policy and policy != config.get('entry_policy', STRICT_POLICY_ID)):
         # System Python is sufficient for this installer; DB dependencies live in .venv.
         probe = """from src.aurelia_fx.storage import open_memory
 from src.aurelia_fx.asset_registry import AssetRegistry
@@ -62,8 +68,7 @@ finally:
     environment = 'Environment=' + json.dumps(
         f"AURELIA_MT5_BRIDGE_URL=http://{config['windows_ip']}:{config['bridge_port']}") + '\n'
     environment += 'Environment=' + json.dumps('AURELIA_ENTRY_POLICY=' + policy) + '\n'
-    if paper_test:
-        environment += 'Environment=AURELIA_MT5_READ_ONLY=1\n'
+    environment += 'Environment=AURELIA_MT5_READ_ONLY=' + ('1' if paper_test else '0') + '\n'
     common = ('[Service]\nType=simple\nWorkingDirectory=' + directory + '\n'
               + environment + 'Environment=PYTHONUNBUFFERED=1\nUMask=0077\n')
     agent = ('[Unit]\nDescription=Agente Trader Linux worker\nAfter=network.target\n'
@@ -81,7 +86,7 @@ finally:
                  'agente-trader-training.service': training,
                  'agente-trader-training.timer': timer}
     enabled = ['agente-trader-agent.service']
-    if not paper_test:enabled.append('agente-trader-training.timer')
+    if not freeze_weights:enabled.append('agente-trader-training.timer')
     if args.observe:
         if not (ROOT / 'data/timestral.json').exists():
             raise RuntimeError('Configure Timestral antes de iniciar o observador.')
@@ -102,14 +107,20 @@ finally:
             'OnStartupSec=120\nOnUnitInactiveSec=15min\nUnit=agente-trader-history.service\n'
             '[Install]\nWantedBy=timers.target\n')
         enabled.append('agente-trader-history.timer')
+    if args.demo_execution:
+        drop_in = units / 'agente-trader-agent.service.d/paper-test.conf'
+        if drop_in.exists():
+            if drop_in.read_text() != '[Service]\nEnvironment=AURELIA_MT5_READ_ONLY=1\n':
+                raise RuntimeError('Drop-in paper personalizado: preservar e revisar antes de liberar demo.')
+            drop_in.unlink()
     for name, contents in generated.items():
         (units / name).write_text(contents)
     subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
-    if paper_test:
+    if freeze_weights:
         subprocess.run(['systemctl','--user','disable','--now','agente-trader-training.timer'],check=True)
     subprocess.run(['systemctl', '--user', 'enable', '--now', *enabled], check=True)
-    if args.entry_policy or args.paper_test:
-        config.update(entry_policy=policy,paper_test=paper_test)
+    if args.entry_policy or args.paper_test or args.demo_execution:
+        config.update(entry_policy=policy,paper_test=paper_test,freeze_weights=freeze_weights)
         config_path = ROOT / 'config/new-environment.local.json'
         config_path.write_text(json.dumps(config,indent=2)+'\n')
         config_path.chmod(0o600)
@@ -117,7 +128,7 @@ finally:
         if compose_path.exists():
             compose = json.loads(compose_path.read_text())
             compose['services']['api']['environment']['AURELIA_ENTRY_POLICY'] = policy
-            if paper_test:compose['services']['api']['environment']['AURELIA_MT5_READ_ONLY']='1'
+            compose['services']['api']['environment']['AURELIA_MT5_READ_ONLY']='1' if paper_test else '0'
             compose_path.write_text(json.dumps(compose,indent=2)+'\n')
             compose_path.chmod(0o600)
     print('Serviços configurados; o instalador não altera o estado da sessão.')
