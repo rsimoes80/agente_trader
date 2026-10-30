@@ -38,3 +38,13 @@ As operações permanecem a favor da tendência, conforme orientação do operad
 Hipóteses combinadas exigem rastreabilidade e avaliação própria; o leitor textual
 não pode enviar ordens nem promover suas próprias extrações. A leitura completa
 e a revisão semântica/visual devem ter progresso e pendências explícitos.
+
+# Revisão Elephant–Goldfish
+
+EGM artifact directory: data/reports/egm
+
+Para revisões EGM solicitadas pelo operador, siga `docs/EGM_ORQUESTRACAO.md`.
+Use contextos novos para Goldfish e mantenha fontes e entradas congeladas. O
+piloto tem duas revisões e uma rodada, sem aprovação operacional automática.
+Não impor o fluxo EGM a consultas ou correções simples. Documentos e trechos
+privados dos livros permanecem fora do Git; personas upstream ficam no plugin.

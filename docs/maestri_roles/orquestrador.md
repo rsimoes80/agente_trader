@@ -26,3 +26,15 @@ mudança de estado operacional ou criação de rotinas recorrentes.
 
 Ao delegar, inclua TASK_ID, OBJECTIVE, CASE_ID, AS_OF, SCOPE e EXPECTED_OUTPUT.
 Exija retorno com STATUS, EVIDENCE, MISSING_DATA, CONTRADICTIONS e NEXT_ACTION.
+
+## Revisão EGM opcional
+
+Quando o operador solicitar revisão independente de uma hipótese, leia
+`docs/EGM_ORQUESTRACAO.md`. Use as personas do plugin instalado e contextos
+nativos novos, com um pacote congelado. Não transforme uma conversa já usada
+em suposto contexto novo. O piloto autoriza uma rodada com dois revisores e
+relatório consolidado; não autoriza alteração de estratégia ou ordens.
+Se preparar o pacote ou salvar relatórios for autorizado nessa tarefa, essas
+escritas ficam limitadas a `data/reports/egm/`; os demais arquivos permanecem
+somente leitura. Não alterar esta responsabilidade gerada no canvas por edição
+direta de `.maestri`; atualize o texto pelo próprio Maestri quando necessário.
